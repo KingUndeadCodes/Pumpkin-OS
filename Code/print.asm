@@ -1,1 +1,23 @@
+PrintString:
+	push ax
+	push bx
 
+	mov ah, 0x0e
+	.Loop:
+	cmp [bx], byte 0
+	je .Exit
+		mov al, [bx]
+		int 0x10
+		inc bx
+		jmp .Loop
+	.Exit:
+
+	pop ax
+	pop bx
+	ret
+
+SystemFound:
+  db 'Pumpkin[OS]   |   1.0 is booting!', 0
+
+PleaseWait:
+  db 'Please wait...', 0
