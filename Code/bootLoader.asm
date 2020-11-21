@@ -26,10 +26,15 @@ Loop:
    jmp Loop
 
 Starting:
+   mov ah, 0bh
+   int 21h
+   cmp al, 0
+   mov ah, 0
+   int 16h
    mov ah, 0x0e
-   mov bx, PleaseWait
-   call PrintString
+   mov al, al
    int 0x10
+   jmp Starting
 
 jmp $
 
