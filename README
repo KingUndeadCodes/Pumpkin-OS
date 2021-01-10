@@ -1,10 +1,1 @@
-- 1: "This is not compiled. You'd have to compile it yourself." [
-       1: # 11:00 PM Sat Jan 2 2020   =   TRUE
-       2: # 09:57 PM Tue Jan 5 2020   =   FALSE [
-              "Raw bin available as of now."
-       ]
-       
-  ]
-  - 1.5: "Software that should be installed: {NASM = "apt-get install nasm"} [
-            1: # 11:53 PM Sat Jan 2 2020   =   TRUE
-       ]
+[]
