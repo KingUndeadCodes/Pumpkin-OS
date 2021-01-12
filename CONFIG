@@ -1,5 +1,0 @@
-# bad cpu type
-cpu type x86-64 = /bin/x86-64/raw.img
-cpu type x86-32 = /bin/x86-32/raw.img
-
-mix
