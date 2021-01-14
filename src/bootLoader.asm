@@ -22,10 +22,10 @@ Loop:
    int 0x10
    inc bl
    cmp bl, 07
-   je Starting
+   je TextEdit
    jmp Loop
 
-Starting:
+TextEdit:
    mov ah, 0bh
    int 21h
    cmp al, 0
@@ -34,7 +34,7 @@ Starting:
    mov ah, 0x0e
    mov al, al
    int 0x10
-   jmp Starting
+   jmp TextEdit
 
 jmp $
 
