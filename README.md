@@ -5,4 +5,4 @@
 - This project has ONLY been tested with a Virtual Machine (QEMU)
 ```
 <br />
-<p>Current Version: <b>1.0 BETA</b></p>
+<p>Current Version: <b>Pumpkin[OS] 1.0 | Beta</b></p>
