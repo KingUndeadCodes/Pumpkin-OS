@@ -18,6 +18,3 @@ PrintString:
 
 SystemFound:
   db 'Pumpkin[OS]   |   1.0 is booting!', 0
-
-PleaseWait:
-  db 'Please wait...', 0
