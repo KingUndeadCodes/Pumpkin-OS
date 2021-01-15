@@ -7,4 +7,4 @@
 ```
 ### CREDITS ###
 
-<p>NAME: KingUndeadCodes</p>
+{{"KingUndeadCodes": {}}} 
