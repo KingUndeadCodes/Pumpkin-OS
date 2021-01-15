@@ -1,4 +1,4 @@
-# Pumpkin-OS
+### Pumpkin-OS ###
 ```diff
 + This is just a simple "toy" OS I make in my free time.
 ! Compiled binary(s) is in "bin", source code is in "src".
@@ -6,3 +6,5 @@
 # Current Version: ⠀⠀⠀⠀⠀Pumpkin[OS] 1.0 | Beta
 ```
 ### CREDITS ###
+
+<p>KingUndeadCodes</p>
