@@ -6,5 +6,6 @@
 # Current Version: ⠀⠀⠀⠀⠀Pumpkin[OS] 1.0 | Beta
 ```
 ### CREDITS ###
-
-{{"KingUndeadCodes": {}}} 
+```json
+{{"KingUndeadCodes": "me"}} 
+```
