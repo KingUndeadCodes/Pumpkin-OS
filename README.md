@@ -8,7 +8,7 @@
 ### CREDITS ###
 ```json
 {"KingUndeadCodes": {
-    "Commited": ["bootLoader", "print.asm (FROM PONCHO OS)"];
+    "Commited": ["bootLoader", "print.asm (FROM PONCHO OS)"]
  }
 } 
 ```
