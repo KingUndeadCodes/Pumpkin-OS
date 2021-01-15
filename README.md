@@ -5,3 +5,6 @@
 - This project has ONLY been tested with a Virtual Machine (QEMU)
 # Current Version: ⠀⠀⠀⠀⠀Pumpkin[OS] 1.0 | Beta
 ```
+<div class="text-blue mb-2">
+  .text-blue on white
+</div>
