@@ -7,5 +7,5 @@
 ```
 ### CREDITS ###
 ```json
-{{"KingUndeadCodes": "me"}} 
+{"KingUndeadCodes": "me"} 
 ```
