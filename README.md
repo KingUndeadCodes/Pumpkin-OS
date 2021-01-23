@@ -8,4 +8,4 @@
 ### CREDITS ###
 **KingUndeadCodes**
 - **bootLoader.asm**
-- **print.asm** __(from: Absurdponcho)__
+- **print.asm** (from: Absurdponcho)
