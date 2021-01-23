@@ -7,5 +7,5 @@
 ```
 ### CREDITS ###
 **KingUndeadCodes**
-- bootLoader.asm
-- print.asm (from: Absurdponcho)
+- **bootLoader.asm**
+- **print.asm** __(from: Absurdponcho)__
