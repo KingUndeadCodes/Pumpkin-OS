@@ -6,6 +6,6 @@
 # Current Version: ⠀⠀⠀⠀⠀Pumpkin[OS] 1.0 | Beta
 ```
 ### CREDITS ###
-```json
-{"KingUndeadCodes": {"Commited": ["bootLoader", {"print.asm": {"from": "Absurdponcho"}}]}} 
-```
+**KingUndeadCodes**
+- bootLoader.asm
+- print.asm (from: Absurdponcho)
