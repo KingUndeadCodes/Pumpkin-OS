@@ -40,7 +40,5 @@ TextEdit:
 
 %include "print.asm"
 
-[bits 32]
-
 times 510-($-$$) db 0
 dw 0xaa55
