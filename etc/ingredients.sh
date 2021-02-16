@@ -7,3 +7,4 @@ sudo apt-get install nasm
 sudo apt-get install qemu-system
 sudo apt-get install build-essential
 
+echo "Installation has finished!"
