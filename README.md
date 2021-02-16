@@ -11,7 +11,7 @@ Note:
 Compiling: 
 ```console
 $ git clone https://github.com/KingUndeadCodes/Pumpkin-OS.git
-$ bash ingredients.sh
+$ bash etc/ingredients.sh
 $ cd Pumpkin-OS/32-bit
 $ bash build.sh
 ```
