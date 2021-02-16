@@ -6,7 +6,7 @@ This project has ONLY been tested with a Virtual Machine (QEMU).
 ```
 
 Note:
-- The 16 bit version is a joke. The 32-bit version is the one which I will continue to build.
+- The **16 bit version is a joke**. The **32-bit version** is the one which **I will continue to build**.
 
 Compiling: 
 ```console
