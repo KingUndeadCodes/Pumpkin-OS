@@ -1,2 +1,0 @@
-[extern main]
-jmp main
