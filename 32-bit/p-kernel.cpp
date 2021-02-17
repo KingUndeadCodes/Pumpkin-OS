@@ -1,3 +1,5 @@
+// Copyright KingUndeadCodes, 2021
+
 extern "C" void main(){
    *((char*)0xb8000) = 'P'; // First      Char  : "H"
    *((char*)0xb8002) = 'O'; // Second     Char  : "E"
