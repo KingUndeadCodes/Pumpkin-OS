@@ -11,6 +11,6 @@ sudo apt-get install libmpfr-dev
 sudo apt-get install qemu-system
 sudo apt-get install build-essential
 
-echo -e "\033[0;32mPackage installation has finished! | Sleeping for 5 seconds.$
+echo -e "\033[0;32mPackage installation has finished! | Sleeping for 5 seconds.\033[0m"
 sleep 5
 
