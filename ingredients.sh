@@ -14,10 +14,15 @@ sudo apt-get install build-essential
 # Arch Linux (Still working on it)
 
 sudo pacman -Syu
+sudo pacman -S gcc
+sudo pacman -S gmp
 sudo pacman -S git
+sudo pacman -S qemu
 sudo pacman -S flex
+sudo pacman -S mpfr
 sudo pacman -S bash
 sudo pacman -S nasm
+sudo pacman -S libmpc
 
 echo -e "\033[0;32mPackage installation has finished! | Sleeping for 5 seconds.\033[0m"
 sleep 5
