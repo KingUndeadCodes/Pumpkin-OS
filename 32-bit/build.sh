@@ -6,9 +6,11 @@ qemu=qemu-system-x86_64
 # ASSEMBLERS, COMPILERS AND LINKERS
 ${comp} -ffreestanding -c p-kernel.cpp -o kernel.o
 nasm Kernel-Entry.asm -f elf -o Kernel-Entry.o
+nasm empty_end.asm -f bin -o empty_end.bin
 ${link} -o kernel.bin -Ttext 0x1000 kernel.o Kernel-Entry.o --oformat binary
 nasm bootLoader.asm -f bin -o Pump.bin
 cat Pump.bin kernel.bin > image.bin
+cat image.bin empty_end.bin > image.bin
 
 # VIRTUAL MACHINE AND DELETE TEMP FILES
 rm Kernel-Entry.o kernel.bin Pump.bin kernel.o
