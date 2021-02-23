@@ -59,7 +59,8 @@ disk_error:
   mov al, char_8
   call print_char
 
-  jmp $
+  hlt ; Still have to test!
+  ; jmp $
 
 char_print:
   int 0x10
