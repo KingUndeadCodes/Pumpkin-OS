@@ -25,10 +25,10 @@ extern "C" void _start(){
 
    if (found == true) {
 
-      *((int*)0xb800f) = 0x02f;
-      *((int*)0xb8011) = 0x02f;
-      *((int*)0xb8013) = 0x22f;
-      *((int*)0xb8015) = 0x02f;
+      *((int*)0xb800f) = 0x2f;
+      *((int*)0xb8011) = 0x2f;
+      *((int*)0xb8013) = 0x2f;
+      *((int*)0xb8015) = 0x2f;
 
       *((char*)0xb800e) = 'T';
       *((char*)0xb8010) = 'r';
