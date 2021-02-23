@@ -8,10 +8,10 @@ This project has ONLY been tested with a Virtual Machine (QEMU).
 ```diff
 # Done:
 + Core / Bootloader
++ Design / Logo
 
 # Doing:
 ! Kernel / Print function
-! Design / Logo
 
 # Haven't started:
 - Kernel / Keyboard input
