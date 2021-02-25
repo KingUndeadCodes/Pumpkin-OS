@@ -1,2 +1,4 @@
 * linguist-vendored
-*.sh linguist-vendored=false
+*.asm linguist-vendored=false
+*.cpp linguist-vendored=false
+*.sh linguist-vendored=true
