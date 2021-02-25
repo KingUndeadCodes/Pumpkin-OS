@@ -1,6 +1,14 @@
 /// Copyright (c) 2020 KingUndeadCodes
 /// Protected under MIT License which lays down the terms of use.
 
+#define VIDEO_ADDRESS 0xb8000
+
+void print(char character) {
+   unsigned char *vidmem = (unsigned char *) VIDEO_ADDRESS;
+   int offset;
+   vidmem[offset + 1] = character;
+}
+
 extern "C" void _start(){
 
    const char *name = "Flying Chicken || Revision 1.0.2";
