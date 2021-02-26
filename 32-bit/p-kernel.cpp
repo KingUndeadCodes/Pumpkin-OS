@@ -1,12 +1,18 @@
 /// Copyright (c) 2020 KingUndeadCodes
 /// Protected under MIT License which lays down the terms of use.
 
-#define VIDEO_ADDRESS 0xb8000
 
-void print(char character) {
-   unsigned char *vidmem = (unsigned char *) VIDEO_ADDRESS;
-   int offset;
-   vidmem[offset + 1] = character;
+/// https://stackoverflow.com/questions/41519336/extended-ascii-characters-are-printed-in-yellow-instead-of-white-osdev
+
+
+void putChar(char character, short col, short row, unsigned char attr) {
+    volatile unsigned char* vid_mem = (unsigned char *) VIDEO_MEM;
+    int offset = (row*80 + col)*2;
+    vid_mem += offset;
+    if(!attr) {
+        attr = default_color;
+    }
+    *(unsigned short int *)vid_mem = (attr<<8)+character;
 }
 
 extern "C" void _start(){
