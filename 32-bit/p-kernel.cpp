@@ -4,6 +4,7 @@
 
 /// https://stackoverflow.com/questions/41519336/extended-ascii-characters-are-printed-in-yellow-instead-of-white-osdev
 
+#define VIDEO_MEM 0xb8000
 
 void putChar(char character, short col, short row, unsigned char attr) {
     volatile unsigned char* vid_mem = (unsigned char *) VIDEO_MEM;
