@@ -21,15 +21,9 @@ This OS uses BiOS and not UEFI so keep that in mind.
 - Kernel / Programming API's
 ```
 
-```c
-// Imaginary port of c
-
-#include <pumpio.h>
-
-int main() {
-  pump_print("Hello, World!");
-  return 0;
-}
+## Build dependencies
+```
+NASM (netwide-assembler) licensed under the 2-clause BSD license.
 ```
 
 **Credits**:
