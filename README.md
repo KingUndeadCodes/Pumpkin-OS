@@ -26,7 +26,7 @@ This OS uses BiOS and NOT UEFI so keep that in mind.
 
 ## Build dependencies
 ```
-NASM (netwide-assembler) licensed under the 2-clause B[SD  license](LICENSE)..
+NASM (netwide-assembler) is licensed under the 2-clause BSD license.
 ```
 
 ## Credits:
