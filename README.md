@@ -26,6 +26,6 @@ This OS uses BiOS and not UEFI so keep that in mind.
 NASM (netwide-assembler) licensed under the 2-clause BSD license.
 ```
 
-**Credits**:
+## Credits:
 - KingUndeadCodes  
   - Everything!
