@@ -1,4 +1,7 @@
-### Pumpkin-OS ###
+### Pumpkin OS ###
+
+Pumpkin OS is licensed under the [**MIT license**](/LICENSE).\
+Don't violate the license or I'll come to your house.
 
 ```
 This is just a simple "toy" OS I make in my free time.
@@ -23,7 +26,7 @@ This OS uses BiOS and not UEFI so keep that in mind.
 
 ## Build dependencies
 ```
-NASM (netwide-assembler) licensed under the 2-clause BSD license.
+NASM (netwide-assembler) licensed under the 2-clause B[SD  license](LICENSE)..
 ```
 
 ## Credits:
