@@ -1,5 +1,7 @@
 ### Pumpkin OS ###
 
+<hr />
+
 Pumpkin OS is licensed under the [**MIT license**](/LICENSE).\
 Don't violate the license or I'll come to your house.
 
@@ -30,5 +32,5 @@ NASM (netwide-assembler) is licensed under the 2-clause BSD license.
 ```
 
 ## Credits:
-- KingUndeadCodes  
+- [KingUndeadCodes:](https://www.youtube.com/watch?v=dQw4w9WgXcQ)  
   - Everything!
