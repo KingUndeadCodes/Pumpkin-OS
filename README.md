@@ -1,7 +1,5 @@
 ### Pumpkin OS ###
 
-<hr />
-
 Pumpkin OS is licensed under the [**MIT license**](/LICENSE).\
 Don't violate the license or I'll come to your house.
 
