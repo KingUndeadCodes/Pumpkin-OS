@@ -1,3 +1,7 @@
 import os
 
-os.system('bash ingredients.sh')
+def main():
+  os.system('bash ingredients.sh')
+  
+if __name__ == "__main__":
+  main()
