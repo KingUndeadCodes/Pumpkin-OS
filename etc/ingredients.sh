@@ -40,5 +40,3 @@ echo MAKE INSTALL-TARGET-LIBGCC:
 sudo make install-target-libgcc
 echo HERE U GO MAYBE:
 ls /usr/local/i386elfgcc/bin
-
-echo -e "\033[0;32mPackage installation has finished!\033[0m\n"
