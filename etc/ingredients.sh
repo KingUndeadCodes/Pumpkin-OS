@@ -1,4 +1,4 @@
-# FROM: mello-pax/MellOs
+# FROM: mello-pax/MellOs/blob/main/A_Setup/setup-gcc.sh
 # GCC cross compiler for i386 systems (might take quite some time, prepare food)
 
 sudo apt update
