@@ -24,11 +24,13 @@ This OS uses BiOS and NOT UEFI so keep that in mind.
 - Kernel / Programming API's
 ```
 
-## Build dependencies
+## Build dependencies:
+
 ```
 NASM (netwide-assembler) is licensed under the 2-clause BSD license.
 ```
 
 ## Credits:
+
 - [KingUndeadCodes:](https://www.youtube.com/watch?v=dQw4w9WgXcQ)  
   - Everything!
