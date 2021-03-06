@@ -14,14 +14,13 @@ void system_print(char* str) {
 }
 
 extern "C" void _start() {
-
-   const char *name = "Flying Chicken || Revision 1.0.2";
-   const bool found = 1;
-
-   if (found == true) {
-      // pass
-   } else {
-      // pass
-   }
+  const char *name = "Flying Chicken || Revision 1.0.2";
+  const bool found = 1;
+  
+  if (found == true) {
+     // pass
+  } else {
+     // pass
+  }
 
 }
