@@ -58,8 +58,7 @@ disk_error:
   call print_char
   mov al, char_8
   call print_char
-
-  ; hlt
+  
   jmp $
 
 char_print:
