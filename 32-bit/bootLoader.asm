@@ -50,8 +50,6 @@ gdt_descriptor:
 CODE_SEG equ gdt_code - gdt_start
 DATA_SEG equ gdt_data - gdt_start
 
-Found db 'Found: True', 0
-
 kernel_start:
     mov ax, 0
     mov ss, ax
@@ -105,9 +103,6 @@ b32:
 
     mov ebp, 0x2000
     mov esp, ebp
-
-    ; mov ebx, Found
-    ; call print32
 
     jmp KERNEL_LOCATION
 
