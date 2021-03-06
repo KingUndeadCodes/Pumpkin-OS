@@ -5,7 +5,7 @@
 
 void system_print(char* str) {
   char* video_memory = (char*) 0xb8000;
-  char string[] = "Welcome to my OS!";
+  char string[] = "Welcome to Pumpkin OS! (Flying Chicken || Revision 1.0.2)";
   int length = sizeof(string) / sizeof(char);
   for (int i = 0; i < length; i++) {
      *video_memory = string[i];
