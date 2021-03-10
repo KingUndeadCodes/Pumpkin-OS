@@ -13,16 +13,6 @@ disk_load:
 
 BOOT_DISK: db 0
 
-char_1 equ 'E'
-char_2 equ 'r'
-char_3 equ 'o'
-char_4 equ 'B'
-char_5 equ 't'
-char_6 equ 'i'
-char_7 equ 'n'
-char_8 equ 'g'
-char_9 equ ' '
-
 disk_error:
   
   mov ah, 09h
@@ -32,35 +22,32 @@ disk_error:
 
   mov ah, 0x0e
 
-  mov al, char_1
-  call char_print
-  mov al, char_2
-  call char_print
-  mov al, char_2
-  call char_print
-  mov al, char_3
-  call char_print
-  mov al, char_2
-  call char_print
-  mov al, char_9
-  call char_print
-  mov al, char_4
-  call char_print
-  mov al, char_3
-  call char_print
-  mov al, char_3
-  call char_print
-  mov al, char_5
-  call char_print
-  mov al, char_6
-  call print_char
-  mov al, char_7
-  call print_char
-  mov al, char_8
-  call print_char
+  mov al, 'E'
+  int 0x10
+  mov al, 'r'
+  int 0x10
+  mov al, 'r'
+  int 0x10
+  mov al, 'o'
+  int 0x10
+  mov al, 'r'
+  int 0x10
+  mov al, ' '
+  int 0x10
+  mov al, 'B'
+  int 0x10
+  mov al, 'o'
+  int 0x10
+  mov al, 'o'
+  int 0x10
+  mov al, 't'
+  int 0x10
+  mov al, 'i'
+  int 0x10
+  mov al, 'n'
+  int 0x10
+  mov al, 'g'
+  int 0x10
   
   jmp $
 
-char_print:
-  int 0x10
-  ret
