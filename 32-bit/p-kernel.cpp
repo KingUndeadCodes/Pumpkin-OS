@@ -1,7 +1,7 @@
 /// Copyright (C) 2021 KingUndeadCodes (https://github.com/KingUndeadCodes)
 /// Protected under MIT License which lays down the terms of use.
 
-void system_print(char* str) {
+void system_print(char *str) {
    char* video_memory = (char*) 0xb8000;
    char string[] = "Welcome to Pumpkin OS! (Flying Chicken || Revision 1.0.2)";
    int length = sizeof(string) / sizeof(char);
