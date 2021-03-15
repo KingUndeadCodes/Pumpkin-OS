@@ -1,3 +1,4 @@
 * linguist-vendored
 *.asm linguist-vendored=false
 *.cpp linguist-vendored=false
+*.c=false
