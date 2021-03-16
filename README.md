@@ -20,7 +20,7 @@ This OS uses BiOS and NOT UEFI so keep that in mind.
 # Haven't started:
 - Kernel / Keyboard input
 - Kernel / File System
-- Kernel / Programming language ports.
+- Kernel / Programming language ports
 - Kernel / Programming API's
 ```
 
