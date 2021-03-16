@@ -1,3 +1,6 @@
+/// Copyright (C) 2021 KingUndeadCodes (https://github.com/KingUndeadCodes)
+/// Protected under MIT License which lays down the terms of use.
+
 #include <stdint.h>
 
 static void system_print(uint8_t color) {
