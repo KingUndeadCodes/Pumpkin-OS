@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-void system_print(uint8_t color) {
+static void system_print(uint8_t color) {
    char* video_memory = (char*) 0xb8000;
    char string[] = "Welcome to Pumpkin OS! (Flying Chicken || Revision 1.0.2)";
    int length = sizeof(string) / sizeof(char);
