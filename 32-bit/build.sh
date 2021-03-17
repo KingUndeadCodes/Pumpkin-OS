@@ -1,4 +1,3 @@
-# Ignored
 # DEFENITIONS
 comp=/usr/local/i386elfgcc/bin/./i386-elf-gcc
 link=/usr/local/i386elfgcc/bin/./i386-elf-ld
