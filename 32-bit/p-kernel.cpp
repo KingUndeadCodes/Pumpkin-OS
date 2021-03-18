@@ -16,7 +16,6 @@ void printk(uint8_t color) {
       *video_memory++ = string[i];
       *video_memory++ = color;
    }
-   return;
 }
 
 extern "C" void _start(void) {
