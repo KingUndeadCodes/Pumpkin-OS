@@ -1,6 +1,7 @@
 /// Copyright (C) 2021 KingUndeadCodes (https://github.com/KingUndeadCodes)
 /// Protected under MIT License which lays down the terms of use.
 
+#include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
 
