@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
-// Going add this at some point.
+// Going to add this at some point.
 static const size_t WIDTH = 80;
 static const size_t HEIGHT = 25;
 
