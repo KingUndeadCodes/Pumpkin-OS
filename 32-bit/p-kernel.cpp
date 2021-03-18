@@ -24,7 +24,7 @@ void printk(uint8_t color) {
    }
 }
 
-extern "C" void _start(void) {
+extern "C" void _start() {
    const bool found = 1;
    if (found == true) {
       printk(15);
