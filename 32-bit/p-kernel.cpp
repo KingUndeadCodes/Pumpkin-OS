@@ -4,7 +4,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-
 // Print function
 void printk(uint8_t color) {
    char* video_memory = (char*) 0xb8000;
@@ -15,7 +14,6 @@ void printk(uint8_t color) {
       *video_memory++ = color;
    }
 }
-
 
 // Input \ Output
 void outb(unsigned short port, unsigned char val){
