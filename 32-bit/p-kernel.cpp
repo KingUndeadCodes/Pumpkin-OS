@@ -3,7 +3,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include <io.h>
+#include "io.h"
 
 // Print function
 void printk(uint8_t color) {
