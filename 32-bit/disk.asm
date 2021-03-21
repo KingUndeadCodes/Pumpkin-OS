@@ -13,40 +13,26 @@ disk_load:
 
 BOOT_DISK: db 0
 
+char_1 equ 'E'
+char_2 equ 'r'
+char_3 equ 'o'
+
 disk_error:
-  
-  mov ah, 09h
-  mov cx, 1000h
-  mov al, 20h
-  mov bl, 17
   mov ah, 0x0e
-  
-  mov al, 'E'
-  int 0x10
-  mov al, 'r'
-  int 0x10
-  mov al, 'r'
-  int 0x10
-  mov al, 'o'
-  int 0x10
-  mov al, 'r'
-  int 0x10
-  mov al, ' '
-  int 0x10
-  mov al, 'B'
-  int 0x10
-  mov al, 'o'
-  int 0x10
-  mov al, 'o'
-  int 0x10
-  mov al, 't'
-  int 0x10
-  mov al, 'i'
-  int 0x10
-  mov al, 'n'
-  int 0x10
-  mov al, 'g'
-  int 0x10
-  
+
+  mov al, char_1
+  call char_print
+  mov al, char_2
+  call char_print
+  mov al, char_2
+  call char_print
+  mov al, char_3
+  call char_print
+  mov al, char_2
+  call char_print
+
   jmp $
 
+char_print:
+  int 0x10
+  ret
