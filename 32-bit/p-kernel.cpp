@@ -28,7 +28,7 @@ unsigned char inb(unsigned short port) {
 extern "C" void _start() {
    const bool found = true;
    if (found == true) {
-      printk(15);
+      // pass
    } else {
       // pass
    }
