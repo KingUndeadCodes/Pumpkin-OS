@@ -3,8 +3,7 @@
 
 #include <stdint.h>
 
-void printk(uint8_t color)
-{
+void printk(char* message, uint8_t color) {
    volatile char *video_memory = (volatile char*)0xB8000;
    char string[] = "haha this text go brrrrr";
    int length = sizeof(string) / sizeof(char);
@@ -14,13 +13,11 @@ void printk(uint8_t color)
    }
 }
 
-void outb(unsigned short port, unsigned char val)
-{
+void outb(unsigned short port, unsigned char val) {
    asm volatile ("outb %0, %1" : : "a"(val), "Nd"(port));
 }
 
-unsigned char inb(unsigned short port)
-{
+unsigned char inb(unsigned short port) {
    unsigned char returnVal;
    asm volatile ("inb %1, %0"
    : "=a"(returnVal)
@@ -36,4 +33,3 @@ extern "C" void _start() {
       // pass
    }
 }
-
