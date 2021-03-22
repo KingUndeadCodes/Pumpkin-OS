@@ -19,7 +19,6 @@ char_3 equ 'o'
 
 disk_error:
   mov ah, 0x0e
-
   mov al, char_1
   call char_print
   mov al, char_2
