@@ -1,5 +1,7 @@
-/// Copyright (C) 2020 KingUndeadCodes (https://github.com/KingUndeadCodes)
-/// Protected under MIT License which lays down the terms of use.
+/* 
+ * Copyright (C) 2020 KingUndeadCodes (https://github.com/KingUndeadCodes)
+ * Protected under MIT License which lays down the terms of use.
+*/
 
 #include <stdint.h>
 
