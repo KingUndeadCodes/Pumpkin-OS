@@ -22,9 +22,9 @@ unsigned char inb(unsigned short port) {
 
 */
 
-void print(char* message, uint8_t color) {
+void print(const char *string, uint8_t color) {
    volatile char *video_memory = (volatile char*)0xB8000;
-   char string[] = "Starting up...";
+   char string[] = "haha this text go brrrrr";
    int length = sizeof(string) / sizeof(char);
    for (int i = 0; i < length; i++) {
       *video_memory++ = string[i];
