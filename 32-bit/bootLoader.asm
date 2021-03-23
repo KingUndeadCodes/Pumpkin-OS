@@ -1,4 +1,4 @@
-; Logs -> ||
+; Logs [initial] -> ||
 ; @date initial: 2021/3/23
 ; @name initial: King Undead
 ; @text initial:
