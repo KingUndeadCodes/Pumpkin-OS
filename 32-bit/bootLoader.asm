@@ -1,3 +1,10 @@
+/*
+ * @date initial: 2021/3/23
+ * @name initial: King Undead
+ * @text initial:
+ *   - Basic 32-bit bootloader. 
+*/
+
 [bits 16]
 [org 0x7c00]
 
@@ -112,3 +119,4 @@ b32:
 
 [SECTION signature start=0x7dfe]
 dw 0aa55h
+
