@@ -3,26 +3,7 @@
  * Protected under MIT License which lays down the terms of use.
 */
 
-#include <stdbool.h>
-#include <stdint.h>
-
-/*
-
-void outb(unsigned short port, unsigned char val) {
-   asm volatile ("outb %0, %1" : : "a"(val), "Nd"(port));
-}
-
-unsigned char inb(unsigned short port) {
-   unsigned char returnVal;
-   asm volatile ("inb %1, %0"
-   : "=a"(returnVal)
-   : "Nd"(port));
-   return returnVal;
-}
-
-*/
-
-void print(const char *string, uint8_t color) {
+void print(int color) {
    volatile char *video_memory = (volatile char*)0xB8000;
    char string[] = "haha this text go brrrrr";
    int length = sizeof(string) / sizeof(char);
@@ -40,3 +21,19 @@ extern "C" void _start() {
       // pass
    }
 }
+
+/*
+
+void outb(unsigned short port, unsigned char val) {
+   asm volatile ("outb %0, %1" : : "a"(val), "Nd"(port));
+}
+
+unsigned char inb(unsigned short port) {
+   unsigned char returnVal;
+   asm volatile ("inb %1, %0"
+   : "=a"(returnVal)
+   : "Nd"(port));
+   return returnVal;
+}
+
+*/
