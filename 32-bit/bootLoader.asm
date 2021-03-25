@@ -103,13 +103,10 @@ b32:
     mov gs, ax
     mov ss, ax
 
-    mov ebp, 0x2000
+    mov ebp, 0x90000
     mov esp, ebp
 
     jmp KERNEL_LOCATION
 
-    jmp $
-
 [SECTION signature start=0x7dfe]
 dw 0aa55h
-

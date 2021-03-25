@@ -17,4 +17,4 @@ PrintString:
 	ret
 
 Found:
-  db 'Found: Yes', 0
+  db 'Found: True', 0

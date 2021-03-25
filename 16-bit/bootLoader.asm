@@ -8,7 +8,7 @@ mov sp, bp
 kernel equ 0x1000
 
 mov bx, Found
-call PrintString 
+call PrintString
 
 mov cx, 0fh
 mov dx, 9999h

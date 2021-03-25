@@ -1,11 +1,11 @@
-/* 
+/*
  * Copyright (C) 2020 KingUndeadCodes (https://github.com/KingUndeadCodes)
  * Protected under MIT License which lays down the terms of use.
 */
 
-void print(int color) {
+void print(const int color = 0x0f) {
    volatile char *video_memory = (volatile char*)0xB8000;
-   char string[] = "haha this text go brrrrr";
+   char string[] = "Hello, World!";
    int length = sizeof(string) / sizeof(char);
    for (int i = 0; i < length; i++) {
       *video_memory++ = string[i];
@@ -14,12 +14,7 @@ void print(int color) {
 }
 
 extern "C" void _start() {
-   const bool found = true;
-   if (found == true) {
-      // pass
-   } else {
-      // pass
-   }
+   print(0);
 }
 
 /*
