@@ -1,10 +1,3 @@
-; Logs [initial] -> ||
-; @date initial: 2021/3/23
-; @name initial: King Undead
-; @text initial:
-;   - Basic 32-bit bootloader.
-; ||
-
 [bits 16]
 [org 0x7c00]
 
