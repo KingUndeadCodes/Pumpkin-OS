@@ -14,7 +14,7 @@ void print(const int color = 0x0f) {
 }
 
 extern "C" void _start() {
-   print(0);
+   print();
 }
 
 /*
