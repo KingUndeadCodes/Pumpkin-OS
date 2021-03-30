@@ -3,18 +3,18 @@
  * Protected under MIT License which lays down the terms of use.
 */
 
-void print(const int color = 0x0f) {
+void println() {
    volatile char *video_memory = (volatile char*)0xB8000;
-   char string[] = "Hello, World!";
+   char string[] = "...";
    int length = sizeof(string) / sizeof(char);
    for (int i = 0; i < length; i++) {
       *video_memory++ = string[i];
-      *video_memory++ = color;
+      *video_memory++ = 0x0f;
    }
 }
 
 extern "C" void _start() {
-   print();
+   println();
 }
 
 /*
