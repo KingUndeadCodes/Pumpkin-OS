@@ -1,5 +1,6 @@
 /*
-  Trying out ARM. Ignore.
+ * Experimental booting process for ARM (Still testing):
+ *    - Copyright King Undead 2021.
 */
 
 .section .text
@@ -7,3 +8,5 @@
 
   _start:
     // pass
+    
+    
