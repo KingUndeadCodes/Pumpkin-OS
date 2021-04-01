@@ -30,7 +30,7 @@ This OS uses BiOS and NOT UEFI so keep that in mind.
 NASM (netwide-assembler) is licensed under the 2-clause BSD license.
 ```
 
-## Credits:
+## :jack_o_lantern: Credits :jack_o_lantern::
 
 - :jack_o_lantern: [KingUndeadCodes:](https://www.youtube.com/watch?v=dQw4w9WgXcQ)
   - Everything!
