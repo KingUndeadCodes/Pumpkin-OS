@@ -3,9 +3,9 @@
  * Protected under MIT License which lays down the terms of use.
 */
 
-void println(char *string) {
+void println() {
    volatile char *video_memory = (volatile char*)0xB8000;
-   // char string[] = "OK...";
+   char string[] = "OK...";
    int length = sizeof(string) / sizeof(char);
    for (int i = 0; i < length; i++) {
       *video_memory++ = string[i];
