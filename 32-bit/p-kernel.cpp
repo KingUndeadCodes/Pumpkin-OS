@@ -10,18 +10,12 @@ void println() {
    for (int i = 0; i < length; i++) {
       *video_memory++ = string[i];
       *video_memory++ = 0x0f;
-   }
-}
-
-extern "C" void _start() {
-   println("OK...");
-}
-
-/*
+   };
+};
 
 void outb(unsigned short port, unsigned char val) {
    asm volatile ("outb %0, %1" : : "a"(val), "Nd"(port));
-}
+};
 
 unsigned char inb(unsigned short port) {
    unsigned char returnVal;
@@ -29,6 +23,8 @@ unsigned char inb(unsigned short port) {
    : "=a"(returnVal)
    : "Nd"(port));
    return returnVal;
-}
+};
 
-*/
+extern "C" void _start() {
+   println("OK...");
+};
