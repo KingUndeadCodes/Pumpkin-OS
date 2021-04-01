@@ -3,8 +3,10 @@
  * Protected under MIT License which lays down the terms of use.
 */
 
+// system vars
+volatile char *video_memory = (volatile char*)0xB8000;
+
 void println() {
-   volatile char *video_memory = (volatile char*)0xB8000;
    char string[] = "OK...";
    int length = sizeof(string) / sizeof(char);
    for (int i = 0; i < length; i++) {
