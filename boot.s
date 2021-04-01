@@ -1,6 +1,6 @@
 /*
  * Combination of stolen code morphed into one file.
- * CODE (7-21) || https://stackoverflow.com/questions/6139952/what-is-the-booting-process-for-arm
+ * CODE (6-20) || https://stackoverflow.com/questions/6139952/what-is-the-booting-process-for-arm
 */
 
 .globl _start
