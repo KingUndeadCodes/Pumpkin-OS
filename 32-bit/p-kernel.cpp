@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2020 KingUndeadCodes (https://github.com/KingUndeadCodes)
+ * Copyright (C) 2021 KingUndeadCodes (https://github.com/KingUndeadCodes)
  * Protected under MIT License which lays down the terms of use.
 */
 
