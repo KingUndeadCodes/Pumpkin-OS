@@ -26,5 +26,5 @@ unsigned char inb(unsigned short port) {
 };
 
 extern "C" void _start() {
-   println("OK...");
+   println();
 };
