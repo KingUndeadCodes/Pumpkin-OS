@@ -2,8 +2,8 @@
   Trying out ARM. Ignore.
 */
 
-.global _start
 .section .text
+.global _start
 
-_start:
-  // pass   
+  _start:
+    // pass
