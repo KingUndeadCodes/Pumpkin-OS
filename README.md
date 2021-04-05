@@ -24,12 +24,6 @@ This OS uses BiOS and NOT UEFI so keep that in mind.
 - Kernel / Programming API's
 ```
 
-## :jack_o_lantern: Build dependencies :jack_o_lantern::
-
-```
-NASM (netwide-assembler) is licensed under the 2-clause BSD license.
-```
-
 ## :jack_o_lantern: Credits :jack_o_lantern::
 
 - :jack_o_lantern: [KingUndeadCodes:](https://www.youtube.com/watch?v=dQw4w9WgXcQ)
