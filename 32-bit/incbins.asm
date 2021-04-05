@@ -1,5 +1,5 @@
-global _UwU
-global _OwO
+; global _UwU
+; global _OwO
 
 ; _UwU: incbin "../etc/UwU.txt"
 ; db 0
