@@ -7,3 +7,5 @@ call _start
 jmp $
 
 section .rodata
+
+%include "incbins.asm"
