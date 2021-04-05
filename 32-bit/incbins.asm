@@ -1,8 +1,8 @@
 global _UwU
 global _OwO
 
-_UwU: incbin "UwU.txt"
+_UwU: incbin "../etc/UwU.txt"
 db 0
 
-_OwO: incbin "OwO.txt"
+_OwO: incbin "../etc/OwO.txt"
 db 0
