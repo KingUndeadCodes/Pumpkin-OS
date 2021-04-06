@@ -1,7 +1,7 @@
 [bits 16]
 [org 0x7c00]
 
-mov ah, 0x0
+mov ah, 0x0			; clear screen (set text mode)
 mov al, 0x3
 int 0x10
 
@@ -103,10 +103,15 @@ b32:
     mov gs, ax
     mov ss, ax
 
-    mov ebp, 0x90000
+    mov ebp, 0x2000
     mov esp, ebp
 
+    ; mov ebx, Found
+    ; call print32
+
     jmp KERNEL_LOCATION
+
+    jmp $
 
 [SECTION signature start=0x7dfe]
 dw 0aa55h
