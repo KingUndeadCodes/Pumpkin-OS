@@ -96,7 +96,7 @@ print32:
     ret
 
 b32:
-    mov ax, DATA_SEG
+    mov ax, DATA_SEG ; mabye put 0x90000?
     mov ds, ax
     mov es, ax
     mov fs, ax
