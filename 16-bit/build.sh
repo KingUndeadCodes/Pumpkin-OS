@@ -4,5 +4,4 @@ function build {
    rm image.bin
 }
 
-build
-
+build now
