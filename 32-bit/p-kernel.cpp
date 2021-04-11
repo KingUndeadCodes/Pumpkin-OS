@@ -7,7 +7,7 @@
 volatile char *video_memory = (volatile char*)0xB8000;
 
 void println() {
-   char string[] = "OK...";
+   char string[] = "OKAY...";
    int length = sizeof(string) / sizeof(char);
    for (int i = 0; i < length; i++) {
       *video_memory++ = string[i];
