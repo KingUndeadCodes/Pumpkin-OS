@@ -96,7 +96,7 @@ print32:
     ret
 
 b32:
-    mov ax, DATA_SEG ; mabye put 0x90000?
+    mov ax, DATA_SEG
     mov ds, ax
     mov es, ax
     mov fs, ax
@@ -106,12 +106,7 @@ b32:
     mov ebp, 0x2000
     mov esp, ebp
 
-    ; mov ebx, Found
-    ; call print32
-
     jmp KERNEL_LOCATION
-
-    jmp $
 
 [SECTION signature start=0x7dfe]
 dw 0aa55h
