@@ -5,7 +5,7 @@ mov cx, 500
 mov bp, 0x7c00
 mov sp, bp
 
-kernel equ 0x1000
+; kernel equ 0x1000
 
 mov bx, Found
 call PrintString
