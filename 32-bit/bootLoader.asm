@@ -5,7 +5,7 @@ mov ah, 0x0			; clear screen (set text mode)
 mov al, 0x3
 int 0x10
 
-KERNEL_LOCATION equ 0x1000 ; maybe 0x2000
+KERNEL_LOCATION equ 0x1000
 
 mov [BOOT_DISK], dl         ; Stores the boot disk number
 xor ax, ax                  ; clear bits of ax
