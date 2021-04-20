@@ -1,7 +1,7 @@
 [bits 16]
 [org 0x7c00]
 
-; WARNING: FOLLOWING 3 LINES HAVE NOT BEEN TESTED!
+; || WARNING: FOLLOWING 3 LINES HAVE NOT BEEN TESTED! ||
 in al, 0x92
 or al, 2
 out 0x92, al
