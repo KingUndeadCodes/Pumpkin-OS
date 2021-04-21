@@ -25,5 +25,4 @@ disk_error:
   int 0x10
   mov al, 'r'
   int 0x10
-
   jmp $
