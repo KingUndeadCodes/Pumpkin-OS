@@ -21,18 +21,14 @@ disk_error:
   mov ah, 0x0e
 
   mov al, char_1
-  call char_print
+  int 0x10
   mov al, char_2
-  call char_print
+  int 0x10
   mov al, char_2
-  call char_print
+  int 0x10
   mov al, char_3
-  call char_print
+  int 0x10
   mov al, char_2
-  call char_print
+  int 0x10
 
   jmp $
-
-char_print:
-  int 0x10
-  ret
