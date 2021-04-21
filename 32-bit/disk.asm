@@ -13,22 +13,18 @@ disk_load:
 
 BOOT_DISK: db 0
 
-char_1 equ 'E'
-char_2 equ 'r'
-char_3 equ 'o'
-
 disk_error:
   mov ah, 0x0e
 
-  mov al, char_1
+  mov al, 'E'
   int 0x10
-  mov al, char_2
+  mov al, 'r'
   int 0x10
-  mov al, char_2
+  mov al, 'r'
   int 0x10
-  mov al, char_3
+  mov al, 'o'
   int 0x10
-  mov al, char_2
+  mov al, 'r'
   int 0x10
 
   jmp $
