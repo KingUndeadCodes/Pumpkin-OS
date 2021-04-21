@@ -16,3 +16,6 @@ Gentoo:
   dev-libs/mpc
   dev-libs/mpfr	
   sys-apps/texinfo
+
+Package ..:
+  
