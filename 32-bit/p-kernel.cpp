@@ -3,11 +3,9 @@
  * Protected under MIT License which lays down the terms of use.
 */
 
-// system vars
-volatile char *video_memory = (volatile char*)0xB8000;
-
 void println() {
-   char string[] = "OK";
+   volatile char *video_memory = (volatile char*)0xB8000;
+   char string[] = "Pumpkin OS - 4-14-2021 - MIT";
    int length = sizeof(string) / sizeof(char);
    for (int i = 0; i < length; i++) {
       *video_memory++ = string[i];
