@@ -1,1 +1,18 @@
-#
+Debian:
+  build-essential	
+  bison
+  flex
+  libgmp3-dev	
+  libmpc-dev	
+  libmpfr-dev
+  texinfo
+  
+Gentoo:
+  sys-devel/gcc
+  sys-devel/make
+  sys-devel/bison
+  sys-devel/flex
+  dev-libs/gmp
+  dev-libs/mpc
+  dev-libs/mpfr	
+  sys-apps/texinfo
