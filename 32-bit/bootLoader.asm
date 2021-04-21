@@ -1,11 +1,6 @@
 [bits 16]
 [org 0x7c00]
 
-; || WARNING: FOLLOWING 3 LINES HAVE NOT BEEN TESTED! ||
-in al, 0x92
-or al, 2
-out 0x92, al
-
 mov ah, 0x0			; clear screen (set text mode)
 mov al, 0x3
 int 0x10
