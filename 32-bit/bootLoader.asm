@@ -1,21 +1,21 @@
-[bits 16]
+[bits 16]                   ; sets to 16 bits
 [org 0x7c00]
 
-mov ah, 0x0			; clear screen (set text mode)
-mov al, 0x3
-int 0x10
+mov ah, 0x0		    ; clear screen (set text mode)
+mov al, 0x3                 ; clear screen
+int 0x10                    ; BIOS interupt
 
-KERNEL_LOCATION equ 0x1000
+KERNEL_LOCATION equ 0x1000  ; Entry point for Kernel.
 
 mov [BOOT_DISK], dl         ; Stores the boot disk number
 xor ax, ax                  ; clear bits of ax
 mov es, ax                  ; set es to 0
 mov ds, ax                  ; set ds to 0
-mov bp, 0x8000              ; stack base
+mov bp, 0x8000              ; stack base (0x8000)
 mov sp, bp
 mov bx, KERNEL_LOCATION     ; ES:BX is the location to read from, e.g. 0x00$
 mov dh, 35                  ; read 20 sectors (blank sectors: empty_end)
-call disk_load
+call disk_load              ; call disk_load subroutine
 
     jmp 0:kernel_start
 
@@ -50,8 +50,6 @@ gdt_descriptor:
 CODE_SEG equ gdt_code - gdt_start
 DATA_SEG equ gdt_data - gdt_start
 
-Found db 'Found: True', 0
-
 kernel_start:
     mov ax, 0
     mov ss, ax
@@ -66,13 +64,18 @@ kernel_start:
     cli
     lgdt[gdt_descriptor]
     mov eax, cr0
-    or eax, 0x1
+    or al, 1
     mov cr0, eax
     jmp CODE_SEG:b32
 
 %include "disk.asm"
 
 [bits 32]
+
+a20:
+  in al, 0x92
+  or al, 2
+  out 0x92, al
 
 VIDEO_MEMORY equ 0xb8000
 WHITE_ON_BLACK equ 0x0f
@@ -95,6 +98,17 @@ print32:
     popa
     ret
 
+shutdown:
+    mov ax, 0x1000
+    mov ax, ss
+    mov sp, 0xf000
+    mov ax, 0x5307
+    mov bx, 0x0001
+    mov cx, 0x0003
+    int 0x15
+
+    ret ; If interrupt doesnt work
+
 b32:
     mov ax, DATA_SEG
     mov ds, ax
@@ -106,7 +120,11 @@ b32:
     mov ebp, 0x2000
     mov esp, ebp
 
-    jmp KERNEL_LOCATION
+    call a20                  ; Enable the A20 Line.
+
+    jmp KERNEL_LOCATION       ; Kernel Load
+    jmp shutdown              ; Shutdown if kernel load fails.
+
 
 [SECTION signature start=0x7dfe]
 dw 0aa55h
