@@ -62,6 +62,9 @@ kernel_start:
     mov gs, ax
 
     cli
+    in al, 0x92
+    or al, 2
+    out 0x92, al
     lgdt[gdt_descriptor]
     mov eax, cr0
     or al, 1
@@ -71,11 +74,6 @@ kernel_start:
 %include "disk.asm"
 
 [bits 32]
-
-a20:
-  in al, 0x92
-  or al, 2
-  out 0x92, al
 
 VIDEO_MEMORY equ 0xb8000
 WHITE_ON_BLACK equ 0x0f
@@ -119,8 +117,6 @@ b32:
 
     mov ebp, 0x2000
     mov esp, ebp
-
-    call a20                  ; Enable the A20 Line.
 
     jmp KERNEL_LOCATION       ; Kernel Load
     jmp shutdown              ; Shutdown if kernel load fails.
