@@ -1,7 +1,7 @@
 [bits 16]                   ; sets to 16 bits
 [org 0x7c00]
 
-mov ah, 0x0		    ; clear screen (set text mode)
+mov ah, 0x0		            ; clear screen (set text mode)
 mov al, 0x3                 ; clear screen
 int 0x10                    ; BIOS interupt
 
@@ -104,8 +104,7 @@ shutdown:
     mov bx, 0x0001
     mov cx, 0x0003
     int 0x15
-
-    ret ; If interrupt doesnt work
+    ret
 
 b32:
     mov ax, DATA_SEG
