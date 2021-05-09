@@ -3,16 +3,18 @@
  * Protected under MIT License which lays down the terms of use.
 */
 
-void println() {
-   volatile char *video_memory = (volatile char*)0xB8000;
-   char string[] = "Pumpkin OS - 4-14-2021 - MIT";
-   int length = sizeof(string) / sizeof(char);
-   for (int i = 0; i < length; i++) {
-      *video_memory++ = string[i];
-      *video_memory++ = 0x0f;
-   };
+#include <stdint.h>
+
+inline void println(uint8_t color = 10) {
+    volatile char *video_memory = (volatile char*)0xb8000;
+    char string[] = "[1] Found.;
+    long length = sizeof(string) / sizeof(char);
+    for (int i = 0; i < length; i++) {
+       video_memory[2 * i] = string[i];
+       video_memory[2 * i + 1] = color;
+    };
 };
 
 extern "C" void _start() {
-   println();
-};
+    println(5);
+}
