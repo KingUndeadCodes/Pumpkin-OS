@@ -1,3 +1,5 @@
+// From: https://wiki.osdev.org/Interrupts_tutorial
+
 struct IDT_entry{
 	unsigned short int offset_lowerbits;
 	unsigned short int selector;
