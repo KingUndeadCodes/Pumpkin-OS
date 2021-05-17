@@ -23,4 +23,4 @@ disk_error:
     int 0x10
     mov al, 0x6f
     int 0x10
-    hlt
+    jmp $
