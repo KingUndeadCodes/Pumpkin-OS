@@ -1,7 +1,7 @@
-[bits 16]                   ; sets to 16 bits
+[bits 16]                   ; 16-bit
 [org 0x7c00]
 
-mov ah, 0x0		            ; clear screen (set text mode)
+mov ah, 0x0		    ; clear screen (set text mode)
 mov al, 0x3                 ; clear screen
 int 0x10                    ; BIOS interupt
 
@@ -14,7 +14,7 @@ mov ds, ax                  ; set ds to 0
 mov bp, 0x8000              ; stack base (0x8000)
 mov sp, bp
 mov bx, KERNEL_LOCATION     ; ES:BX is the location to read from, e.g. 0x00$
-mov dh, 35                  ; read 20 sectors (blank sectors: empty_end)
+mov dh, 20                  ; read 20 sectors (blank sectors: empty_end)
 call disk_load              ; call disk_load subroutine
 
     jmp 0:kernel_start
@@ -29,16 +29,16 @@ gdt_code:
     dw 0xffff
     dw 0x0
     db 0x0
-    db 10011010b
-    db 11001111b
+    db 0b10011010
+    db 0b11001111
     db 0x0
 
 gdt_data:
     dw 0xffff
     dw 0x0
     db 0x0
-    db 10010010b
-    db 11001111b
+    db 0b10010010
+    db 0b11001111
     db 0x0
 
 gdt_end:
@@ -62,12 +62,9 @@ kernel_start:
     mov gs, ax
 
     cli
-    in al, 0x92
-    or al, 2
-    out 0x92, al
     lgdt[gdt_descriptor]
     mov eax, cr0
-    or al, 1
+    or al, 0x1
     mov cr0, eax
     jmp CODE_SEG:b32
 
@@ -114,12 +111,11 @@ b32:
     mov gs, ax
     mov ss, ax
 
-    mov ebp, 0x2000
+    mov ebp, 0x90000		; 32 bit stack base pointer
     mov esp, ebp
 
     jmp KERNEL_LOCATION       ; Kernel Load
     jmp shutdown              ; Shutdown if kernel load fails.
-
 
 [SECTION signature start=0x7dfe]
 dw 0aa55h
