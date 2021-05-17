@@ -20,7 +20,6 @@ function build {
    rm image.bin empty_end.bin short.bin
    echo -e " done"
    echo -e "\033[1;32mFinished!\033[0m" | sudo tee /dev/kmsg
-   return
 }
 
 build
