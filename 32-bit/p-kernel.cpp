@@ -6,5 +6,5 @@
 #include "mods/text.cpp"
 
 extern "C" void _start() {
-    printf("Alive!", 10);
+    printf("Hello, World!", 10);
 }
