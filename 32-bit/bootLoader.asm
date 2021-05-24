@@ -50,6 +50,16 @@ gdt_descriptor:
 CODE_SEG equ gdt_code - gdt_start
 DATA_SEG equ gdt_data - gdt_start
 
+shutdown:
+    mov ax, 0x1000
+    mov ax, ss
+    mov sp, 0xf000
+    mov ax, 0x5307
+    mov bx, 0x0001
+    mov cx, 0x0003
+    int 0x15
+    ret
+
 kernel_start:
     mov ax, 0
     mov ss, ax
@@ -93,16 +103,6 @@ print32:
     popa
     ret
 
-shutdown:
-    mov ax, 0x1000
-    mov ax, ss
-    mov sp, 0xf000
-    mov ax, 0x5307
-    mov bx, 0x0001
-    mov cx, 0x0003
-    int 0x15
-    ret
-
 b32:
     mov ax, DATA_SEG
     mov ds, ax
@@ -111,7 +111,7 @@ b32:
     mov gs, ax
     mov ss, ax
 
-    mov ebp, 0x90000		; 32 bit stack base pointer
+    mov ebp, 0x90000	      ; 32 bit stack base pointer
     mov esp, ebp
 
     jmp KERNEL_LOCATION       ; Kernel Load

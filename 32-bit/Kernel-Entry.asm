@@ -5,5 +5,3 @@ section .text
 call _start
 
 jmp $
-
-section .rodata
