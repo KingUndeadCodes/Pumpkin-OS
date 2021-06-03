@@ -17,10 +17,10 @@ function build {
    echo -e "\033[1;33mRunning QEMU...\033[0m"
    qemu-system-i386 -drive format=raw,file=image.bin,if=floppy -vga std
    echo -ne "\033[1;33mCleaning up...\033[0m"
-   rm image.bin empty_end.bin short.bin
+   rm image.bin empty_end.bin short.bin IRQ.o
    echo -e " done"
    echo -e "\033[1;32mFinished!\033[0m" | sudo tee /dev/kmsg
    return
 }
 
-build
+build;
