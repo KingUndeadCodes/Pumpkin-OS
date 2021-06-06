@@ -1,3 +1,5 @@
+%include "disk.asm"
+
 [bits 16]                   ; 16-bit
 [org 0x7c00]
 
@@ -77,8 +79,6 @@ kernel_start:
     or al, 0x1
     mov cr0, eax
     jmp CODE_SEG:b32
-
-%include "disk.asm"
 
 [bits 32]
 
