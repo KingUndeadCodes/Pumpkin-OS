@@ -1,4 +1,3 @@
-; http://www.osdever.net/tutorials/view/interrupts-exceptions-and-idts-part-2-exceptions
 %include "disk.asm"
 
 [bits 16]                   ; 16-bit
