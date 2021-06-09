@@ -111,7 +111,7 @@ b32:
     mov gs, ax
     mov ss, ax
 
-    mov ebp, 0x90000  	      ; 32 bit stack base pointer
+    mov ebp, KERNEL_LOCATION  ; 32 bit stack base pointer
     mov esp, ebp
 
     jmp KERNEL_LOCATION       ; Kernel Load
