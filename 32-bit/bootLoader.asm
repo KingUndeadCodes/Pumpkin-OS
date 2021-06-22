@@ -15,7 +15,7 @@ mov es, ax                  ; set es to 0
 mov ds, ax                  ; set ds to 0
 mov bp, 0x8000              ; stack base (0x8000)
 mov sp, bp
-mov bx, KERNEL_LOCATION     ; ES:BX is the location to read from, e.g. 0x00$
+mov bx, KERNEL_LOCATION     ; ES:BX is the location to read from
 mov dh, 35                  ; read 20 sectors (blank sectors: empty_end)
 call disk_load              ; call disk_load subroutine
 
