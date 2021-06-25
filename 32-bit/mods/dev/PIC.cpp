@@ -5,7 +5,7 @@
 #define ICW1 0x11
 #define ICW4 0x01
 
-inline void init_pics(int pic1, int pic2) {
+void init_pics(int pic1, int pic2) {
    outb(PIC1, ICW1);
    outb(PIC2, ICW1);
    outb(PIC1 + 1, pic1);

@@ -1,13 +1,13 @@
 %include "disk.asm"
 
-[bits 16]                   ; 16-bit
+[bits 16]
 [org 0x7c00]
 
-mov ah, 0x0		    ; clear screen (set text mode)
-mov al, 0x3                 ; clear screen
-int 0x10                    ; BIOS interupt
+mov ah, 0x0
+mov al, 0x3
+int 0x10
 
-KERNEL_LOCATION equ 0x1000  ; Entry point for Kernel.
+KERNEL_LOCATION equ 0x1000
 
 mov [BOOT_DISK], dl         ; Stores the boot disk number
 xor ax, ax                  ; clear bits of ax
@@ -15,7 +15,7 @@ mov es, ax                  ; set es to 0
 mov ds, ax                  ; set ds to 0
 mov bp, 0x8000              ; stack base (0x8000)
 mov sp, bp
-mov bx, KERNEL_LOCATION     ; ES:BX is the location to read from
+mov bx, KERNEL_LOCATION     ; ES:BX is the location to read from, e.g. 0x00$
 mov dh, 35                  ; read 20 sectors (blank sectors: empty_end)
 call disk_load              ; call disk_load subroutine
 
@@ -46,7 +46,7 @@ gdt_data:
 gdt_end:
 
 gdt_descriptor:
-    dw gdt_end - gdt_start
+    dw gdt_end - gdt_start - 1
     dd gdt_start
 
 CODE_SEG equ gdt_code - gdt_start
@@ -67,7 +67,7 @@ kernel_start:
     mov ss, ax
     mov sp, 0xFFFC
 
-    mov ax, 0
+    xor ax, ax
     mov ds, ax
     mov es, ax
     mov fs, ax
@@ -76,7 +76,7 @@ kernel_start:
     cli
     lgdt[gdt_descriptor]
     mov eax, cr0
-    or al, 0x1
+    or eax, 1
     mov cr0, eax
     jmp CODE_SEG:b32
 
@@ -106,16 +106,16 @@ print32:
 b32:
     mov ax, DATA_SEG
     mov ds, ax
+    mov ss, ax
     mov es, ax
     mov fs, ax
     mov gs, ax
-    mov ss, ax
 
-    mov ebp, 0x90000          ; 32 bit stack base pointer
+    mov ebp, 0x90000
     mov esp, ebp
 
-    jmp KERNEL_LOCATION       ; Kernel Load
-    jmp shutdown              ; Shutdown if kernel load fails.
+    jmp KERNEL_LOCATION
+    jmp shutdown
 
 [SECTION signature start=0x7dfe]
 dw 0aa55h
