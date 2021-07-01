@@ -19,9 +19,9 @@ enum {
     COLOR_WHITE = 0xF,
 };
 
-static u32 strlen(char* str) {
+static u32 strlen(char* string) {
     u32 len = 0;
-    while (str[len] && str[len] != '\0') {len++;}
+    while (string[len] && string[len] != '\0') {len++;}
     return len;
 };
 
