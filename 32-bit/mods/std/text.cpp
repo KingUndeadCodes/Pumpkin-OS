@@ -27,8 +27,7 @@ static u32 strlen(char* string) {
 
 void printf(char* string, u8 color = 15) {
     volatile char *video_memory = (volatile char*)0xb8000;
-    u32 length = strlen(string);
-    for (int i = 0; i < length; i++) {
+    for (int i = 0; i < strlen(string); i++) {
        video_memory[2 * i] = string[i];
        video_memory[2 * i + 1] = color;
     }
