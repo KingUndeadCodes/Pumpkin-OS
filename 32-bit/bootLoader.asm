@@ -111,9 +111,13 @@ b32:
     mov fs, ax
     mov gs, ax
 
+    ; in al, 0x92
+    ; or al, 2
+    ; out 0x92, al
+
     mov ebp, 0x90000
     mov esp, ebp
-
+    
     jmp KERNEL_LOCATION
     jmp shutdown
 
