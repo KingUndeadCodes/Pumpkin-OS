@@ -53,6 +53,7 @@ CODE_SEG equ gdt_code - gdt_start
 DATA_SEG equ gdt_data - gdt_start
 
 shutdown:
+    ; jmp 0xFFFF:0
     mov ax, 0x1000
     mov ax, ss
     mov sp, 0xf000
@@ -74,7 +75,7 @@ kernel_start:
     mov gs, ax
 
     cli
-    lgdt[gdt_descriptor]
+    lgdt [gdt_descriptor]
     mov eax, cr0
     or eax, 1
     mov cr0, eax
@@ -111,9 +112,13 @@ b32:
     mov fs, ax
     mov gs, ax
 
+    in al, 0x92
+    or al, 2
+    out 0x92, al
+
     mov ebp, 0x90000
     mov esp, ebp
-    
+
     jmp KERNEL_LOCATION
     jmp shutdown
 
