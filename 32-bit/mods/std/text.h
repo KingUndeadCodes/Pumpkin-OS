@@ -1,5 +1,8 @@
-#include "stdint.h"
 #pragma once
+#ifndef TEXT_H
+#define TEXT_H
+#include <stdint.h>
+#include <stddef.h>
 
 enum {
     COLOR_BLACK = 0x0,
@@ -20,5 +23,22 @@ enum {
     COLOR_WHITE = 0xF,
 };
 
-static u32 strlen(char* string);
-void printf(char* string, u8 color);
+const static size_t COLS = 80;
+const static size_t ROWS = 25;
+
+struct Char {
+    uint8_t character;
+    uint8_t color;
+};
+
+size_t strlen(const char* str);
+size_t strspn(const char* str1, const char* str2);
+char* strcat(char* dest, const char* src);
+void* memchr(const void* str, int c, size_t n);
+void* memset(void* dest, uint8_t val, size_t count);
+void printf(const char* string, uint8_t color = 15);
+void d_cursor();
+void e_cursor(uint8_t cursor_start, uint8_t cursor_end);
+void m_cursor(int x, int y);
+
+#endif

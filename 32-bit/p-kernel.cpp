@@ -3,10 +3,12 @@
  * Protected under MIT License which lays down the terms of use.
 */
 
-#include "mods/std/text.cpp"
-#include "mods/dev/PIC.cpp"
+#include "mods/std/text.h"
+#include "mods/dev/PIC.h"
 
 extern "C" void _start() {
+    e_cursor(0, 10);
+    printf("Booting PumpkinOS (ver: 0)\n", COLOR_CYAN | COLOR_BLACK << 4);
     init_pics(0x20, 0x28);
-    printf("Loading...", COLOR_LIGHT_GREEN);
+    printf("\nInitialized PIC!");
 }
