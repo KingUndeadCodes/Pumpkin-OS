@@ -40,5 +40,6 @@ void printf(const char* string, uint8_t color = 15);
 void d_cursor();
 void e_cursor(uint8_t cursor_start, uint8_t cursor_end);
 void m_cursor(int x, int y);
+uint16_t g_cursor(void);
 
 #endif
