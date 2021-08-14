@@ -66,6 +66,15 @@ void m_cursor(int x, int y) {
     outb(0x3D5, (uint8_t) ((pos >> 8) & 0xFF));
 }
 
+uint16_t g_cursor(void) {
+    uint16_t pos = 0;
+    outb(0x3D4, 0x0F);
+    pos |= inb(0x3D5);
+    outb(0x3D4, 0x0E);
+    pos |= ((uint16_t)inb(0x3D5)) << 8;
+    return pos;
+}
+
 void printf(const char* string, uint8_t color = 15) {
     for (int i = 0; i < strlen(string); i++) {
         if (string[i] == '\n') {
