@@ -6,9 +6,9 @@ function build {
     nasm bootLoader.asm -f bin -o Pump.bin
     nasm empty_end.asm -f bin -o empty_end.bin
     nasm Kernel-Entry.asm -f elf -o Kernel-Entry.o
-    i386-elf-gcc -fpermissive -ffreestanding -m32 -g -c -w p-kernel.cpp -o kernel.o
-    i386-elf-gcc -fpermissive -ffreestanding -m32 -g -c -w mods/std/text.cpp -o text.o
-    i386-elf-gcc -fpermissive -ffreestanding -m32 -g -c -w mods/dev/PIC.cpp -o PIC.o
+    i386-elf-g++ -fpermissive -ffreestanding -m32 -g -c -w p-kernel.cpp -o kernel.o # add -o2 flag later.
+    i386-elf-g++ -fpermissive -ffreestanding -m32 -g -c -w mods/std/text.cpp -o text.o
+    i386-elf-g++ -fpermissive -ffreestanding -m32 -g -c -w mods/dev/PIC.cpp -o PIC.o
     i386-elf-ld -o kernel.bin -Ttext 0x1000 Kernel-Entry.o kernel.o text.o PIC.o --oformat binary
     cat Pump.bin kernel.bin > short.bin
     cat short.bin empty_end.bin > image.bin

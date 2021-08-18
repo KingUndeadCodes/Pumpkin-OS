@@ -37,9 +37,11 @@ char* strcat(char* dest, const char* src);
 void* memchr(const void* str, int c, size_t n);
 void* memset(void* dest, uint8_t val, size_t count);
 void printf(const char* string, uint8_t color = 15);
-void d_cursor();
-void e_cursor(uint8_t cursor_start, uint8_t cursor_end);
-void m_cursor(int x, int y);
-uint16_t g_cursor(void);
+namespace Cursor {
+   void disbaleCursor();
+   void enableCursor(uint8_t cursor_start, uint8_t cursor_end);
+   void moveCursor(int x, int y);
+   uint16_t getCursor(void);
+}
 
 #endif

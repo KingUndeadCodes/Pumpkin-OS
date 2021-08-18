@@ -7,7 +7,7 @@
 #include "mods/dev/PIC.h"
 
 extern "C" void _start() {
-    e_cursor(0, 10);
+    Cursor::enableCursor(0, 10);
     printf("Booting PumpkinOS (ver: 0)\n", COLOR_CYAN | COLOR_BLACK << 4);
     init_pics(0x20, 0x28);
     printf("\nInitialized PIC!");
