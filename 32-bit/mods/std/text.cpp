@@ -1,4 +1,3 @@
-// #include "include/string.h"
 #include <string.h>
 #include "../dev/port.cpp"
 #include "text.h"
