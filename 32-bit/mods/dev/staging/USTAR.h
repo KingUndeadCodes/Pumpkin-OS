@@ -6,6 +6,17 @@
 #define DIRECTORY		'5'
 #define NAMED_PIPE		'6'
 
+/*
+    char filename[100];
+    char mode[8];
+    char uid[8];
+    char gid[8];
+    char size[12];
+    char mtime[12];
+    char chksum[8];
+    char typeflag[1];
+*/
+
 typedef struct {
 	char File_Name[100]; 		// File name
 	char File_Mode[8];   		// File mode
