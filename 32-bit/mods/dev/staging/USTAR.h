@@ -18,13 +18,12 @@
 */
 
 typedef struct {
-	char File_Name[100]; 		// File name
-	char File_Mode[8];   		// File mode
-	char File_UID[8];    		// Owner's numeric user ID
-	char File_GID[8];    		// Group's numeric user ID
-	char File_Size[12];  		// File size in bytes (octal base)
-	char File_Time[12];  		// Last modification time in numeric Unix time format (octal)
-	char File_Check[8];  		// Checksum for header record
-	char File_Flag;      		// Type Flag
-	char File_LinkName[100];	// Name of linked file
+	char filename[100]; 		// File name
+	char mode[8];   		// File mode
+	char uid[8];    		// Owner's numeric user ID
+	char gid[8];    		// Group's numeric user ID
+	char size[12];  		// File size in bytes (octal base)
+	char mtime[12];  		// Last modification time in numeric Unix time format (octal)
+	char chksum[8];  		// Checksum for header record
+	char typeflag[1];      		// Type Flag
 } tar_t;
