@@ -26,4 +26,5 @@ typedef struct {
 	char mtime[12];  		// Last modification time in numeric Unix time format (octal)
 	char chksum[8];  		// Checksum for header record
 	char typeflag[1];      		// Type Flag
-} tar_t;
+        char linkname[100];             // Name of linked file
+} tar_header;
