@@ -31,12 +31,13 @@ struct Char {
     uint8_t color;
 };
 
-void printf(const char* string, uint8_t color = 15);
 namespace Cursor {
    void disbaleCursor();
    void enableCursor(uint8_t cursor_start, uint8_t cursor_end);
    void moveCursor(int x, int y);
    uint16_t getCursor(void);
 }
+
+void printf(const char* string, uint8_t color = 15);
 
 #endif
