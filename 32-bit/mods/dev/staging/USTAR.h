@@ -16,4 +16,8 @@ typedef struct {
 	char chksum[8];  		// Checksum for header record
 	char typeflag[1];      		// Type Flag
         char linkname[100];             // Name of linked file
+        char magic[6];                  // UStar indicator "ustar" then NUL
+        char version[2];                // UStar version "00"
+        char username[32];              // Owner user name
+        char groupname[32];             // Owner group name
 } tar_header;
