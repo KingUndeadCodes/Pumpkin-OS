@@ -1,7 +1,6 @@
 # :jack_o_lantern: Pumpkin OS :jack_o_lantern:
 
 <i>Pumpkin OS</i> is licensed under the [**MIT license**](/LICENSE).\
-Don't violate the license or <b><i>I'll come to your house</i></b>.
 
 ```
 This is just a simple "toy" OS I make in my free time.
