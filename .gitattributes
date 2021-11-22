@@ -1,4 +1,4 @@
-*linguist-vendored
-/etc/16-bit/build.sh linguist-vendored=false 
-/etc/16-bit/print.asm linguist-vendored=false 
-/etc/16-bit/bootLoader.asm linguist-vendored=false 
+/etc/16-bit/* linguist-vendored
+build.sh linguist-vendored=false 
+print.asm linguist-vendored=false 
+bootLoader.asm linguist-vendored=false 
