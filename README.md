@@ -11,19 +11,17 @@ This OS uses BiOS and NOT UEFI so keep that in mind.
 ```diff
 # Done:
 + Core / Bootloader
-+ Design / Logo
++ Kernel / Print function
 
 # Doing:
-! Kernel / Print function
+@@ Low Level Enchantments @@
 
 # Haven't started:
 - Kernel / Keyboard input
 - Kernel / File System
 - Kernel / Programming language ports
 - Kernel / Programming API's
+
+# Notes:
+! More Advanced "printf" function coming soon
 ```
-
-## :jack_o_lantern: Credits :jack_o_lantern::
-
-- :jack_o_lantern: [KingUndeadCodes:](https://www.youtube.com/watch?v=dQw4w9WgXcQ)
-  - Everything!
