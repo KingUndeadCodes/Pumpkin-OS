@@ -1,0 +1,4 @@
+[/etc/16-bit]
+*linguist-vendored
+*.sh linguist-vendored=false 
+*.asm linguist-vendored=false 
