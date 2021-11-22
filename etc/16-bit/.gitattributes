@@ -1,3 +1,0 @@
-build.sh linguist-detectable=false 
-print.asm linguist-detectable=false 
-bootLoader.asm linguist-detectable=false 
