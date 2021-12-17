@@ -1,6 +1,6 @@
 #include <string.h>
 #include "../dev/port.cpp"
-#include "text.h"
+#include "include/text.h"
 
 struct Char* buffer = (struct Char*) 0xb8000;
 size_t col = 0;

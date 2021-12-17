@@ -11,3 +11,5 @@ void init_pics(int pic1, int pic2) {
    outb(PIC2 + 1, ICW4);
    outb(PIC1 + 1, 0xFF);
 }
+
+

@@ -5,3 +5,5 @@ section .text
 call _start
 
 jmp $
+
+%include "mods/dev/idt/idt.asm"
