@@ -39,6 +39,5 @@ namespace Cursor {
 }
 
 void printf(const char* string, uint8_t color = 15);
-void scanf(struct regs *r);
 
 #endif
