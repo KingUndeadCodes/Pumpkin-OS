@@ -12,12 +12,12 @@ This OS uses BiOS and NOT UEFI so keep that in mind.
 # Done:
 + Core / Bootloader
 + Kernel / Print function
++ Kernel / Keyboard Input
 
 # Doing:
-@@ Low Level Enchantments @@
+@@ Keyboard Driver Enchantments @@
 
 # Haven't started:
-- Kernel / Keyboard input
 - Kernel / File System
 - Kernel / Programming language ports
 - Kernel / Programming API's
