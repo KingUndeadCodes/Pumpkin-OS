@@ -1,4 +1,5 @@
 #include <string.h>
+#include "idt.h"
 
 struct IDTEntry {
 	unsigned short base_lo;

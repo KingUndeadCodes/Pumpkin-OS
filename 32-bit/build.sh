@@ -10,9 +10,11 @@ function build {
     i386-elf-g++ -fpermissive -ffreestanding -m32 -g -c -w -I mods/std/include -o2 p-kernel.cpp -o kernel.o
     i386-elf-g++ -fpermissive -ffreestanding -m32 -g -c -w -I mods/std/include -o2 mods/std/string.cpp -o string.o
     i386-elf-g++ -fpermissive -ffreestanding -m32 -g -c -w -I mods/std/include -o2 mods/std/text.cpp -o text.o
-    i386-elf-g++ -fpermissive -ffreestanding -m32 -g -c -w -I mods/std/include -o2 mods/dev/PIC.cpp -o PIC.o
     i386-elf-g++ -fpermissive -ffreestanding -m32 -g -c -w -I mods/std/include -o2 mods/dev/idt/idt.cpp -o idt.o
-    i386-elf-ld -o kernel.bin -Ttext 0x1000 Kernel-Entry.o kernel.o text.o idt.o PIC.o string.o --oformat binary
+    i386-elf-g++ -fpermissive -ffreestanding -m32 -g -c -w -I mods/std/include -o2 mods/dev/idt/isr.cpp -o isr.o
+    i386-elf-g++ -fpermissive -ffreestanding -m32 -g -c -w -I mods/std/include -o2 mods/dev/idt/irq.cpp -o irq.o
+    i386-elf-g++ -fpermissive -ffreestanding -m32 -g -c -w -I mods/std/include -o2 mods/dev/kb.cpp -o kb.o
+    i386-elf-ld -o kernel.bin -Ttext 0x1000 Kernel-Entry.o kernel.o text.o idt.o isr.o irq.o kb.o string.o --oformat binary
     cat Pump.bin kernel.bin > short.bin
     cat short.bin empty_end.bin > image.bin
     echo -e "   done"
@@ -20,7 +22,7 @@ function build {
     echo -e "\033[1;33mRunning QEMU...\033[0m"
     qemu-system-x86_64 -drive format=raw,file=image.bin,if=floppy -vga std
     echo -ne "\033[1;33mCleaning up...\033[0m"
-    rm image.bin Kernel-Entry.o kernel.bin Pump.bin kernel.o text.o idt.o PIC.o empty_end.bin short.bin string.o
+    rm isr.o image.bin kb.o Kernel-Entry.o kernel.bin Pump.bin kernel.o text.o idt.o irq.o empty_end.bin short.bin string.o
     echo -e " done"
     echo -e "\033[1;32mFinished!\033[0m" | sudo tee /dev/kmsg
     return

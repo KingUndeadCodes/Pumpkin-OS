@@ -1,6 +1,7 @@
 #pragma once
 #ifndef _TEXT_H
 #define _TEXT_H
+#include "../../dev/idt/idt.h"
 #include <stdint.h>
 #include <stddef.h>
 
@@ -38,5 +39,6 @@ namespace Cursor {
 }
 
 void printf(const char* string, uint8_t color = 15);
+void scanf(struct regs *r);
 
 #endif
