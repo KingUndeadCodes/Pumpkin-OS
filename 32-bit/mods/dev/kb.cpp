@@ -2,7 +2,21 @@
 
 void KeyboardHandler(struct regs *r) {
         unsigned char scancode = inb(0x60);
+	// Backspace: 0x0E
+	// Tab: 0x0F
 	switch (scancode) {
+		case 0x02: printf("1"); break;
+		case 0x03: printf("2"); break;
+		case 0x04: printf("3"); break;
+		case 0x05: printf("4"); break;
+		case 0x06: printf("5"); break;
+		case 0x07: printf("6"); break;
+		case 0x08: printf("7"); break;
+		case 0x09: printf("8"); break;
+		case 0x0A: printf("9"); break;
+		case 0x0B: printf("0"); break;
+		case 0x0C: printf("-"); break;
+		case 0x0D: printf("="); break;
 		case 0x10: printf("Q"); break;
 		case 0x11: printf("W"); break;
 		case 0x12: printf("E"); break;
@@ -25,11 +39,13 @@ void KeyboardHandler(struct regs *r) {
 		case 0x2c: printf("Z"); break;
 		case 0x2D: printf("X"); break;
 		case 0x2E: printf("C"); break;
-		case 0x3F: printf("V"); break;
+		case 0x2F: printf("V"); break;
 		case 0x30: printf("B"); break;
 		case 0x31: printf("N"); break;
 		case 0x32: printf("M"); break;
                 case 0x39: printf(" "); break;
+		case 0x0E: printf("\b"); break;
+		case 0x1C: printf("\n"); break;
 	}
 }
 

@@ -36,11 +36,17 @@ namespace Cursor {
 
 void printf(const char* string, uint8_t color = 15) {
     for (int i = 0; i < strlen(string); i++) {
-        if (string[i] == '\n' || (col + 1) >= COLS) {
+        if (string[i] == '\n' || ((col + 1) >= COLS && string[i] != '\b')) {
 	    row++;
 	    col = 0;
-        } else {
+        } else if (string[i] == '\b') {
+	    col--;
             buffer[col + COLS * row] = (struct Char) {
+                character: (uint8_t) ' ',
+                color: color,
+            };
+        } else {
+	    buffer[col + COLS * row] = (struct Char) {
                 character: (uint8_t) string[i],
                 color: color,
             };
