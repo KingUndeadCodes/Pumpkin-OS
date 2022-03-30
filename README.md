@@ -16,6 +16,7 @@ This OS uses BiOS and NOT UEFI so keep that in mind.
 
 # Doing:
 @@ Keyboard Driver Enchantments @@
+@@ PC Speaker Support @@
 
 # Haven't started:
 - Kernel / File System
