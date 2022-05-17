@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
+char* itoa(int val, int base);
 size_t strlen(const char* str);
 size_t strspn(const char* str1, const char* str2);
 char* strcat(char* dest, const char* src);
