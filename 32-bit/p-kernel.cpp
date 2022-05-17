@@ -10,13 +10,13 @@
 
 extern "C" void _start() {
     Cursor::enableCursor(0, 10);
-    printf("Booting PumpkinOS (ver: 0)\n", COLOR_CYAN | COLOR_BLACK << 4);
+    print("Booting PumpkinOS (ver: 0)\n", COLOR_CYAN | COLOR_BLACK << 4);
     IDTInstall();
     ISRInstall();
     IRQInstall();
     asm volatile ("sti");
     if (are_interrupts_enabled()) printf("\n - Interupts Enabled!\n", COLOR_GREEN | COLOR_BLACK << 4);
     KeyboardInit();
-    printf(" - Keyboard Enabled! Type anything!\n", COLOR_GREEN | COLOR_BLACK << 4);
-    // beep();
+    print(" - Keyboard Enabled! Type anything!\n", COLOR_GREEN | COLOR_BLACK << 4);
+    printf("%sFunction%d", "Test", 1);
 }
