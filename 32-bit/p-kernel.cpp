@@ -7,16 +7,29 @@
 #include "mods/dev/idt/isr.h"
 #include "mods/dev/kb/kb.h"
 #include <text.h>
+#include <stdlib.h>
 
 extern "C" void _start() {
     Cursor::enableCursor(0, 10);
     print("Booting PumpkinOS (ver: 0)\n", COLOR_CYAN | COLOR_BLACK << 4);
+    initializeMem();
     IDTInstall();
     ISRInstall();
     IRQInstall();
     asm volatile ("sti");
-    if (are_interrupts_enabled()) printf("\n - Interupts Enabled!\n", COLOR_GREEN | COLOR_BLACK << 4);
+    if (are_interrupts_enabled()) print("\n - Interupts Enabled!\n", COLOR_GREEN | COLOR_BLACK << 4);
     KeyboardInit();
     print(" - Keyboard Enabled! Type anything!\n", COLOR_GREEN | COLOR_BLACK << 4);
-    printf("%sFunction%d", "Test", 1);
+    // printf("Hello%s%d", "Test", 2);
+    char* ptr = "Fuck u";
+    ptr = (char*)kmalloc(6 * sizeof(char));
+    ptr[0] = 'H';
+    ptr[1] = 'e';
+    ptr[2] = 'l';
+    ptr[3] = 'l';
+    ptr[4] = 'o';
+    ptr[5] = '!';
+    ptr[6] = '!';
+    kfree(ptr);
+    print(ptr);
 }

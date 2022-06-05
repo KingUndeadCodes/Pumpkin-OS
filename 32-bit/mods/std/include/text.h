@@ -38,6 +38,9 @@ namespace Cursor {
    uint16_t getCursor(void);
 }
 
-void printf(const char* string, uint8_t color = 15);
+// print is for the kernel
+void print(const char* string, uint8_t color = 15);
+// Development purposes only
+int printf(const char* format, ...);
 
 #endif
