@@ -21,7 +21,7 @@ extern "C" void _start() {
     KeyboardInit();
     print(" - Keyboard Enabled! Type anything!\n", COLOR_GREEN | COLOR_BLACK << 4);
     // printf("Hello%s%d", "Test", 2);
-    char* ptr = "Fuck u";
+    char* ptr = "Hello!";
     ptr = (char*)kmalloc(6 * sizeof(char));
     ptr[0] = 'H';
     ptr[1] = 'e';
