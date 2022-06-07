@@ -1,5 +1,60 @@
 #include "include/string.h"
 
+void swap(char *a, char *b)                                                                                                                                                                       
+  {
+       if(!a || !b)
+           return;
+
+       char temp = *(a);
+       *(a) = *(b);
+       *(b) = temp;
+   }
+
+void reverse(char *str, int length) 
+{ 
+	int start = 0; 
+	int end = length -1; 
+	while (start < end) 
+	{ 
+		swap((str+start), (str+end)); 
+		start++; 
+		end--; 
+	} 
+} 
+
+char* itoa(int num, char* str, int base) 
+{ 
+	int i = 0; 
+	bool isNegative = false; 
+
+	if (num == 0) 
+	{ 
+		str[i++] = '0'; 
+		str[i] = '\0'; 
+		return str; 
+	}
+
+	if (num < 0 && base == 10) 
+	{ 
+		isNegative = true;
+		num = -num; 
+	} 
+
+	while (num != 0) 
+	{ 
+		int rem = num % base; 
+		str[i++] = (rem > 9)? (rem-10) + 'a' : rem + '0'; 
+		num = num/base; 
+	}
+
+	if (isNegative == true) 
+		str[i++] = '-'; 
+
+	str[i] = '\0';
+	reverse(str, i); 
+	return str; 
+}
+
 void* memset(void* dest, uint8_t val, size_t count) {
 	uint8_t* destC = (unsigned char*) dest;
 	for (size_t i = 0; i < count; i++) destC[i] = val;
@@ -67,11 +122,4 @@ int memcmp(const void* aptr, const void* bptr, size_t size) {
 		else if (b[i] < a[i]) return 1;
 	}
 	return 0;
-}
-
-char* itoa(int val, int base) {
-        static char buf[32] = {0};
-        int i = 30;
-        for (;val && i; --i, val /= base) buf[i] = "0123456789abcdef"[val % base];
-        return &buf[i+1];
 }

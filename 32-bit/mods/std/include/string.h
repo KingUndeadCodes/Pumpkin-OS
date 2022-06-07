@@ -2,8 +2,11 @@
 #define _STRING_H
 #include <stdint.h>
 #include <stddef.h>
+#include <stdbool.h>
 
-char* itoa(int val, int base);
+void swap(char *a, char *b);
+void reverse(char *str, int length);
+char* itoa(int num, char* str, int base);
 size_t strlen(const char* str);
 size_t strspn(const char* str1, const char* str2);
 char* strcat(char* dest, const char* src);

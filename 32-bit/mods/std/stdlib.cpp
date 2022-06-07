@@ -1,6 +1,8 @@
 #include "include/stdlib.h"
+#include <string.h>
+#include <text.h>
 
-int freeMem;
+int freeMem = FREE_MEM;
 
 void initializeMem(){
     freeMem = FREE_MEM;
@@ -14,6 +16,8 @@ void* kmalloc(size_t size) {
 }
 
 void kfree(void* mem) {
-    freeMem -= sizeof(mem - 5);
-    mem = kmalloc(0);
+    int _freeMem = freeMem - sizeof(mem);
+    memset(mem, 0, sizeof(mem));
+    freeMem = _freeMem;
+    return;
 }

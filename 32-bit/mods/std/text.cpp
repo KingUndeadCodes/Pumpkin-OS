@@ -1,4 +1,5 @@
 #include <string.h>
+#include <stdlib.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include "../dev/port.cpp"
@@ -50,11 +51,13 @@ int printf(const char* format, ...) {
 		break;
 	      }
 	      case 'd': {
-		// Needs work
+                // Lot of work needed here.
+                char* str = kmalloc(100 * sizeof(char));
 		va_list ptr;
                 va_start(ptr, ++size);
                 for (int i = 0; i < size; i++) va_arg(ptr, int);
-		print(itoa(va_arg(ptr, int), 10));
+		print(itoa(va_arg(ptr, int), str, 10));
+                kfree(str);
 		break;
 	      }
               default: {

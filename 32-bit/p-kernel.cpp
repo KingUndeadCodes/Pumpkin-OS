@@ -6,8 +6,13 @@
 #include "mods/dev/audio/speaker.h"
 #include "mods/dev/idt/isr.h"
 #include "mods/dev/kb/kb.h"
-#include <text.h>
 #include <stdlib.h>
+#include <text.h>
+
+/*
+ * Developer Notes:
+ * - 'printf' does not work with Integers ('%d')
+*/
 
 extern "C" void _start() {
     Cursor::enableCursor(0, 10);
@@ -20,5 +25,8 @@ extern "C" void _start() {
     if (are_interrupts_enabled()) print("\n - Interupts Enabled!\n", COLOR_GREEN | COLOR_BLACK << 4);
     KeyboardInit();
     print(" - Keyboard Enabled! Type anything!\n", COLOR_GREEN | COLOR_BLACK << 4);
-    // printf("Hello%s%d", "Test", 2);
+    // char* ptr = kmalloc(6 * sizeof(char));
+    // ptr = "Hello!";
+    // kfree(ptr);
+    // print(ptr);
 }
