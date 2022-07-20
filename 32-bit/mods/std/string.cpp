@@ -1,5 +1,6 @@
 #include "include/string.h"
 
+/*
 void swap(char *a, char *b)                                                                                                                                                                       
   {
        if(!a || !b)
@@ -22,38 +23,35 @@ void reverse(char *str, int length)
 	} 
 } 
 
-char* itoa(int num, char* str, int base) 
-{ 
-	int i = 0; 
-	bool isNegative = false; 
+/*
+char *itoa(int value, char *result, int base) {
+    // check that the base if valid
+    if (base < 2 || base > 36) {
+        *result = '\0';
+        return result;
+    }
 
-	if (num == 0) 
-	{ 
-		str[i++] = '0'; 
-		str[i] = '\0'; 
-		return str; 
-	}
+    char *ptr = result, *ptr1 = result, tmp_char;
+    int tmp_value;
 
-	if (num < 0 && base == 10) 
-	{ 
-		isNegative = true;
-		num = -num; 
-	} 
+    do {
+        tmp_value = value;
+        value /= base;
+        *ptr++ = "zyxwvutsrqponmlkjihgfedcba9876543210123456789abcdefghijklmnopqrstuvwxyz"[35 +
+                                                                                           (tmp_value - value * base)];
+    } while (value);
 
-	while (num != 0) 
-	{ 
-		int rem = num % base; 
-		str[i++] = (rem > 9)? (rem-10) + 'a' : rem + '0'; 
-		num = num/base; 
-	}
-
-	if (isNegative == true) 
-		str[i++] = '-'; 
-
-	str[i] = '\0';
-	reverse(str, i); 
-	return str; 
+    // Apply negative sign
+    if (tmp_value < 0) *ptr++ = '-';
+    *ptr-- = '\0';
+    while (ptr1 < ptr) {
+        tmp_char = *ptr;
+        *ptr-- = *ptr1;
+        *ptr1++ = tmp_char;
+    }
+    return result;
 }
+*/
 
 void* memset(void* dest, uint8_t val, size_t count) {
 	uint8_t* destC = (unsigned char*) dest;

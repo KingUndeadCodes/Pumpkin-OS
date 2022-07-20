@@ -9,11 +9,6 @@
 #include <stdlib.h>
 #include <text.h>
 
-/*
- * Developer Notes:
- * - 'printf' does not work with Integers ('%d')
-*/
-
 extern "C" void _start() {
     Cursor::enableCursor(0, 10);
     print("Booting PumpkinOS (ver: 0)\n", COLOR_CYAN | COLOR_BLACK << 4);
@@ -21,6 +16,7 @@ extern "C" void _start() {
     IDTInstall();
     ISRInstall();
     IRQInstall();
+    printf("%s || %c || %d", "Hello, World!", 'a', 1);
     asm volatile ("sti");
     if (are_interrupts_enabled()) print("\n - Interupts Enabled!\n", COLOR_GREEN | COLOR_BLACK << 4);
     KeyboardInit();

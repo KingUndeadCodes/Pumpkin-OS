@@ -4,6 +4,7 @@
 #include "../../dev/idt/idt.h"
 #include <stdint.h>
 #include <stddef.h>
+#include <stdarg.h>
 
 enum {
     COLOR_BLACK = 0x0,
@@ -38,9 +39,8 @@ namespace Cursor {
    uint16_t getCursor(void);
 }
 
-// print is for the kernel
+// print is for the kernel.
 void print(const char* string, uint8_t color = 15);
-// Development purposes only
 int printf(const char* format, ...);
 
 #endif

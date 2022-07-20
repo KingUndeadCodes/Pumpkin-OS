@@ -1,6 +1,4 @@
 #include <string.h>
-#include <stdlib.h>
-#include <stdarg.h>
 #include <stdbool.h>
 #include "../dev/port.cpp"
 #include "include/text.h"
@@ -37,27 +35,28 @@ namespace Cursor {
     }
 }
 
-int printf(const char* format, ...) {
-    int size = 0;
+char* itoa(int val, int base){
+   static char buf[32] = {0};
+   int i = 30;
+   for(; val && i ; --i, val /= base) buf[i] = "0123456789abcdef"[val % base];
+   return &buf[i+1];
+}
+
+int vprintf(const char* format, va_list list) {
     for (int i = 0; format[i]; ++i) {
         if (format[i] == '%') {
-	   ++i;
-	   switch (format[i]) {
-	      case 's': {
-              	va_list ptr;
-		va_start(ptr, ++size);
-		for (int i = 0; i < size; i++) va_arg(ptr, char*);
-                print(va_arg(ptr, char*));
-		break;
-	      }
+	   switch ((char)format[++i]) {
+              case 'c': {
+                const char c[] = {(char)va_arg(list, int), '\0'};
+                print(c);
+                break;
+              }
+              case 's': {
+                print(va_arg(list, char*));
+                break;
+              }
 	      case 'd': {
-                // Lot of work needed here.
-                char* str = kmalloc(100 * sizeof(char));
-		va_list ptr;
-                va_start(ptr, ++size);
-                for (int i = 0; i < size; i++) va_arg(ptr, int);
-		print(itoa(va_arg(ptr, int), str, 10));
-                kfree(str);
+                print(itoa(va_arg(list, size_t), 10));
 		break;
 	      }
               default: {
@@ -67,13 +66,19 @@ int printf(const char* format, ...) {
            }
 	   continue;
 	} else {
-	   char c[2];
-	   c[0] = format[i];
-	   c[1] = '\0';
+	   const char c[] = {format[i], '\0'};
 	   print(c);
 	}
     }
     return 0;
+}
+
+__attribute__ ((format (printf, 1, 2))) int printf(const char* format, ...) {
+    va_list list;
+    va_start(list, format);
+    int i = vprintf(format, list);
+    va_end(list);
+    return i;
 }
 
 void print(const char* string, uint8_t color = 15) {
