@@ -23,11 +23,6 @@ function build {
     echo -e "\033[1;32mCompiled successfully!\033[0m"
     echo -e "\033[1;33mRunning QEMU...\033[0m"
     qemu-system-x86_64 -drive format=raw,file=image.bin,if=floppy -vga std
-    # mkfs.ext2 -c image.bin
-    # fdisk -u -l image.bin
-    # strings image.bin
-    # dd if=/dev/zero of=osimage_formated.bin bs=512 count=2880 >/dev/null
-    # dd if=os_image.bin of=osimage_formated.bin conv=notrunc >/dev/null
     echo -ne "\033[1;33mCleaning up...\033[0m"
     rm isr.o image.bin kb.o Kernel-Entry.o kernel.bin Pump.bin kernel.o text.o idt.o irq.o empty_end.bin short.bin string.o speaker.o stdlib.o
     echo -e " done"
