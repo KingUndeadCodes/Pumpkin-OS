@@ -1,57 +1,11 @@
 #include "include/string.h"
 
-/*
-void swap(char *a, char *b)                                                                                                                                                                       
-  {
-       if(!a || !b)
-           return;
-
-       char temp = *(a);
-       *(a) = *(b);
-       *(b) = temp;
-   }
-
-void reverse(char *str, int length) 
-{ 
-	int start = 0; 
-	int end = length -1; 
-	while (start < end) 
-	{ 
-		swap((str+start), (str+end)); 
-		start++; 
-		end--; 
-	} 
-} 
-
-/*
-char *itoa(int value, char *result, int base) {
-    // check that the base if valid
-    if (base < 2 || base > 36) {
-        *result = '\0';
-        return result;
-    }
-
-    char *ptr = result, *ptr1 = result, tmp_char;
-    int tmp_value;
-
-    do {
-        tmp_value = value;
-        value /= base;
-        *ptr++ = "zyxwvutsrqponmlkjihgfedcba9876543210123456789abcdefghijklmnopqrstuvwxyz"[35 +
-                                                                                           (tmp_value - value * base)];
-    } while (value);
-
-    // Apply negative sign
-    if (tmp_value < 0) *ptr++ = '-';
-    *ptr-- = '\0';
-    while (ptr1 < ptr) {
-        tmp_char = *ptr;
-        *ptr-- = *ptr1;
-        *ptr1++ = tmp_char;
-    }
-    return result;
+char* itoa(int val, int base){
+	static char buf[32] = {0};
+   	int i = 30;
+   	for(; val && i ; --i, val /= base) buf[i] = "0123456789abcdef"[val % base];
+   	return &buf[i+1];
 }
-*/
 
 void* memset(void* dest, uint8_t val, size_t count) {
 	uint8_t* destC = (unsigned char*) dest;

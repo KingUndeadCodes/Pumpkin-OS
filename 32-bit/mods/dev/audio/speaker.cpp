@@ -20,6 +20,5 @@ static void Quiet() {
 
 void beep() {
      PlaySound(1000);
-     // timer_wait(10);
-     Quiet();
+     // Quiet();
 }
