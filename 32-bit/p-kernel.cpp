@@ -6,6 +6,7 @@
 #include "mods/dev/audio/speaker.h"
 #include "mods/dev/idt/isr.h"
 #include "mods/dev/pit/pit.h"
+#include "mods/dev/pci/pci.h"
 #include "mods/dev/kb/kb.h"
 #include <stdlib.h>
 #include <text.h>
@@ -26,6 +27,7 @@ extern "C" void _start() {
     print(" - Keyboard Enabled!\n", GREEN);
     TimerInit();
     print(" - PIT Enabled!\n", GREEN);
-    print(" - Moving into the main shell...", PURPLE);
     // timer_wait(3 * 18);
+    print(" - Checking for PCI devices...\n", PURPLE);
+    checkAllBuses();
 }
