@@ -1,21 +1,13 @@
 #include "pci.h"
 
 static inline uint32_t inl(uint16_t port) {
-  uint32_t res;
-  asm volatile (
-    "in %%dx, %%eax\n"
-    : "=a" (res)
-    : "d" (port)
-  );
-  return res;
+    uint32_t res;
+    asm volatile ("in %%dx, %%eax\n" : "=a" (res) : "d" (port));
+    return res;
 }
 
 static inline void outl(uint16_t port, uint32_t value) {
-  asm volatile (
-    "out %%eax, %%dx\n"
-    :
-    : "d" (port), "a" (value)
-  );
+    asm volatile ("out %%eax, %%dx\n" :: "d" (port), "a" (value));
 }
 
 uint16_t pciConfigReadWord(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset) {
@@ -46,14 +38,14 @@ uint16_t pciCheckVendor(uint8_t bus, uint8_t slot) {
 
 uint16_t getVendorID(uint16_t bus, uint16_t device, uint16_t function)
 {
-        uint32_t r0 = pciConfigReadWord(bus,device,function,0);
-        return r0;
+    uint32_t r0 = pciConfigReadWord(bus,device,function,0);
+    return r0;
 }
 
 uint16_t getDeviceID(uint16_t bus, uint16_t device, uint16_t function)
 {
-        uint32_t r0 = pciConfigReadWord(bus,device,function,2);
-        return r0;
+    uint32_t r0 = pciConfigReadWord(bus,device,function,2);
+    return r0;
 }
 
 void checkDevice(uint8_t bus, uint8_t device) {
@@ -68,15 +60,19 @@ void checkDevice(uint8_t bus, uint8_t device) {
     }
 }
 
+char* deviceName(int vendorID, int deviceID) {
+    if ((int)vendorID == 4660 && deviceID == 4369) return "QEMU_VGA_DEVICE";
+    return "UNKNOWN_DEVICE";
+}
+
 void checkFunction(uint8_t bus, uint8_t device, uint8_t function) {
-     if (pciCheckVendor(bus, device) & 0x80) return;
-     const int vendorID = (int)getVendorID(bus, device, function);
-     const int deviceID = (int)getDeviceID(bus, device, function);
-     print("[");
-     print("PCI", 10);
-     print("] Device Detected. ");
-     printf("<vendor=%d, device=%d>\n", vendorID, deviceID);
-     if ((int)vendorID == 4660 && deviceID == 4369) print("    - [INFO] Device is \"QEMU VGA\" Device\n");
+    if (pciCheckVendor(bus, device) & 0x80) return;
+    const int vendorID = (int)getVendorID(bus, device, function);
+    const int deviceID = (int)getDeviceID(bus, device, function);
+    print("[");
+    print("PCI", 10);
+    print("] Device Detected. ");
+    printf("%s(%d, %d)\n", deviceName(vendorID, deviceID), vendorID, deviceID);
 }
 
 
