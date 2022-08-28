@@ -4,7 +4,7 @@
 
 int freeMem = FREE_MEM;
 
-void initializeMem(){
+void initializeMem() {
     freeMem = FREE_MEM;
 }
 

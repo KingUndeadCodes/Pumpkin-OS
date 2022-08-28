@@ -9,7 +9,6 @@
 
 // Development
 void initializeMem();
-
 void* kmalloc(size_t size);
 void kfree(void* mem);
 

@@ -1,3 +1,4 @@
+#include "../pit/pit.h"
 #include "speaker.h"
 
 static void PlaySound(uint32_t nFrequence) {
@@ -14,11 +15,12 @@ static void PlaySound(uint32_t nFrequence) {
 }
 
 static void Quiet() {
-       uint8_t x = inb(0x61) & 0xFC;
-       outb(0x61, x);
+    uint8_t x = inb(0x61) & 0xFC;
+    outb(0x61, x);
 }
 
 void beep() {
-     PlaySound(1000);
-     // Quiet();
+    PlaySound(1000);
+    timer_wait(10);
+    Quiet();
 }

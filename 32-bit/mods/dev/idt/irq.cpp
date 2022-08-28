@@ -87,6 +87,6 @@ extern "C" void _irq_handler(struct regs *r)
 }
 
 void irq_wait(int n){
-    while(currentInterrupt != n){};
-    currentInterrupt = -1;
+	while(currentInterrupt != n){};
+	currentInterrupt = -1;
 }
