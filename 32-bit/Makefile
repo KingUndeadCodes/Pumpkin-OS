@@ -26,7 +26,7 @@ build:
 	cat short.bin empty_end.bin > image.bin
 
 run:
-	qemu-system-x86_64 -drive format=raw,file=image.bin,if=floppy -vga std
+	qemu-system-x86_64 -soundhw pcspk -drive format=raw,file=image.bin,if=floppy -vga std
 
 clean:
 	rm isr.o kb.o Kernel-Entry.o kernel.bin Pump.bin kernel.o text.o idt.o irq.o empty_end.bin short.bin string.o speaker.o stdlib.o timer.o pci.o

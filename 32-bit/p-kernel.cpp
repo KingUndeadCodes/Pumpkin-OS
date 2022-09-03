@@ -27,7 +27,8 @@ extern "C" void _start() {
     print(" - Keyboard Enabled!\n", GREEN);
     TimerInit();
     print(" - PIT Enabled!\n", GREEN);
-    // timer_wait(3 * 18);
     print(" - Checking for PCI devices...\n", PURPLE);
     checkAllBuses();
+    never_gonna();
+    // for (int i = 1; i < 1000; i += 100) beep(i, 1);
 }

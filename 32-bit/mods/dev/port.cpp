@@ -1,3 +1,4 @@
+#ifndef _PORT_CPP
 #define _PORT_CPP
 #include <stdint.h>
 
@@ -16,3 +17,4 @@ static inline bool are_interrupts_enabled() {
     asm volatile ("pushf\n\t" "pop %0" : "=g"(flags));
     return flags & (1 << 9);
 }
+#endif

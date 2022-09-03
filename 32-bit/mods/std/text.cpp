@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include "../dev/port.cpp"
 #include "include/text.h"
+#include "../dev/audio/speaker.h"
 
 struct Char* buffer = (struct Char*) 0xb8000;
 size_t col = 0;
@@ -56,7 +57,7 @@ int vprintf(const char* format, va_list list) {
                     print((char*)format[i]);
                     break;
                 }
-           }
+            }
 	        continue;
 	    } else {
 	        const char c[] = {format[i], '\0'};
@@ -74,6 +75,21 @@ __attribute__ ((format (printf, 1, 2))) int printf(const char* format, ...) {
     return i;
 }
 
+void clear_screen(void) {
+    for (row = 0; row < ROWS; row++) {
+        for (col = 0; col < COLS; col++) {
+            buffer[col + COLS * row] = (struct Char) {
+                character: (uint8_t) ' ',
+                color: (uint8_t) 15,
+            };
+        }
+        col = 0;
+    }
+    row = 0;
+    col = 0;
+    Cursor::moveCursor(row - 1, col);
+}
+
 void print(const char* string, uint8_t color = 15) {
     for (int i = 0; i < strlen(string); i++) {
         if (string[i] == '\n' || ((col + 1) >= COLS && string[i] != '\b')) {
@@ -85,6 +101,11 @@ void print(const char* string, uint8_t color = 15) {
                 character: (uint8_t) ' ',
                 color: color,
             };
+        } else if (string[i] == '\t') {
+            print("        ");
+            // char CharArray[ROWS][COLS] = {(char)buffer[0 + COLS * 0].character, '\0'};
+            // print(CharArray);
+            clear_screen();
         } else {
 	        buffer[col + COLS * row] = (struct Char) {
                 character: (uint8_t) string[i],

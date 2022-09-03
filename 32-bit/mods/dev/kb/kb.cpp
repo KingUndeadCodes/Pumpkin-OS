@@ -53,10 +53,10 @@ void KeyboardHandler(struct regs *r) {
 		case 0x33: printf(shift_key ? "<" : ","); break;
 		case 0x34: printf(shift_key ? ">" : "."); break;
 		case 0x35: printf(shift_key ? "?" : "/"); break;
-		case 0x0F: printf(tab);
         case 0x39: printf(" "); break;
-		case 0x0E: printf("\b"); break;
-		case 0x1C: printf("\n"); break;
+		case 0x0F: print("\t"); break;
+		case 0x0E: print("\b"); break;
+		case 0x1C: print("\n"); break;
 		case 0x2a: shift_key = true; break;
 		// case 0x36: shift_key = true; break;
 	}

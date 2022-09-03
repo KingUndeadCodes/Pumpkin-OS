@@ -73,8 +73,8 @@ void checkFunction(uint8_t bus, uint8_t device, uint8_t function) {
     print("PCI", 10);
     print("] Device Detected. ");
     printf("%s(%d, %d)\n", deviceName(vendorID, deviceID), vendorID, deviceID);
+    return;
 }
-
 
 void checkAllBuses(void) {
     uint16_t bus;
