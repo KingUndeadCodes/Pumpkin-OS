@@ -4,12 +4,15 @@
 */
 #ifndef _STDLIB_H
 #define _STDLIB_H 1
-#define FREE_MEM 0x10000;
+#define FREE_MEM 0x10000
 #include <string.h>
+#include <text.h>
 
-// Development
+int getFreeMem();
 void initializeMem();
-void* kmalloc(size_t size);
-void kfree(void* mem);
+void free(void* mem);
+void* malloc(size_t size);
+// void* calloc(size_t size);
+// void* realloc(size_t size);
 
 #endif

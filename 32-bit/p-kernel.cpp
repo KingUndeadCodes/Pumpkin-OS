@@ -29,6 +29,12 @@ extern "C" void _start() {
     print(" - PIT Enabled!\n", GREEN);
     print(" - Checking for PCI devices...\n", PURPLE);
     checkAllBuses();
-    never_gonna();
-    // for (int i = 1; i < 1000; i += 100) beep(i, 1);
+    // char *x = (char*)malloc(5);
+    // char *y = (char*)malloc(5);
+    // x = "Hello, ";
+    // y = "World!";
+    // free(x);
+    // free(y);
+    // printf("%s%s", x, y);  
+    for (int i = 1; i < 1000; i += 100) beep(i, 1);
 }
