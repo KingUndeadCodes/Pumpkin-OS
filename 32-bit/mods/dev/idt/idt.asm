@@ -336,7 +336,6 @@ ISR31:
 
 extern _fault_handler
 
-
 isr_common_stub:
 	pusha
 	push ds

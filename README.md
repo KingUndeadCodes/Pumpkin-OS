@@ -13,16 +13,13 @@ This OS uses BiOS and NOT UEFI so keep that in mind.
 + Core / Bootloader
 + Kernel / Print function
 + Kernel / Keyboard Input
++ Driver / PC Speaker Support
 
 # Doing:
-@@ Keyboard Driver Enchantments @@
-@@ PC Speaker Support @@
+@@ Kernel / File System @@
 
 # Haven't started:
 - Kernel / File System
 - Kernel / Programming language ports
 - Kernel / Programming API's
-
-# Notes:
-! More Advanced "printf" function coming soon
 ```

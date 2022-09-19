@@ -1,7 +1,7 @@
 AS      =nasm
 CC      =x86_64-elf-g++
 LD      =x86_64-elf-ld
-CFLAGS  =-fpermissive -ffreestanding -m32 -g -c -w -I mods/std/include -o2
+CFLAGS  =-fpermissive -ffreestanding -m32 -g -c -w -I mods/std/include 
 LDFLAGS =-m elf_i386 -o kernel.bin -Ttext 0x1000
 
 all: build clean
@@ -21,12 +21,13 @@ build:
 	$(CC) $(CFLAGS) mods/dev/audio/speaker.cpp -o speaker.o
 	$(CC) $(CFLAGS) mods/dev/pit/pit.cpp -o timer.o
 	$(CC) $(CFLAGS) mods/dev/pci/pci.cpp -o pci.o
-	$(LD) $(LDFLAGS) Kernel-Entry.o kernel.o text.o idt.o isr.o irq.o kb.o string.o speaker.o stdlib.o timer.o pci.o --oformat binary
+	$(CC) $(CFLAGS) mods/dev/fs/fs.cpp -mgeneral-regs-only -o fs.o
+	$(LD) $(LDFLAGS) Kernel-Entry.o kernel.o text.o idt.o isr.o irq.o kb.o string.o speaker.o stdlib.o fs.o timer.o pci.o --oformat binary
 	cat Pump.bin kernel.bin > short.bin
 	cat short.bin empty_end.bin > image.bin
 
 run:
-	qemu-system-x86_64 -soundhw pcspk -drive format=raw,file=image.bin,if=floppy -vga std
+	qemu-system-x86_64 -m 256m -soundhw pcspk -drive format=raw,file=image.bin,if=floppy -vga std
 
 clean:
-	rm isr.o kb.o Kernel-Entry.o kernel.bin Pump.bin kernel.o text.o idt.o irq.o empty_end.bin short.bin string.o speaker.o stdlib.o timer.o pci.o
+	rm isr.o kb.o Kernel-Entry.o kernel.bin Pump.bin kernel.o text.o idt.o irq.o empty_end.bin short.bin string.o speaker.o stdlib.o timer.o pci.o fs.o

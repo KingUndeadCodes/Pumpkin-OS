@@ -75,3 +75,30 @@ int memcmp(const void* aptr, const void* bptr, size_t size) {
 	}
 	return 0;
 }
+
+// Taken from: https://forum.osdev.org/viewtopic.php?f=13&t=1637
+char *strcpy(char *s1, const char *s2) {
+    char *s1_p = s1;
+    while (*s1++ = *s2++);
+    return s1_p;
+}
+
+// Taken from: https://github.com/ApplePy/osdev/blob/master/string.c
+char *strncpy(char *s1, const char *s2, size_t n) {
+	unsigned int extern_iter = 0;
+	unsigned int iterator = 0;
+	for (iterator = 0; iterator < n; iterator++) {
+		if (s2[iterator] != '\0')
+			s1[iterator] = s2[iterator];
+		else {
+			s1[iterator] = s2[iterator];
+			extern_iter = iterator + 1;
+			break;
+		}
+	}
+	while (extern_iter < n) {
+		s1[extern_iter] = '\0';
+		extern_iter++;
+	}
+	return s1;
+}

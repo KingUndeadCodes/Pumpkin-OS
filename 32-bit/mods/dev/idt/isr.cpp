@@ -105,15 +105,11 @@ const char* exception_messages[] =
 	"Reserved"
 };
 
-
-
 extern "C" void _fault_handler(struct regs *r)
 {
-    
-    if (r->int_no < 32)
-    {
-    printf(exception_messages[r->int_no]);
-    printf(" Exception. System Halted!\n\r");
-    for (;;);
+    if (r->int_no < 32) {
+        printf(exception_messages[r->int_no]);
+        printf(" Exception. System Halted!\n");
+        for (;;);
     }
 }

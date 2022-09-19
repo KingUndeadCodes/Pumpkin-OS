@@ -8,6 +8,7 @@
 #include "mods/dev/pit/pit.h"
 #include "mods/dev/pci/pci.h"
 #include "mods/dev/kb/kb.h"
+#include "mods/dev/fs/fs.h"
 #include <stdlib.h>
 #include <text.h>
 
@@ -29,12 +30,7 @@ extern "C" void _start() {
     print(" - PIT Enabled!\n", GREEN);
     print(" - Checking for PCI devices...\n", PURPLE);
     checkAllBuses();
-    // char *x = (char*)malloc(5);
-    // char *y = (char*)malloc(5);
-    // x = "Hello, ";
-    // y = "World!";
-    // free(x);
-    // free(y);
-    // printf("%s%s", x, y);  
-    for (int i = 1; i < 1000; i += 100) beep(i, 1);
+    // never_gonna();
+    FS_TEST();
+    // for (int i = 1; i < 1000; i += 100) beep(i, 1);
 }
