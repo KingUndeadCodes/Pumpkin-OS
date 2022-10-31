@@ -58,6 +58,7 @@ void KeyboardHandler(struct regs *r) {
 		case 0x0E: print("\b"); break;
 		case 0x1C: print("\n"); break;
 		case 0x2a: shift_key = true; break;
+		// default: printf("{{{ %d }}}", scancode);
 		// case 0x36: shift_key = true; break;
 	}
 	if (scancode & 0x80 && scancode == 0xaa) shift_key = false;

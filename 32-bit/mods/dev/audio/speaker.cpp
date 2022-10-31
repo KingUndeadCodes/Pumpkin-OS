@@ -19,7 +19,6 @@ static void Quiet() {
     outb(0x61, x);
 }
 
-
 void beep(uint32_t freq = 950, uint32_t time = 18) {
     if (time == 0) {
         print("beep warning: 'time' played is zero.", COLOR_YELLOW);

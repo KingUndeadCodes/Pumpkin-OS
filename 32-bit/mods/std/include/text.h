@@ -37,7 +37,7 @@ namespace Cursor {
    void enableCursor(uint8_t cursor_start, uint8_t cursor_end);
    void moveCursor(int x, int y);
    uint16_t getCursor(void);
-}
+};
 
 // print is for the kernel.
 void print(const char* string, uint8_t color = 15);

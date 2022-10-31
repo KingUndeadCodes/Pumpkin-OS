@@ -36,6 +36,7 @@ namespace Cursor {
     }
 }
 
+// https://cplusplus.com/reference/cstdio/printf/
 int vprintf(const char* format, va_list list) {
     for (int i = 0; format[i]; ++i) {
         if (format[i] == '%') {
@@ -49,10 +50,18 @@ int vprintf(const char* format, va_list list) {
                     print(va_arg(list, char*));
                     break;
                 }
-	            case 'd': {
-                    print(itoa(va_arg(list, size_t), 10));
+	            case 'd':
+                case 'i': {
+                    print(itoa(va_arg(list, int), 10));
 		            break;
 	            }
+                case 'u':
+                case 'o':
+                case 'x':
+                case 'X': {
+                    print(itoa(va_arg(list, unsigned int), 10));
+                    break;
+                }
                 default: {
                     print((char*)format[i]);
                     break;
@@ -90,6 +99,17 @@ void clear_screen(void) {
     Cursor::moveCursor(row - 1, col);
 }
 
+// Clears current row
+void clear_row(void) {
+    for (col = 0; col < COLS; col++) {
+        buffer[col + COLS * row] = (struct Char) {
+            character: (uint8_t) ' ',
+            color: (uint8_t) 15,
+        };
+    };
+    col = 0;
+}
+
 void print(const char* string, uint8_t color = 15) {
     for (int i = 0; i < strlen(string); i++) {
         if (string[i] == '\n' || ((col + 1) >= COLS && string[i] != '\b')) {
@@ -103,9 +123,9 @@ void print(const char* string, uint8_t color = 15) {
             };
         } else if (string[i] == '\t') {
             print("        ");
-            // char CharArray[ROWS][COLS] = {(char)buffer[0 + COLS * 0].character, '\0'};
-            // print(CharArray);
-            clear_screen();
+            // clear_row();
+        } else if (string[i] == '\r') {
+            clear_row();
         } else {
 	        buffer[col + COLS * row] = (struct Char) {
                 character: (uint8_t) string[i],

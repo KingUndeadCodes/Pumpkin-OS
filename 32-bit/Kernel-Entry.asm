@@ -7,3 +7,5 @@ call _start
 jmp $
 
 %include "mods/dev/idt/idt.asm"
+%include "mods/dev/paging/paging.asm"
+%include "mods/std/tasking/tasking.asm"

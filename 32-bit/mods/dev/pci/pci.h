@@ -1,6 +1,7 @@
 #ifndef PCI_H
 #define PCI_H
 
+#include <string.h>
 #include <stdint.h>
 #include <text.h>
 // #include "../port.cpp"
