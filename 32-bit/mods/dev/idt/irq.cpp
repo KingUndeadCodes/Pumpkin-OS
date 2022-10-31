@@ -78,15 +78,15 @@ extern "C" void _irq_handler(struct regs *r)
 	void (*handler)(struct regs *r);
 	handler = (void (*)(regs*))irq_routines[r->int_no - 32];
 	if (handler) {
-	   handler(r);
+		handler(r);
 	}
 	if (r->int_no >= 40) {
-	   outb(0xA0, 0x20);
+	   	outb(0xA0, 0x20);
 	}
 	outb(0x20, 0x20);
 }
 
 void irq_wait(int n){
-    while(currentInterrupt != n){};
-    currentInterrupt = -1;
+	while(currentInterrupt != n){};
+	currentInterrupt = -1;
 }

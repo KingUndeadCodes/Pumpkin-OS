@@ -20,11 +20,11 @@ struct IDTPointer _IDTPointer;
 extern "C" void IDTLoad();
 
 void IDTSetGate(unsigned char num, unsigned long base, unsigned short sel, unsigned char flags) {
-     IDT[num].base_lo = (base & 0xFFFF);
-     IDT[num].base_hi = (base >> 16) & 0xFFFF;
-     IDT[num].sel = sel;
-     IDT[num].always0 = 0;
-     IDT[num].flags = flags;
+	IDT[num].base_lo = (base & 0xFFFF);
+	IDT[num].base_hi = (base >> 16) & 0xFFFF;
+	IDT[num].sel = sel;
+	IDT[num].always0 = 0;
+	IDT[num].flags = flags;
 }
 
 void IDTInstall() {
