@@ -13,13 +13,11 @@
     }
 */
 
-// SHould I make it static and volatile?
-CMOSTime Time;
-
 #define from_bcd(val)  ((val / 16) * 10 + (val & 0xf))
 
-void CMOSDataFetch(void) {
-	uint16_t CMOSValues[128];
+CMOSTime CMOSDataFetch(void) {
+	CMOSTime Time;
+	static uint16_t CMOSValues[128];
 	uint16_t index;
 	for (index = 0; index < 128; ++index) {
 		outb(0x70, index);
@@ -33,10 +31,9 @@ void CMOSDataFetch(void) {
 	Time.month = from_bcd(CMOSValues[8]);
 	Time.year = from_bcd(CMOSValues[9]);
 	Time.century = from_bcd(CMOSValues[50]);
-	return;
+	return Time;
 } 
 
 CMOSTime FetchCurrentCMOSTime(void) {
-	CMOSDataFetch();
-	return Time;
+	return CMOSDataFetch();
 }

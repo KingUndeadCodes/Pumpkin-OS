@@ -17,23 +17,3 @@ void PagingInstall(void) {
 	pheap_begin = pheap_end - (MAX_PAGE_ALIGNED_ALLOCS * 4096);
     pheap_desc = (uint8_t*)malloc(MAX_PAGE_ALIGNED_ALLOCS);
 };
-
-/*
-void pfree(void *mem) {
-	if((int)mem < pheap_begin || (int)mem > pheap_end) return;
-	uint32_t ad = (uint32_t)mem;
-	ad -= pheap_begin;
-	ad /= 4096;
-	pheap_desc[ad] = 0;
-	return;
-}
-
-char* pmalloc(size_t size) {
-	for(int i = 0; i < MAX_PAGE_ALIGNED_ALLOCS; i++) {
-		if(pheap_desc[i]) continue;
-		pheap_desc[i] = 1;
-		return (char *)(pheap_begin + i*4096);
-	}
-	return 0;
-}
-*/

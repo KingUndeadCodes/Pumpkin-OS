@@ -111,5 +111,5 @@ extern "C" void _fault_handler(struct regs *r)
         printf(exception_messages[r->int_no]);
         printf(" Exception. System Halted!\n");
         for (;;);
-    }
+    } 
 }

@@ -1,7 +1,9 @@
-#include "idt.h"
-#include <text.h>
 #ifndef ISR_H
 #define ISR_H
+
+#include "idt.h"
+#include <text.h>
+
 extern "C" void _fault_handler(struct regs *r);
 void ISRInstall();
 extern "C" void ISR0();

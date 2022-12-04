@@ -1,4 +1,5 @@
 #include "../pit/pit.h"
+#include <tasking.h>
 #include "speaker.h"
 
 static void PlaySound(uint32_t nFrequence) {
@@ -29,6 +30,7 @@ void beep(uint32_t freq = 950, uint32_t time = 18) {
     Quiet();
 }
 
+/*
 void never_gonna(void) {
     // https://create.arduino.cc/projecthub/410027/rickroll-piezo-buzzer-a1cd11?ref=part&ref_id=8233&offset=3
     const int song1_intro_melody[] = {554, 622, 622, 698, 831, 740, 698, 622, 554, 622, -1, 415, 415};
@@ -38,3 +40,66 @@ void never_gonna(void) {
     for (int i = 0; i < 13; i += 1) song1_intro_melody[i] == -1 ? timer_wait(song1_intro_rhythmn[i]) : beep((uint32_t)song1_intro_melody[i], (uint32_t)song1_intro_rhythmn[i]);
     for (int i = 0; i / sizeof(int) < sizeof(song1_intro_melody) / sizeof(int); i += 1) song1_verse1_melody[i] == -1 ? timer_wait(song1_verse1_rhythmn[i]) : beep((uint32_t)song1_verse1_melody[i], (uint32_t)song1_verse1_rhythmn[i] * 3);
 }
+
+
+
+#define NOTE_F4  349
+#define NOTE_FS4 370
+#define NOTE_G4  392
+#define NOTE_GS4 415
+#define NOTE_A4  440
+#define NOTE_AS4 466
+#define NOTE_C5  523
+#define NOTE_C6  1047
+#define NOTE_CS6 1109
+#define NOTE_D5  587
+#define NOTE_AS5 932
+#define NOTE_CS5 554
+#define NOTE_DS5 622
+#define NOTE_E5  659
+#define NOTE_F5  698
+#define NOTE_FS5 740
+#define NOTE_G5  784
+#define NOTE_GS5 831
+#define NOTE_A5  880
+#define NOTE_AS5 932
+#define NOTE_B5  988
+
+
+const short melody[] = {
+    NOTE_AS4,-2,  NOTE_F4,8,  NOTE_F4,8,  NOTE_AS4,8,//1
+    NOTE_GS4,16,  NOTE_FS4,16,  NOTE_GS4,-2,
+    NOTE_AS4,-2,  NOTE_FS4,8,  NOTE_FS4,8,  NOTE_AS4,8,
+    NOTE_A4,16,  NOTE_G4,16,  NOTE_A4,-2,
+    1, 
+    NOTE_AS4,4,  NOTE_F4,-4,  NOTE_AS4,8,  NOTE_AS4,16,  NOTE_C5,16, NOTE_D5,16, NOTE_DS5,16,//7
+    NOTE_F5,2,  NOTE_F5,8,  NOTE_F5,8,  NOTE_F5,8,  NOTE_FS5,16, NOTE_GS5,16,
+    NOTE_AS5,-2,  NOTE_AS5,8,  NOTE_AS5,8,  NOTE_GS5,8,  NOTE_FS5,16,
+    NOTE_GS5,-8,  NOTE_FS5,16,  NOTE_F5,2,  NOTE_F5,4, 
+    NOTE_DS5,-8, NOTE_F5,16, NOTE_FS5,2, NOTE_F5,8, NOTE_DS5,8, //11
+    NOTE_CS5,-8, NOTE_DS5,16, NOTE_F5,2, NOTE_DS5,8, NOTE_CS5,8,
+    NOTE_C5,-8, NOTE_D5,16, NOTE_E5,2, NOTE_G5,8, 
+    NOTE_F5,16, NOTE_F4,16, NOTE_F4,16, NOTE_F4,16,NOTE_F4,16,NOTE_F4,16,NOTE_F4,16,NOTE_F4,16,NOTE_F4,8, NOTE_F4,16,NOTE_F4,8,
+    NOTE_AS4,4,  NOTE_F4,-4,  NOTE_AS4,8,  NOTE_AS4,16,  NOTE_C5,16, NOTE_D5,16, NOTE_DS5,16,//15
+    NOTE_F5,2,  NOTE_F5,8,  NOTE_F5,8,  NOTE_F5,8,  NOTE_FS5,16, NOTE_GS5,16,
+    NOTE_AS5,-2, NOTE_CS6,4,
+    NOTE_C6,4, NOTE_A5,2, NOTE_F5,4,
+    NOTE_FS5,-2, NOTE_AS5,4,
+    NOTE_A5,4, NOTE_F5,2, NOTE_F5,4,
+    NOTE_FS5,-2, NOTE_AS5,4,
+    NOTE_A5,4, NOTE_F5,2, NOTE_D5,4,
+    NOTE_DS5,-2, NOTE_FS5,4,
+    NOTE_F5,4, NOTE_CS5,2, NOTE_AS4,4,
+    NOTE_C5,-8, NOTE_D5,16, NOTE_E5,2, NOTE_G5,8, 
+    NOTE_F5,16, NOTE_F4,16, NOTE_F4,16, NOTE_F4,16,NOTE_F4,16,NOTE_F4,16,NOTE_F4,16,NOTE_F4,16,NOTE_F4,8, NOTE_F4,16,NOTE_F4,8
+};
+
+void Zelda(void) {
+    for (int i = 0; i < 219; i++) {
+        PlaySound(melody[i]);
+        // timer_wait(wholenote / melody[i]);
+        timer_wait(2);
+        Quiet();
+    }
+}
+*/

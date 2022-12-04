@@ -35,4 +35,4 @@ disk_error:
     int 0x10
     mov al, 0x72
     int 0x10
-    hlt
+    jmp $

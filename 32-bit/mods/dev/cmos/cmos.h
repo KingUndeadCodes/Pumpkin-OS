@@ -1,5 +1,5 @@
 #ifndef CMOS_H
-#define CMOS_H 1
+#define CMOS_H
 
 #include "../port.cpp"
 #include <stdint.h>
@@ -17,6 +17,5 @@ typedef struct {
 } __attribute__((packed)) CMOSTime;
 
 CMOSTime FetchCurrentCMOSTime(void);
-char* CMOSDataString(CMOSTime T);
 
 #endif

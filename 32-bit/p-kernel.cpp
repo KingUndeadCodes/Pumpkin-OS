@@ -3,7 +3,7 @@
  * Protected under MIT License which lays down the terms of use.
 */
 
-#include "mods/ports/sha256/sha256.h"
+#include "mods/dev/serial/serial.h"
 #include "mods/dev/paging/paging.h"
 #include "mods/dev/audio/speaker.h"
 #include "mods/dev/cmos/cmos.h"
@@ -14,6 +14,7 @@
 #include <tasking.h>
 #include <stdlib.h>
 #include <text.h>
+#include <math.h>
 #include <time.h>
 
 extern "C" void _start() {
@@ -26,7 +27,8 @@ extern "C" void _start() {
     ISRInstall();
     IRQInstall();
     asm volatile ("sti");
-    if (are_interrupts_enabled()) print(" - Interupts Enabled!\n", GREEN);
+    if (!are_interrupts_enabled()) { serial_write_string("-- [time] interupt setup failed. system halted!\n"); abort(); }
+    print(" - Interupts Enabled!\n", GREEN);
     KeyboardInit();
     print(" - Keyboard Enabled!\n", GREEN);
     TimerInit();
@@ -38,8 +40,5 @@ extern "C" void _start() {
     print("\n - Checking for PCI devices...\n", PURPLE);
     fork(checkAllBuses);
     yield();
-    // printf("c - %d", FetchCurrentCMOSTime().century);
     /// MALLOC_TEST();
-    /// SHA256_TEST();
-    /// never_gonna();
 }

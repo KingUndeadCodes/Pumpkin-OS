@@ -1,5 +1,3 @@
-%include "disk.asm"
-
 [bits 16]
 [org 0x7c00]
 
@@ -81,6 +79,8 @@ kernel_start:
     mov cr0, eax
     jmp CODE_SEG:b32
 
+%include "disk.asm"
+
 [bits 32]
 
 VIDEO_MEMORY equ 0xb8000
@@ -112,15 +112,15 @@ b32:
     mov fs, ax
     mov gs, ax
 
+    mov ebp, 0x90000
+    mov esp, ebp
+
     in al, 0x92
     or al, 2
     out 0x92, al
 
-    mov ebp, 0x90000
-    mov esp, ebp
-
     jmp KERNEL_LOCATION
-    jmp shutdown
+    ; jmp shutdown
 
 [SECTION signature start=0x7dfe]
 dw 0aa55h

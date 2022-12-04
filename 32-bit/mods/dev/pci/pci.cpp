@@ -1,9 +1,9 @@
 #include "pci.h"
 #include "../port.cpp"
+#include "./drivers/rtl8139.h"
+#include "../serial/serial.h"
 
-// #define PCI_MAKE_ID(bus, dev, func)     ((bus) << 16) | ((dev) << 11) | ((func) << 8)
-
-const char* __PCI_classes[] {
+static const char* __PCI_classes[] {
     "Unclassified",
     "Mass Storage Controller",
     "Network Controller",
@@ -26,26 +26,112 @@ const char* __PCI_classes[] {
     "Non Essential Instrumentation"
 };
 
-static inline uint32_t inl(uint16_t port) {
-    uint32_t res;
-    asm volatile ("in %%dx, %%eax\n" : "=a" (res) : "d" (port));
-    return res;
+// Remove more and more cases when it breaks.
+static const char* getSubClassName (int base_class, int sub_class) {
+    const char* Unknown = "Unknown";
+    if (sub_class == 0x80) return "Other";
+    switch (base_class) {
+        case PCI_CLASS_UNCLASSIFIED: {
+            switch (sub_class) {
+                case 0x00: return "Non-VGA-Compatible Unclassified Device";
+                case 0x01: return "VGA-Compatible Unclassified Device";
+                default: return Unknown;
+            }
+        }
+        case PCI_CLASS_MASS_STORAGE_CONTROLLER: {
+            switch (sub_class) {
+                case 0x00: return "SCSI Bus Controller";
+                case 0x01: return "IDE Controller";
+                case 0x02: return "Floppy Disk Controller";
+                case 0x03: return "IPI Bus Controller";
+                case 0x04: return "RAID Controller";
+                case 0x05: return "ATA Controller";
+                case 0x06: return "Serial ATA Controller";
+                case 0x07: return "Serial Attached SCSI Controller";
+                case 0x08: return "Non-Volatile Memory Controller";
+                default: return Unknown;
+            }
+        }
+        case PCI_CLASS_NETWORK_CONTROLLER: {
+            switch (sub_class) {
+                case 0x00: return "Ethernet Controller";
+                case 0x01: return "Token Ring Controller";
+                case 0x02: return "FDDI Controller";
+                case 0x03: return "ATM Controller";
+                case 0x04: return "ISDN Controller";
+                case 0x05: return "WorldFip Controller";
+                case 0x06: return "PICMG 2.14 Multi Computing Controller";
+                case 0x07: return "PICMG 2.14 Multi Computing Controller";
+                case 0x08: return "Fabric Controller";
+                default: return Unknown;
+            }
+        }
+        case PCI_CLASS_DISPLAY_CONTROLLER: {
+            switch (sub_class) {
+                case 0x00: return "VGA Compatible Controller";
+                case 0x01: return "XGA Controller";
+                case 0x02: return "3D Controller (Not VGA-Compatible)";
+                default: return Unknown;
+            }
+        }
+        case PCI_CLASS_MULTIMEDIA_CONTROLLER: {
+            switch (sub_class) {
+                case 0x00: return "Multimedia Video Controller";
+                case 0x01: return "Multimedia Audio Controller";
+                case 0x02: return "Computer Telephony Device";
+                case 0x03: return "Audio Device";
+                default: return Unknown;
+            }
+        }
+        case PCI_CLASS_MEMORY_CONTROLLER: {
+            switch (sub_class) {
+                case 0x00: return "RAM Controller";
+                case 0x01: return "Flash Controller";
+                default: return Unknown;
+            }
+        }
+        case PCI_CLASS_BRIDGE_DEVICE: {
+            switch (sub_class) {
+                case 0x00: return "Host Bridge";
+                case 0x01: return "ISA Bridge";
+                case 0x02: return "EISA Bridge";
+                case 0x03: return "MCA Bridge"; 
+                case 0x04: return "PCI-to-PCI Bridge";
+                case 0x05: return "PCMCIA Bridge";
+                case 0x06: return "NuBus Bridge";
+                case 0x07: return "CardBus Bridge";
+                case 0x08: return "RACEway Bridge";
+                case 0x09: return "PCI-to-PCI Bridge";
+                case 0x0A: return "InfiniBand-to-PCI Host Bridge";
+                default: return Unknown;
+            }   
+        }
+        case PCI_CLASS_SIMPLE_COMMUNICATION_CONTROLLER: {
+            switch (sub_class) {
+                case 0x00: return "Serial Controller";
+                case 0x01: return "Parallel Controller";
+                case 0x02: return "Multiport Serial Controller";
+                case 0x03: return "Modem";
+                case 0x04: return "IEEE 488.1/2 (GPIB) Controller";
+                case 0x05: return "Smart Card Controller";
+                default: return Unknown;
+            }
+        }
+        case PCI_CLASS_BASE_SYSTEM_PERIPHERAL: {
+            switch (sub_class) {
+                case 0x00: return "PIC";
+                case 0x01: return "DMA Controller";
+                case 0x02: return "Timer";
+                case 0x03: return "RTC Controller";
+                case 0x04: return "PCI Hot-Plug Controller";
+                case 0x05: return "SD Host controller";
+                case 0x06: return "IOMMU";
+                default: return Unknown;
+            }
+        }
+        default: return "Unknown Class or Undefined Subclass";
+    }
 }
-
-static inline void outl(uint16_t port, uint32_t value) {
-    asm volatile ("out %%eax, %%dx\n" :: "d" (port), "a" (value));
-}
-
-static inline uint16_t inw(uint16_t port) {
-    uint16_t data;
-    asm volatile("inw %w1, %w0" : "=a" (data) : "Nd" (port));
-    return data;
-}
-
-static inline void outw(uint16_t port, uint16_t data) {
-    asm volatile("outw %w0, %w1" : : "a" (data), "Nd" (port));
-}
-
 
 uint16_t pciConfigReadWord(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset) {
     uint32_t address;
@@ -64,6 +150,13 @@ uint16_t pciConfigReadWord(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offs
     return tmp;
 }
 
+void pciConfigWriteWord(uint32_t bus, uint32_t slot, uint32_t function, uint32_t offset, uint32_t value) {
+    uint32_t address = (uint32_t)((bus << 16) | (slot << 11) | (function << 8) | (offset & 0xFC) | ((uint32_t)0x80000000));
+    // Write out the address
+    outl(0xCF8, address);
+	outl(0xCFC + (offset & 0x2), value);
+}
+
 uint16_t pciCheckVendor(uint8_t bus, uint8_t slot) {
     uint16_t vendor, device;
     /* Try and read the first configuration register. Since there are no
@@ -73,32 +166,25 @@ uint16_t pciCheckVendor(uint8_t bus, uint8_t slot) {
     } return (vendor);
 }
 
-uint16_t getVendorID(uint16_t bus, uint16_t device, uint16_t function)
-{
+uint16_t getVendorID(uint16_t bus, uint16_t device, uint16_t function) {
     uint32_t r0 = pciConfigReadWord(bus,device,function,0);
     return r0;
 }
 
-uint16_t getDeviceID(uint16_t bus, uint16_t device, uint16_t function)
-{
+uint16_t getDeviceID(uint16_t bus, uint16_t device, uint16_t function) {
     uint32_t r0 = pciConfigReadWord(bus,device,function,2);
     return r0;
 }
 
-uint16_t getClassId(uint16_t bus, uint16_t device, uint16_t function)
-{
+uint16_t getClassId(uint16_t bus, uint16_t device, uint16_t function) {
     uint32_t r0 = pciConfigReadWord(bus,device,function,0xA);
     return (r0 & ~0x00FF) >> 8;
 }
 
-uint16_t getSubClassId(uint16_t bus, uint16_t device, uint16_t function)
-{
+uint16_t getSubClassId(uint16_t bus, uint16_t device, uint16_t function) {
     uint32_t r0 = pciConfigReadWord(bus,device,function,0xA);
     return (r0 & ~0xFF00);
 }
-
-
-// https://github.com/pdoane/osdev/blob/423da913cbdd558fca0de652125c359c686b4ba3/pci/driver.c#L88
 
 void checkDevice(uint8_t bus, uint8_t device) {
     uint8_t function = 0;
@@ -114,38 +200,32 @@ void checkDevice(uint8_t bus, uint8_t device) {
 }
 
 char* deviceName(int vendorID, int deviceID) {
-    if ((int)vendorID == 32902 && deviceID == 4110) return "E1000";  // https://pci-ids.ucw.cz/read/PC/8086/100e (qemu -device e1000) port https://wiki.osdev.org/Intel_Ethernet_i217
-    else if ((int)vendorID == 4332 && deviceID == 33081) return "RTL8139";
+    if ((int)vendorID == 4332 && deviceID == 33081) return "RTL8139";
     return "UNKNOWN_DEVICE";
 }
 
 void checkFunction(uint8_t bus, uint8_t device, uint8_t function) {
-    // if (pciCheckVendor(bus, device) & 0x80) return;
     const int vendorID = (int)getVendorID(bus, device, function);
     const int deviceID = (int)getDeviceID(bus, device, function);
     const char* device_name = deviceName(vendorID, deviceID);
+    serial_write_string("Found PCI ", true);
+    getSubClassName(getClassId(bus, device, function), getSubClassId(bus, device, function)) == "Other" ? serial_write_string(__PCI_classes[getClassId(bus, device, function)], false) : serial_write_string(getSubClassName(getClassId(bus, device, function), getSubClassId(bus, device, function)), false);
     print("[");
     print("PCI", 10);
-    printf("] - %s", __PCI_classes[getClassId(bus, device, function)]);
-    (device_name != "UNKNOWN_DEVICE") ? printf(" | %s", device_name) : 0;
+    printf("] - %s / %s", __PCI_classes[getClassId(bus, device, function)], getSubClassName(getClassId(bus, device, function), getSubClassId(bus, device, function)));
+    (device_name != "UNKNOWN_DEVICE") ? printf(" / %s", device_name) : 0;
     print("\n");
-    if (device_name == "RTL8139") {
-        // https://doxygen.reactos.org/db/dbb/drivers_2network_2dd_2rtl8139_2hardware_8c_source.html
-        uintptr_t rx_buffer;
-        uint32_t ioaddr = pciConfigReadWord(bus, device, function, 0x10);
-        outb(ioaddr + 0x52, 0x0);
-        outb(ioaddr + 0x37, 0x10);
-        while((inb(ioaddr + 0x37) & 0x10) != 0) {};
-        outb(ioaddr + 0x30, (uintptr_t)rx_buffer);
-        outw(ioaddr + 0x3C, 0x0005);
-        outl(ioaddr + 0x44, 0xf | (1 << 7));
-        outb(ioaddr + 0x37, 0x0C);
-        outw(ioaddr + 0x3E, 0x5);
-        uint32_t mac_addr[6];
-        for (int i = 0; i < 6; i++) mac_addr[i] = inb(ioaddr + i - 1); 
-        printf("MAC Address: %d:%d:%d:%d:%d:%d\n", mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
+    if (device_name == "RTL8139") { 
+        serial_write_string(" | RTL8139", false);
+        RTL8139Methods.test(bus, device, function);
+    } else {
+        serial_write_string("<", false);
+        serial_write_string(itoa(vendorID, 10), false);
+        serial_write_string(", ", false);
+        serial_write_string(itoa(deviceID, 10), false);
+        serial_write_string("> ", false);
     }
-    // printf("(%d, %d)", vendorID, deviceID);
+    serial_write_string("\n", false);
     return;
 }
 
