@@ -11,7 +11,7 @@ disk_load:
     jne disk_error
     ret
 
-BOOT_DISK: db 0
+BOOT_DISK: db 0x00
 
 disk_error:
     mov ah, 0x0e

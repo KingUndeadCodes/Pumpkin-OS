@@ -46,23 +46,29 @@ void __serial_write_string(const char* string) {
 void serial_write_time() {
     CMOSTime T = FetchCurrentCMOSTime();
     __serial_write_string("\033[1;33m");
-    write_serial('[');
-    __serial_write_string(itoa(T.month, 10));
-    write_serial(':');
+    __serial_write_string(itoa(T.century*100 + T.year, 10));
+    write_serial('-');
+     __serial_write_string(itoa(T.month, 10));
+    write_serial('-');
     __serial_write_string(itoa(T.month_day, 10));
-    write_serial(':');
+    write_serial(' ');
     __serial_write_string(itoa(T.hours, 10));
     write_serial(':');
     __serial_write_string(itoa(T.minutes, 10));
     write_serial(':');
     __serial_write_string(itoa(T.seconds, 10));
-    write_serial(']');
-    write_serial(' ');
     __serial_write_string("\033[0m");
+    write_serial(' ');
     return;
 }
 
-void serial_write_string(const char* string, bool time_show = true) {
+void serial_write_string(const char* string, bool time_show = true, enum Types Type = INFO) {
     if (time_show == true) serial_write_time();
+    switch (Type) {
+        case INFO: __serial_write_string("\033[0;34mINFO\033[0m - "); break;
+        case WARN: __serial_write_string("\033[1;33mWARN\033[0m - "); break;
+        case FAIL: __serial_write_string("\033[0;31mFAIL\033[0m - "); break;
+        default: break;
+    }
     __serial_write_string(string);
 }

@@ -200,7 +200,11 @@ void checkDevice(uint8_t bus, uint8_t device) {
 }
 
 char* deviceName(int vendorID, int deviceID) {
-    if ((int)vendorID == 4332 && deviceID == 33081) return "RTL8139";
+    if (
+        /* RTL8129 */    (vendorID == 0x10ec && deviceID == 0x8129) || \
+        /* RTL8139 */    (vendorID == 0x10ec && deviceID == 0x8139) || \
+        /* RTL8139B */   (vendorID == 0x10ec && deviceID == 0x8138)
+    ) return "RTL8139"; // TODO: Change to "RTL8139 or Compatible"
     return "UNKNOWN_DEVICE";
 }
 
@@ -208,24 +212,23 @@ void checkFunction(uint8_t bus, uint8_t device, uint8_t function) {
     const int vendorID = (int)getVendorID(bus, device, function);
     const int deviceID = (int)getDeviceID(bus, device, function);
     const char* device_name = deviceName(vendorID, deviceID);
-    serial_write_string("Found PCI ", true);
-    getSubClassName(getClassId(bus, device, function), getSubClassId(bus, device, function)) == "Other" ? serial_write_string(__PCI_classes[getClassId(bus, device, function)], false) : serial_write_string(getSubClassName(getClassId(bus, device, function), getSubClassId(bus, device, function)), false);
+    serial_write_string("Found PCI ", true, INFO);
+    getSubClassName(getClassId(bus, device, function), getSubClassId(bus, device, function)) == "Other" ? serial_write_string(__PCI_classes[getClassId(bus, device, function)], false, NONE) : serial_write_string(getSubClassName(getClassId(bus, device, function), getSubClassId(bus, device, function)), false, NONE);
     print("[");
     print("PCI", 10);
     printf("] - %s / %s", __PCI_classes[getClassId(bus, device, function)], getSubClassName(getClassId(bus, device, function), getSubClassId(bus, device, function)));
     (device_name != "UNKNOWN_DEVICE") ? printf(" / %s", device_name) : 0;
     print("\n");
     if (device_name == "RTL8139") { 
-        serial_write_string(" | RTL8139", false);
+        serial_write_string(" | RTL8139\n", false, NONE);
         RTL8139Methods.test(bus, device, function);
     } else {
-        serial_write_string("<", false);
-        serial_write_string(itoa(vendorID, 10), false);
-        serial_write_string(", ", false);
-        serial_write_string(itoa(deviceID, 10), false);
-        serial_write_string("> ", false);
+        serial_write_string("<", false, NONE);
+        serial_write_string(itoa(vendorID, 10), false, NONE);
+        serial_write_string(", ", false, NONE);
+        serial_write_string(itoa(deviceID, 10), false, NONE);
+        serial_write_string(">\n", false, NONE);
     }
-    serial_write_string("\n", false);
     return;
 }
 

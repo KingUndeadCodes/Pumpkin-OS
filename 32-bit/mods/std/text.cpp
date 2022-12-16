@@ -1,5 +1,3 @@
-#include <string.h>
-#include <stdbool.h>
 #include "../dev/port.cpp"
 #include "include/text.h"
 #include "../dev/audio/speaker.h"
@@ -84,6 +82,7 @@ __attribute__ ((format (printf, 1, 2))) int printf(const char* format, ...) {
     return i;
 }
 
+/*
 void clear_screen(void) {
     for (row = 0; row < ROWS; row++) {
         for (col = 0; col < COLS; col++) {
@@ -98,17 +97,7 @@ void clear_screen(void) {
     col = 0;
     Cursor::moveCursor(row - 1, col);
 }
-
-// Clears current row
-void clear_row(void) {
-    for (col = 0; col < COLS; col++) {
-        buffer[col + COLS * row] = (struct Char) {
-            character: (uint8_t) ' ',
-            color: (uint8_t) 15,
-        };
-    };
-    col = 0;
-}
+*/
 
 void print(const char* string, uint8_t color = 15) {
     for (int i = 0; i < strlen(string); i++) {
@@ -123,9 +112,14 @@ void print(const char* string, uint8_t color = 15) {
             };
         } else if (string[i] == '\t') {
             print("        ");
-            // clear_row();
         } else if (string[i] == '\r') {
-            clear_row();
+            for (col = 0; col < COLS; col++) {
+                buffer[col + COLS * row] = (struct Char) {
+                    character: (uint8_t) ' ',
+                    color: (uint8_t) 15,
+                };
+            };
+            col = 0;
         } else {
 	        buffer[col + COLS * row] = (struct Char) {
                 character: (uint8_t) string[i],

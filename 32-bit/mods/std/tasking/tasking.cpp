@@ -35,7 +35,6 @@ void initTasking() {
     mainTask.next = &otherTask;
     otherTask.next = &mainTask;
     runningTask = &mainTask;
-    print(" - Tasking Initialized!", (uint8_t)COLOR_GREEN | COLOR_BLACK << 4);
 }
 
 void quit() {
