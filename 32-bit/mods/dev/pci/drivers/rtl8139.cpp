@@ -114,7 +114,7 @@ int ethernet_send_packet(uint8_t* dst_mac_addr, uint8_t * data, int len, uint16_
 void RTL8139_TEST(uint8_t bus, uint8_t device, uint8_t function) {
     RTL8139_INIT(bus, device, function);
     const uint8_t *mac_address = RTL8139_MAC_ADDR();
-    const uint8_t data[] = {'H', 'e', 'l', 'l', 'o', '!'};
+    const uint8_t data[] = {'H', 'e', 'l', 'l', 'o', ',', ' ', 'W', 'o', 'r', 'l', 'd', '!'};
     printf("MAC Address: %d:%d:%d:%d:%d:%d\n", mac_address[0], mac_address[1], mac_address[2], mac_address[3], mac_address[4], mac_address[5]);
     ethernet_send_packet((uint8_t*)mac_address, (uint8_t*)data, sizeof(data[0]) * sizeof(data), 0x0806);
     return;
