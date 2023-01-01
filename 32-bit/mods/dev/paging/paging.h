@@ -10,7 +10,4 @@ extern "C" void loadPageDirectory(unsigned int*);
 extern "C" void enablePaging();
 void PagingInstall();
 
-// char* pmalloc(size_t size);
-// void pfree(void *mem);
-
 #endif

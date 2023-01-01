@@ -1,4 +1,5 @@
 #include "irq.h"
+
 extern "C" void IRQ0();
 extern "C" void IRQ1();
 extern "C" void IRQ2();
@@ -16,12 +17,10 @@ extern "C" void IRQ13();
 extern "C" void IRQ14();
 extern "C" void IRQ15();
 
-void *irq_routines[16] =
-{
+void *irq_routines[16] = {
 	0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 0, 0
 };
-
 
 void irq_install_handler(int irq, void (*handler)(struct regs *r))
 {
@@ -35,8 +34,7 @@ void irq_uninstall_handler(int irq)
 }
 
 
-void irq_remap(void)
-{
+void irq_remap(void) {
 	outb(0x20, 0x11);
 	outb(0xA0, 0x11);
 	outb(0x21, 0x20);
@@ -45,10 +43,9 @@ void irq_remap(void)
 	outb(0xA1, 0x02);
 	outb(0x21, 0x01);
 	outb(0xA1, 0x01);
-	outb(0x21, 0x0);
-	outb(0xA1, 0x0);
+	outb(0x21, 0x0); // 0xFB
+	outb(0xA1, 0x0); // 0xFF
 }
-
 
 void IRQInstall() {
 	irq_remap();

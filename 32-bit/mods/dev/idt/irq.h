@@ -1,4 +1,7 @@
+#ifndef __IRQ_H
+#define __IRQ_H
 #include "idt.h"
+#include "isr.h"
 #ifndef _PORT_CPP
     #include "../port.cpp"
 #endif
@@ -24,3 +27,4 @@ void irq_remap(void);
 void IRQInstall();
 extern "C" void _irq_handler(struct regs *r);
 void irq_wait(int n);
+#endif

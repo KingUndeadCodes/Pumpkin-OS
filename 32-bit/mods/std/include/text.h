@@ -5,6 +5,9 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdarg.h>
+#include <string.h>
+#include <stdbool.h>
+// #include <graphics.h>
 
 enum {
     COLOR_BLACK = 0x0,

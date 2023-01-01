@@ -4,6 +4,13 @@
 
 int freeMem = NULL;
 
+__attribute__((__noreturn__)) void abort(void) {
+	printf("kernel: panic: abort()\n");
+    asm volatile("hlt");
+	while (1);
+	__builtin_unreachable();
+}
+
 void initializeMem() {
     if (freeMem != NULL) return;
     freeMem = FREE_MEM;
