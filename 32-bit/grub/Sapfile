@@ -1,0 +1,20 @@
+// Sapfile | Make but for Zoomers.
+// Types:
+//      - boolean   | True or False.
+//      - integer   | A number.
+//      - string    | A sequence of characters.
+//      - flag<T?>  | A definable flag. [1]
+//      - tree<T>   | A collection of values with a type of 'T'.
+//      - file      | A file.
+//
+//      [1]: If 'T' is defined
+
+flag<boolean> boot-grub // "Boot with Grub bootloader"
+flag<boolean> boot-core // "Boot with PumpkinOS bootloader"
+flag<integer> beep-freq // "Beep Frequency"
+
+tree<file> source := 
+    - main.c
+    - init.c
+    - file.c
+    - user.c
