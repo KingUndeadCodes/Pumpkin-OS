@@ -15,7 +15,7 @@
  *  #6 - https://forum.osdev.org/viewtopic.php?f=1&t=27901
  *  #7 - https://github.com/szhou42/osdev/blob/master/src/kernel/network/ip.c
  * TODO:
- * - 'RTL8139_RECEIVE_PACKET' should be re-written.
+ * - 'RTL8139_RECEIVE_PACKET' needs to be re-written.
 */
 
 static struct RTL8139 NICDevice;
@@ -95,6 +95,7 @@ inline uint16_t htons(uint16_t hostshort) {
 }
 
 int ethernet_send_packet(uint8_t* dst_mac_addr, uint8_t * data, int len, uint16_t protocol) {
+    // printf("%d", len);
     struct ethernet_frame* frame = (struct ethernet_frame*)malloc(sizeof(struct ethernet_frame) + len);
     void* frame_data = (void*)frame + sizeof(struct ethernet_frame);
     // Get source mac address from network card driver
@@ -111,11 +112,19 @@ int ethernet_send_packet(uint8_t* dst_mac_addr, uint8_t * data, int len, uint16_
     return len;
 }
 
+// fix `ethernet_frame` to be bigger.
 void RTL8139_TEST(uint8_t bus, uint8_t device, uint8_t function) {
     RTL8139_INIT(bus, device, function);
     const uint8_t *mac_address = RTL8139_MAC_ADDR();
-    const uint8_t data[] = {'H', 'e', 'l', 'l', 'o', ',', ' ', 'W', 'o', 'r', 'l', 'd', '!'};
     printf("MAC Address: %d:%d:%d:%d:%d:%d\n", mac_address[0], mac_address[1], mac_address[2], mac_address[3], mac_address[4], mac_address[5]);
-    ethernet_send_packet((uint8_t*)mac_address, (uint8_t*)data, sizeof(data[0]) * sizeof(data), 0x0806);
+    const uint8_t ARPPacket1[] = {0, 1, 8, 0, 6, 4, 0, 1, mac_address[0], mac_address[1], mac_address[2], mac_address[3], mac_address[4], mac_address[5]};
+    const uint8_t ARPPacket2[] = {192, 168, 1, 68, 65, 100, 58, 87, 19, 94, 192, 168, 1, 4};
+    const uint8_t ARPLength = 28;
+    uint8_t* data = (uint8_t*)malloc(ARPLength);
+    memcpy(data+0x0, ARPPacket1, sizeof(ARPPacket1));
+    memcpy(data+0xE, ARPPacket2, sizeof(ARPPacket2));
+    ethernet_send_packet((uint8_t*)mac_address, data, sizeof(uint8_t) * ARPLength, 0x0806);
+    ethernet_send_packet((uint8_t*)mac_address, data, sizeof(uint8_t) * ARPLength, 0x0806);
+    free(data);    
     return;
 }

@@ -21,6 +21,7 @@ enum Types {
 // static int init_serial();
 // char read_serial();
 // void write_serial(char a);
+void serial_terminal_start(void);
 void serial_write_string(const char* string, bool time_show = true, enum Types Type = INFO);
 
 #endif

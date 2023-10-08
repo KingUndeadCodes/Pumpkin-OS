@@ -1,10 +1,14 @@
 # Binary Files
+*.dat
 *.obj
 *.bin
 *.img
+*.iso
 *.o
 
 # Other
 .DS_Store 
 .vscode
 *.yml
+experemental
+docker

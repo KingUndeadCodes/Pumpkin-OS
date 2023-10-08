@@ -85,7 +85,6 @@ _start:
 	preserved and the call is well defined.
 	*/
 	call kernel_main
- 
 	/*
 	If the system has nothing more to do, put the computer into an
 	infinite loop. To do that:

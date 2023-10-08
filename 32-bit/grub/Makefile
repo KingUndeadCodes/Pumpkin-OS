@@ -6,9 +6,10 @@ LDFLAGS =-T linker.ld -o myos.bin -ffreestanding -O2 -nostdlib
 
 all: build clean 
 
-#	$(CC) $(CFLAGS) mods/std/graphics.cpp -o graphics.o
+# When running in docker, make sure the working dirrectory is 32-bit.
 
 build:
+	cp -r ../mods src/
 	nasm src/boot.asm -f elf -o entry.o
 	$(AS) src/boot.s -o boot.o
 	$(CC) -c src/main.cpp $(CFLAGS) -o kernel.o
@@ -18,6 +19,7 @@ build:
 	$(CC) -c src/mods/dev/idt/isr.cpp $(CFLAGS) -o isr.o
 	$(CC) -c src/mods/dev/idt/irq.cpp $(CFLAGS) -o irq.o
 	$(CC) -c src/mods/dev/kb/kb.cpp $(CFLAGS) -o kb.o
+	$(CC) -c src/mods/dev/mouse/mouse.cpp $(CFLAGS) -o mouse.o
 	$(CC) -c src/mods/dev/serial/serial.cpp $(CFLAGS) -o serial.o
 	$(CC) -c src/mods/dev/paging/paging.cpp $(CFLAGS) -o paging.o
 	$(CC) -c src/mods/std/stdlib.cpp $(CFLAGS) -o stdlib.o
@@ -30,12 +32,14 @@ build:
 	$(CC) -c src/mods/std/time.cpp $(CFLAGS) -o time.o
 	$(CC) -c src/mods/std/math.cpp $(CFLAGS) -o math.o
 	$(CC) -c src/mods/std/tasking/tasking.cpp $(CFLAGS) -o tasking.o
-	$(LD) $(LDFLAGS) boot.o entry.o kernel.o text.o idt.o isr.o irq.o kb.o string.o math.o speaker.o paging.o stdlib.o timer.o cmos.o pci.o rtl8139.o time.o serial.o tasking.o -lgcc
+	$(LD) $(LDFLAGS) boot.o entry.o kernel.o text.o idt.o isr.o irq.o kb.o mouse.o string.o math.o speaker.o paging.o stdlib.o timer.o cmos.o pci.o rtl8139.o time.o serial.o tasking.o -lgcc
 	mkdir -p isodir/boot/grub
+	rm -rf src/mods
 	cp myos.bin isodir/boot/myos.bin
 	cp grub.cfg isodir/boot/grub/grub.cfg
 	grub-mkrescue -o myos.iso isodir
 
+# 		-no-reboot -no-shutdown
 run:
 	qemu-system-x86_64 \
 		-cdrom myos.iso \

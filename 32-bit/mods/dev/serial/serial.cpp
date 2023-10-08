@@ -72,3 +72,89 @@ void serial_write_string(const char* string, bool time_show = true, enum Types T
     }
     __serial_write_string(string);
 }
+
+void serial_terminal_start(void) {
+    const uint16_t MAX_COMMAND_LENGTH = 256;
+    char* command = malloc(MAX_COMMAND_LENGTH * sizeof(char)); 
+    int pointer = 0;
+    serial_write_string("$ ", false, NONE);
+    while (true) {
+        command[pointer++] = read_serial();
+        // printf("%c", command[pointer - 1]);
+        if (command[pointer - 1] == 27) {
+            if (read_serial() == '[') {
+                switch (read_serial()) {
+                    case 'A': break; // up
+                    case 'B': break; // down
+                    case 'C': break; // right
+                    case 'D': break; // left
+                    default:  break; // other
+                }
+                command[pointer - 1] = 0;
+                pointer -= 1;
+                continue; 
+            }
+        } 
+        write_serial(command[pointer - 1]);
+        if (command[pointer - 1] == 127) {
+            if (pointer - 1 == 0) {
+                pointer--;
+                continue;
+            }
+            pointer -= 1;
+            command[pointer] = 0;
+            pointer -= 1;
+            serial_write_string("\b", false, NONE);
+            continue;
+        }
+        else if (command[pointer - 1] == 13) {
+            char* command_copy = command;
+            char* token = strtok(command_copy, " ");
+            if (token != NULL && strcmp(token, "r") == 0) {
+                // reading address
+                char* returned_string = (char*)malloc(128);
+                uint16_t port = (uint16_t)atoi(strtok(NULL, " "));
+                strcpy(returned_string, "[R] ");
+                strcat(returned_string, itoa(port, 10));
+                strcat(returned_string, " : ");
+                int rvalue = (int)inb(port);
+                serial_write_string((const char*)returned_string, false, NONE);
+                serial_write_string(itoa(rvalue, 10), false, NONE);
+                free(returned_string);
+            } else if (token != NULL && strcmp(token, "w") == 0) {
+                // writing address
+                char* returned_string = (char*)malloc(128);
+                uint16_t port = (uint16_t)atoi(strtok(NULL, " "));
+                uint8_t value = (uint8_t)atoi(strtok(NULL, " "));
+                strcpy(returned_string, "[W] ");
+                strcat(returned_string, itoa(port, 10));
+                strcat(returned_string, ", ");
+                strcat(returned_string, itoa(value, 10));
+                strcat(returned_string, " : ");
+                /* int rvalue = outb(port, value); */
+                outb(port, value);
+                serial_write_string((const char*)returned_string, false, NONE);
+                serial_write_string(itoa(0, 10), false, NONE);
+                free(returned_string);
+            } 
+            // else if (token != NULL && strcmp(token, "s") == 0) {
+            //     serial_write_string("swapping address: ", false, NONE);
+            //     serial_write_string("incomplete", false, NONE);
+            // } 
+            else if (token != NULL && strcmp(token, "h") == 0) {
+                serial_write_string("[h]         | help\n", false, NONE);
+                serial_write_string("[r] [a]     | read\n", false, NONE);
+                serial_write_string("[s] [a] [a] | swap\n", false, NONE);
+                serial_write_string("[w] [a] [v] | write", false, NONE);
+            } else {
+                serial_write_string("command not found: ", false, NONE);
+                serial_write_string(command, false, NONE);
+            }
+            serial_write_string("\n$ ", false, NONE);
+            for (int j = 0; j < 256; j++) command[j] = 0;
+            pointer = 0;
+            continue;
+        }
+    }
+    // write_serial('\n');
+}

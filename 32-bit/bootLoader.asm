@@ -4,7 +4,7 @@
 ; 0x13 = vga
 ; 0x03 = text
 mov ah, 0x0
-mov al, 0x3
+mov al, 0x03 ; 0x13
 int 0x10
 
 KERNEL_LOCATION equ 0x7dfe
@@ -18,7 +18,7 @@ mov ss, ax                  ; set ss to 0
 mov sp, 0x7C00              ; stack base (0x7C00)
 sti
 mov bx, KERNEL_LOCATION     ; ES:BX is the location to read from, e.g. 0x00$
-mov dh, 65                  ; read 50 sectors (blank sectors: empty_end) 
+mov dh, 100                  ; read 50 sectors (blank sectors: empty_end) 
 call disk_load              ; call disk_load subroutine
 
     jmp 0:kernel_start
@@ -78,7 +78,7 @@ kernel_start:
     cli
     lgdt [gdt_descriptor]
     mov eax, cr0
-    or eax, 1
+    or eax, 1 ; Some people put `al` here
     mov cr0, eax
     jmp CODE_SEG:b32
 

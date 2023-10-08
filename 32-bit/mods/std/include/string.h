@@ -6,7 +6,9 @@
 
 // #define atoa(x) #x
 
+int atoi(char *s);
 char* itoa(int val, int base);
+char* strtok(char *str, const char *delim);
 size_t strlen(const char* str);
 size_t strspn(const char* str1, const char* str2);
 int strcmp(const char *s1, const char *s2);

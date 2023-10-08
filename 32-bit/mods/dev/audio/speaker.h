@@ -5,9 +5,9 @@
 
 static void PlaySound(uint32_t nFrequence);
 static void Quiet();
-void beep(uint32_t freq, uint32_t time = 18);
+void beep(uint32_t freq = 950, uint32_t time = 18);
 
 // Audio Examples
-// void never_gonna(void);
+//  void never_gonna(void);
 //  void Zelda(void);
 #endif
