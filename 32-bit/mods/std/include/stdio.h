@@ -9,6 +9,10 @@
 
 // Has not yet been implemented.
 
+#define BIT_READ (int)4
+#define BIT_WRITE (int)2
+#define BIT_EXEC (int)1
+
 // Path Lexer and Parser
 typedef struct IOBuffer {
     int32_t _file;
@@ -18,9 +22,10 @@ typedef struct IOBuffer {
     int _flag;
     int _charbuf;
     int _bufsiz;
-    FILE* _tmpfname;
+    IOBuffer* _tmpfname; // Changed type from `FILE*` to `IOBuffer*`
 } FILE;
 
+/*
 FILE* fopen(const char *filename, const char *mode);
 int fclose(FILE *stream);
 int fprintf(FILE *stream, const char *format, ...);
@@ -37,4 +42,5 @@ int ferror(FILE *stream);
 void clearerr(FILE *stream);
 int remove(const char *filename);
 int rename(const char *oldname, const char *newname);
+*/
 #endif

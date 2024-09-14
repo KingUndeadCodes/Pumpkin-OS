@@ -4,7 +4,7 @@
 ; 0x13 = vga
 ; 0x03 = text
 mov ah, 0x0
-mov al, 0x03 ; 0x13
+mov al, 0x13 ; 0x13
 int 0x10
 
 KERNEL_LOCATION equ 0x7dfe
@@ -18,7 +18,7 @@ mov ss, ax                  ; set ss to 0
 mov sp, 0x7C00              ; stack base (0x7C00)
 sti
 mov bx, KERNEL_LOCATION     ; ES:BX is the location to read from, e.g. 0x00$
-mov dh, 100                  ; read 50 sectors (blank sectors: empty_end) 
+mov dh, 127                 ; read 50 sectors (blank sectors: empty_end) 
 call disk_load              ; call disk_load subroutine
 
     jmp 0:kernel_start
@@ -93,19 +93,19 @@ WHITE_ON_BLACK equ 0x0f
 ;     pusha
 ;     mov edx, VIDEO_MEMORY
 
-.loop:
-    mov al, [ebx]
-    mov ah, WHITE_ON_BLACK
-    cmp al, 0
-    je .done
-    mov [edx], ax
-    add ebx, 1
-    add edx, 2
-    jmp .loop
+; .loop:
+;     mov al, [ebx]
+;     mov ah, WHITE_ON_BLACK
+;     cmp al, 0
+;     je .done
+;     mov [edx], ax
+;     add ebx, 1
+;     add edx, 2
+;     jmp .loop
 
-.done:
-    popa
-    ret
+; .done:
+;     popa
+;     ret
 
 b32:
     mov ax, DATA_SEG

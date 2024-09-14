@@ -35,3 +35,6 @@ This is a Simple "toy" x86_64 OS.
 ; http://www.rohitab.com/discuss/topic/35103-switch-between-real-mode-and-protected-mode/
 -->
 
+<!--
+TODO: Fix "ctype.h". It does not work at all.
+-->

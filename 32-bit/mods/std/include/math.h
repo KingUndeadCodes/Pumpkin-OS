@@ -16,5 +16,8 @@
 #define M_SQRT1_2  0.707106781186547524401
 
 double sqrt(double arg);
+double fabs(double x);
+
+int complexFloor(double x);
 
 #endif

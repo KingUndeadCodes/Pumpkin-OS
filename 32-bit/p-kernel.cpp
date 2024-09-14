@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2023 KingUndeadCodes (https://github.com/KingUndeadCodes)
+ * Copyright (C) 2024 KingUndeadCodes (https://github.com/KingUndeadCodes)
  * Protected under MIT License which lays down the terms of use.
 */
 
@@ -14,8 +14,11 @@
 #include "mods/dev/kb/kb.h"
 #include <graphics.h>
 #include <tasking.h>
+#include <ctype.h>
 #include <math.h>
 #include <text.h>
+
+#include "mods/dev/vbe/vbe.cpp"
 
 extern "C" void _start() {
     #define BLUE (uint8_t)COLOR_CYAN | COLOR_BLACK << 4
@@ -42,15 +45,5 @@ extern "C" void _start() {
     initTasking();
     print(" - Checking for PCI devices...\n", PURPLE);
     checkAllBuses();
-    yield();
-    // Terminal Code
-    // serial_terminal_start();
-    // =======================================
-    // Graphics Code
-    // Screen::Fill();
-    // Screen::DrawIcon(1, 0, 50);
-    // Screen::DrawChar('.', 145, 100);
-    // Screen::DrawChar('.', 157, 100);
-    // Screen::DrawChar('.', 169, 100);
-    // =======================================
+    test();  
 }

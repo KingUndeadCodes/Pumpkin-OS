@@ -7,7 +7,7 @@
 *.o
 
 # Other
-.DS_Store 
+*.DS_Store 
 .vscode
 *.yml
 experemental
