@@ -3,7 +3,7 @@
 This is a Simple "toy" x86_64 OS.
 
 ### Features
-- GRUB Support (still being worked on)
+- GRUB Support (**Broken**) (**Paused**)
 - Keyboard and Mouse Support
 - Basic "Multitasking"
 - Support for Various PCI Cards
@@ -31,4 +31,10 @@ This is a Simple "toy" x86_64 OS.
         ; Failed to Initialize VESA Graphics Adapter
         ; Defaulting to VGA Graphics Mode
         ret
+
+; http://www.rohitab.com/discuss/topic/35103-switch-between-real-mode-and-protected-mode/
+-->
+
+<!--
+TODO: Fix "ctype.h". It does not work at all.
 -->
