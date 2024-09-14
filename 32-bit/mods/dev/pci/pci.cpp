@@ -1,7 +1,8 @@
 #include "pci.h"
 #include "../port.cpp"
-#include "./drivers/rtl8139.h"
+#include "../pit/pit.h"
 #include "../serial/serial.h"
+#include "./drivers/rtl8139.h"
 
 static const char* __PCI_classes[] {
     "Unclassified",
@@ -204,7 +205,10 @@ char* deviceName(int vendorID, int deviceID) {
         /* RTL8129 */    (vendorID == 0x10ec && deviceID == 0x8129) || \
         /* RTL8139 */    (vendorID == 0x10ec && deviceID == 0x8139) || \
         /* RTL8139B */   (vendorID == 0x10ec && deviceID == 0x8138)
-    ) return "RTL8139"; // TODO: Change to "RTL8139 or Compatible"
+    ) return "RTL8139";
+    else if (
+        /* AC97 */ (vendorID == 0x8086 && deviceID == 0x2415)
+    ) return "AC97";
     return "UNKNOWN_DEVICE";
 }
 
@@ -222,6 +226,8 @@ void checkFunction(uint8_t bus, uint8_t device, uint8_t function) {
     if (device_name == "RTL8139") { 
         serial_write_string(" | RTL8139\n", false, NONE);
         RTL8139Methods.test(bus, device, function);
+    } else if (device_name == "AC97") {
+        serial_write_string(" | AC97 (unsupported)\n", false, NONE);
     } else {
         serial_write_string("<", false, NONE);
         serial_write_string(itoa(vendorID, 10), false, NONE);

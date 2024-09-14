@@ -1,11 +1,74 @@
 #include "include/string.h"
 
+char* strchr(const char *str, int c) {
+    while (*str != '\0') {
+        if (*str == c) {
+            return (char *)str;
+        }
+        ++str;
+    }
+
+    return NULL;
+}
+
+char* strtok(char *str, const char *delim) {
+    static char *lastToken = NULL;  // Keeps track of the last token
+
+    if (str != NULL) {
+        lastToken = str;
+    } else if (lastToken == NULL) {
+        return NULL;  // No more tokens to be found
+    }
+
+    // Skip leading delimiters
+    char *startToken = lastToken;
+    while (*startToken != '\0' && strchr(delim, *startToken) != NULL) {
+        ++startToken;
+    }
+
+    if (*startToken == '\0') {
+        return NULL;  // Reached the end of the input string
+    }
+
+    // Find the end of the token
+    char *endToken = startToken + 1;
+    while (*endToken != '\0' && strchr(delim, *endToken) == NULL) {
+        ++endToken;
+    }
+
+    // Update the last token pointer for the next call
+    lastToken = (*endToken != '\0') ? endToken + 1 : NULL;
+
+    // Null-terminate the token
+    *endToken = '\0';
+
+    return startToken;
+}
+
 char* itoa(int val, int base){
 	if (val == 0 && base == 10) return "0";
 	static char buf[32] = {0};
    	int i = 30;
    	for(; val && i ; --i, val /= base) buf[i] = "0123456789abcdef"[val % base];
    	return &buf[i+1];
+}
+
+int atoi(char *s) {
+    int acum = 0;
+    int factor = 1;
+    
+    if (*s == '-') {
+        factor = -1;
+        s++;
+    }
+    
+    while ((*s >= '0') && (*s <= '9')) {
+        acum = acum * 10;
+        acum = acum + (*s - 48);
+        s++;
+    }
+
+    return (factor * acum);
 }
 
 void* memset(void* dest, uint8_t val, size_t count) {

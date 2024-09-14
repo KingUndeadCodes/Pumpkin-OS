@@ -1,8 +1,9 @@
 /*
- * Copyright (C) 2023 KingUndeadCodes (https://github.com/KingUndeadCodes)
+ * Copyright (C) 2024 KingUndeadCodes (https://github.com/KingUndeadCodes)
  * Protected under MIT License which lays down the terms of use.
 */
 
+#include "mods/dev/audio/speaker.h"
 #include "mods/dev/serial/serial.h"
 #include "mods/dev/paging/paging.h"
 #include "mods/dev/mouse/mouse.h"
@@ -13,7 +14,11 @@
 #include "mods/dev/kb/kb.h"
 #include <graphics.h>
 #include <tasking.h>
+#include <ctype.h>
+#include <math.h>
 #include <text.h>
+
+#include "mods/dev/vbe/vbe.cpp"
 
 extern "C" void _start() {
     #define BLUE (uint8_t)COLOR_CYAN | COLOR_BLACK << 4
@@ -35,16 +40,10 @@ extern "C" void _start() {
     print(" - PIT Enabled!\n", GREEN);
     PagingInstall();
     print(" - Paging Enabled!\n", GREEN);
-    initializeMem();
+    initialize_memory_pool();
     print(" - Tasking Enabled!\n", GREEN);
     initTasking();
     print(" - Checking for PCI devices...\n", PURPLE);
-    fork(checkAllBuses);
-    yield();
-    // Screen::Fill();
-    // Screen::DrawIcon(0, 145, 70);
-    // Screen::DrawChar('.', 145, 100);
-    // Screen::DrawChar('.', 157, 100);
-    // Screen::DrawChar('.', 169, 100);
-    /// MALLOC_TEST();
+    checkAllBuses();
+    test();  
 }

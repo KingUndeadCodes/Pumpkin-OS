@@ -1,7 +1,8 @@
 #include "serial.h"
 #include "../port.cpp"
 #include "../cmos/cmos.h"
- 
+// #include <stdio.h>
+
 /*
 static int init_serial() {
     outb(PORT + 1, 0x00);
@@ -19,6 +20,28 @@ static int init_serial() {
 }
 */
 
+char* serial_buffer = (char*)malloc(65535);
+
+void bputc(char a) {
+    *serial_buffer = a;
+    serial_buffer++;
+    return;
+}
+
+char bpopc(void) {
+    char a = *serial_buffer;
+    serial_buffer--;
+    return a;
+}
+
+FILE mkfile(void) {
+    FILE newFile;
+    newFile._ptr = serial_buffer;
+    newFile._flag = 744;
+    newFile._tmpfname = NULL;
+    return newFile;
+}
+
 inline int serial_received() { 
     return inb(PORT + 5) & 1; 
 }
@@ -31,10 +54,11 @@ char read_serial() {
     while (serial_received() == 0); 
     return inb(PORT);
 }
- 
+
 void write_serial(char a) {
     while (is_transmit_empty() == 0);
     outb(PORT,a);
+    bputc(a);
 }
 
 void __serial_write_string(const char* string) {
@@ -71,4 +95,15 @@ void serial_write_string(const char* string, bool time_show = true, enum Types T
         default: break;
     }
     __serial_write_string(string);
+}
+
+inline bool serial_token_is_int(int c) {
+    bool isNumber = false;
+    for (int i = 48; i < 58; i++) {
+        if (c == i) {
+            isNumber = true;
+            break;
+        }      
+    } 
+    return isNumber;
 }

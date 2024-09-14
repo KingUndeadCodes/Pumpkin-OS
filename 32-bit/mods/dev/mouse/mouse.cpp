@@ -64,7 +64,7 @@ void mouse_install(void) {
     outb(0x64, 0x20);
     mouse_wait(0);
     _status = (inb(0x60) | 2);
-    mouse_wait(1);
+    mouse_wait(1); 
     outb(0x64, 0x60);
     mouse_wait(1);
     outb(0x60, _status);
