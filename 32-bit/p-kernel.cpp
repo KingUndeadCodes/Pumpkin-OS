@@ -18,7 +18,7 @@
 #include <math.h>
 #include <text.h>
 
-#include "mods/dev/vbe/vbe.cpp"
+#include "mods/dev/vbe/vbe.h"
 
 extern "C" void _start() {
     #define BLUE (uint8_t)COLOR_CYAN | COLOR_BLACK << 4
@@ -45,5 +45,7 @@ extern "C" void _start() {
     initTasking();
     print(" - Checking for PCI devices...\n", PURPLE);
     checkAllBuses();
-    test();  
+    init();
+    // test();  
+    ViewTest::CalendarTest();
 }

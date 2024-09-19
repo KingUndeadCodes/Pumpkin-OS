@@ -46,6 +46,7 @@
 
 void draw_pixel(unsigned x, unsigned y, unsigned color);
 
+void init(void);
 void test(void); 
 
 int BgaIsAvailable(void);

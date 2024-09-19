@@ -4,6 +4,10 @@
 #include "../dev/pit/pit.h"
 #include "../dev/kb/kb.h"
 
+#define MODE 1 // 0 = 320x200, 1 = VBE 1024x768
+#include "../dev/vbe/vbe.h"
+#include "../dev/vbe/vga_table.h"
+
 #define reverse(b) (b * 0x0202020202ULL & 0x010884422010ULL) % 0x3ff
 
 class View {
@@ -512,8 +516,22 @@ namespace ViewTest {
 
 /// Set Pixel<x, y> to the color c
 void DrawPixel(int x, int y, int c = 0xF) {
-    unsigned char* Pixel = (unsigned char*)0xA0000 + 320 * y + x;
-    *Pixel = c;
+    if (MODE == 0) {
+        unsigned char* Pixel = (unsigned char*)0xA0000 + 320 * y + x;
+        *Pixel = c;
+    } else if (MODE == 1) {
+        const int scale = 2;
+        if (scale == 1) {
+            draw_pixel(x, y, vgaPalette[c]);
+        } else {
+            for (unsigned k = 0; k < scale; k++) {
+                for (unsigned l = 0; l < scale; l++) {
+                    draw_pixel(x * scale + l, y * scale + k, vgaPalette[c]);
+                }
+            }
+        }
+        // draw_pixel(x, y, convert(vgaPalette[c]));
+    }
     return;
 }
 

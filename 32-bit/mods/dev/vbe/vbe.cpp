@@ -4,20 +4,12 @@
 #include "../../std/include/graphics/image_struct.h"
 #include "../../std/include/graphics/image_background.h"
 #include "../../std/include/graphics/font.h"
-#include "./vga_table.h"
+#include "vga_table.h"
 
 #define COLOR_R 0x00FF0000
 #define COLOR_G 0x0000FF00
 #define COLOR_B 0x000000FF
 #define COLOR_W 0x00FFFFFF
-
-int convert(uint8_t x[3]) {
-    uint8_t r = x[0];
-    uint8_t g = x[1];
-    uint8_t b = x[2];
-    uint32_t color = (r << 16) | (g << 8) | b;
-    return color;
-}
 
 int currentBank = 0;
 const int kilobytes = (VBE_DISPI_BANK_SIZE_KB * 256);
@@ -51,7 +43,7 @@ void draw_icon(unsigned x, unsigned y, unsigned icon) {
                 for (unsigned l = 0; l < scale; l++) {
                     if (Icons[icon][i][j] == 0x00) continue;
                     if (Icons[icon][i][j] == 0x10) draw_pixel(x + j * scale + l, y + i * scale + k, 0x0); 
-                    draw_pixel(x + j * scale + l, y + i * scale + k, convert(vgaPalette[Icons[icon][i][j]]));
+                    draw_pixel(x + j * scale + l, y + i * scale + k, vgaPalette[Icons[icon][i][j]]);
                 }
             }
         }
@@ -79,12 +71,11 @@ void init(void) {
 }
 
 void test(void) {
-    init();
     unsigned color = rgb(11, 26, 28); // COLOR_B;
     int colorCopy = color;
     for (unsigned y = 0; y < VBE_DISPI_MAX_YRES * 1.1; y++) {
         for (unsigned x = 0; x < VBE_DISPI_MAX_XRES * 1.1; x++) {
-            draw_pixel(x, y, colorCopy);
+            draw_pixel(x, y, colorCopy); // colorCopy++
         }
     }
     draw_icon(220, 0, 3);

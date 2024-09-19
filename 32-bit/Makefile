@@ -34,7 +34,8 @@ build:
 	$(CC) $(CFLAGS) mods/std/math.cpp -o math.o
 	$(CC) $(CFLAGS) mods/std/tasking/tasking.cpp -o tasking.o
 	$(CC) $(CFLAGS) mods/std/graphics.cpp -o graphics.o
-	$(LD) $(LDFLAGS) Kernel-Entry.o graphics.o kernel.o text.o idt.o isr.o irq.o kb.o mouse.o ctype.o string.o math.o speaker.o paging.o stdlib.o timer.o cmos.o pci.o rtl8139.o time.o serial.o tasking.o --oformat binary
+	$(CC) $(CFLAGS) mods/dev/vbe/vbe.cpp -o vbe.o
+	$(LD) $(LDFLAGS) Kernel-Entry.o graphics.o kernel.o text.o idt.o isr.o irq.o kb.o mouse.o ctype.o string.o math.o speaker.o paging.o stdlib.o timer.o cmos.o pci.o rtl8139.o time.o serial.o tasking.o vbe.o --oformat binary
 	cat Pump.bin kernel.bin > short.bin
 	cat short.bin empty_end.bin > image.bin
 	cp image.bin image.img
@@ -59,4 +60,4 @@ run:
 		-object filter-dump,id=network_filter_object,netdev=network0,file=dump.dat \
 
 clean:
-	rm isr.o kb.o mouse.o Kernel-Entry.o kernel.bin Pump.bin kernel.o text.o idt.o irq.o empty_end.bin short.bin ctype.o string.o speaker.o paging.o serial.o stdlib.o timer.o pci.o rtl8139.o cmos.o time.o tasking.o math.o graphics.o image.bin
+	rm isr.o kb.o mouse.o Kernel-Entry.o kernel.bin Pump.bin kernel.o text.o idt.o irq.o empty_end.bin short.bin ctype.o string.o speaker.o paging.o serial.o stdlib.o timer.o pci.o rtl8139.o cmos.o time.o tasking.o math.o graphics.o vbe.o image.bin
