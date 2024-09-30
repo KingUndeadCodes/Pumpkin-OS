@@ -46,6 +46,8 @@ extern "C" void _start() {
     print(" - Checking for PCI devices...\n", PURPLE);
     checkAllBuses();
     init();
-    // test();  
+    // test(); 
+    setup_kb();
+    fill(0xb1a1c); 
     ViewTest::CalendarTest();
 }

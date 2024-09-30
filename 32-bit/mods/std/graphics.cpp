@@ -4,6 +4,9 @@
 #include "../dev/pit/pit.h"
 #include "../dev/kb/kb.h"
 
+static volatile int _xOffset = 0;
+static volatile int _yOffset = 0;
+
 #define MODE 1 // 0 = 320x200, 1 = VBE 1024x768
 #include "../dev/vbe/vbe.h"
 #include "../dev/vbe/vga_table.h"
@@ -426,24 +429,47 @@ namespace Modify {
     }
 }
 
+void up(void) {
+    fill(0xb1a1c); 
+    _yOffset -= 4;
+    ViewTest::CalendarTest();
+    return;
+}
+
+void down() {
+    fill(0xb1a1c); 
+    _yOffset += 4;
+    ViewTest::CalendarTest();
+    return;
+}
+
+void left() {
+    fill(0xb1a1c);
+    _xOffset -= 4;
+    ViewTest::CalendarTest();
+    return;
+}
+
+void right() {
+    fill(0xb1a1c);
+    _xOffset += 4;
+    ViewTest::CalendarTest();
+    return;
+}
+
 void testable_function() {
     serial_write_string("Testable\n");
     return;
 }
 
 void setup_kb() {
-    kb_add_event(-10, &testable_function);
-    kb_add_event(-20, &testable_function);
-    kb_add_event(-30, &testable_function);
-    kb_add_event(-40, &testable_function);
+    kb_add_event(-10, &up);
+    kb_add_event(-20, &left);
+    kb_add_event(-30, &right);
+    kb_add_event(-40, &down);
 }
 
 namespace ViewTest {
-
-    // ViewTest::SplashScreen();
-    // ViewTest::CustomShapeTest();
-    // ViewTest::CalendarTest();
-    // ViewTest::HelloWorld();
 
     void HelloWorld(void) {
         View MainView(320, 200, 0, 0);
@@ -460,10 +486,9 @@ namespace ViewTest {
     }
 
     void CalendarTest(void) {
-        setup_kb();
         View MainView(320, 200, 0, 0);
         View Application(304, 190, 0, 0, 0x4);
-        Calendar cal(0, 0, 2024, Calendar::Month::July);
+        Calendar cal(0, 0, 2024, Calendar::Month::September);
         Icon x(0, 0, 0);
         View* childViews_1[] = {&cal, &x, NULL};
         View* childViews_2[] = {&Application, NULL};
@@ -516,22 +541,21 @@ namespace ViewTest {
 
 /// Set Pixel<x, y> to the color c
 void DrawPixel(int x, int y, int c = 0xF) {
-    if (MODE == 0) {
+    #if MODE == 0
         unsigned char* Pixel = (unsigned char*)0xA0000 + 320 * y + x;
         *Pixel = c;
-    } else if (MODE == 1) {
+    #else
         const int scale = 2;
         if (scale == 1) {
-            draw_pixel(x, y, vgaPalette[c]);
+            draw_pixel(x + _xOffset, y + _yOffset, vgaPalette[c]);
         } else {
             for (unsigned k = 0; k < scale; k++) {
                 for (unsigned l = 0; l < scale; l++) {
-                    draw_pixel(x * scale + l, y * scale + k, vgaPalette[c]);
+                    draw_pixel((x + _xOffset) * scale + l, (y + _yOffset) * scale + k, vgaPalette[c]);
                 }
             }
         }
-        // draw_pixel(x, y, convert(vgaPalette[c]));
-    }
+    #endif
     return;
 }
 

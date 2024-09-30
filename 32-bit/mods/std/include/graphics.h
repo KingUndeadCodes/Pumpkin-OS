@@ -43,4 +43,6 @@ enum Axis: int {
     vertical
 };
 
+void setup_kb();
+
 #endif
