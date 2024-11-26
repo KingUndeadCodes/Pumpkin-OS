@@ -429,6 +429,7 @@ namespace Modify {
     }
 }
 
+#if MODE == 1
 void up(void) {
     fill(0xb1a1c); 
     _yOffset -= 4;
@@ -457,17 +458,25 @@ void right() {
     return;
 }
 
-void testable_function() {
+void middle(void) {  
     serial_write_string("Testable\n");
+    if (_xOffset != 96 || _yOffset != 92) {
+        fill(0xb1a1c);
+        _xOffset = 96;
+        _yOffset = 92;
+        ViewTest::CalendarTest();
+    }
     return;
 }
 
 void setup_kb() {
+    kb_add_event('\t', &middle);
     kb_add_event(-10, &up);
     kb_add_event(-20, &left);
     kb_add_event(-30, &right);
     kb_add_event(-40, &down);
 }
+#endif
 
 namespace ViewTest {
 
@@ -557,6 +566,14 @@ void DrawPixel(int x, int y, int c = 0xF) {
         }
     #endif
     return;
+}
+
+void graphics_initalize(void) {
+    #if MODE == 1
+        init();
+        setup_kb();
+        fill(0xb1a1c);
+    #endif
 }
 
 namespace Screen {

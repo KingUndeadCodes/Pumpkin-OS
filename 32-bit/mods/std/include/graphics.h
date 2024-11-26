@@ -44,5 +44,6 @@ enum Axis: int {
 };
 
 void setup_kb();
+void graphics_initalize(void);
 
 #endif
