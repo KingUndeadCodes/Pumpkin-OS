@@ -34,6 +34,7 @@ char bpopc(void) {
     return a;
 }
 
+/*
 FILE mkfile(void) {
     FILE newFile;
     newFile._ptr = serial_buffer;
@@ -41,6 +42,7 @@ FILE mkfile(void) {
     newFile._tmpfname = NULL;
     return newFile;
 }
+*/
 
 inline int serial_received() { 
     return inb(PORT + 5) & 1; 

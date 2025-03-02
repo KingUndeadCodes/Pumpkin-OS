@@ -11,14 +11,14 @@
 #include "mods/dev/idt/isr.h"
 #include "mods/dev/pit/pit.h"
 #include "mods/dev/pci/pci.h"
+#include "mods/dev/vbe/vbe.h"
 #include "mods/dev/kb/kb.h"
 #include <graphics.h>
 #include <tasking.h>
+#include <stdio.h>
 #include <ctype.h>
 #include <math.h>
 #include <text.h>
-
-#include "mods/dev/vbe/vbe.h"
 
 extern "C" void _start() {
     #define BLUE (uint8_t)COLOR_CYAN | COLOR_BLACK << 4
@@ -48,4 +48,22 @@ extern "C" void _start() {
     // test(); 
     graphics_initalize();
     ViewTest::CalendarTest();
+    /*
+    file_test:
+        FILE *f = fopen("test.txt", "w");
+        if (!f) {
+            serial_write_string("Failed to open file\n");
+            return;
+        } else {
+            const char *msg = "Hello, RAM FS!";
+            char* buffer = (char*)malloc(50);
+            fwrite(msg, 1, strlen((const char*)msg), f);
+            fseek(f, 0, SEEK_SET);
+            memset(buffer, 0, sizeof(buffer));
+            fread(buffer, 1, strlen(msg), f);
+            serial_write_string(buffer);
+            fclose(f);
+            free(buffer);
+        }
+    */
 }

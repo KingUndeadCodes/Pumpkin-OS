@@ -3,7 +3,8 @@
 
 typedef struct IntegerRange {
     uint8_t continueWith;
-    uint8_t continueFor;    
+    uint16_t continueFor; // When the image is used change this back to `uint8_t` below.
+    // uint8_t continueFor;    
 } IntegerRange;
 
 #endif

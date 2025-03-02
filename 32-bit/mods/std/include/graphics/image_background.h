@@ -2,7 +2,9 @@
 #define __IMAGE_BACKGROUND_H
 #include "image_struct.h"
 
-const inline IntegerRange Image[4354] = {
+const inline IntegerRange Image[] = {
+	{.continueWith = 0x00, .continueFor = 320 * 200}, 
+	/*
 	{.continueWith = 0x00, .continueFor = 0xff}, 
 	{.continueWith = 0x00, .continueFor = 0x41}, 
 	{.continueWith = 0x00, .continueFor = 0xff}, 
@@ -4357,6 +4359,7 @@ const inline IntegerRange Image[4354] = {
 	{.continueWith = 0xbb, .continueFor = 0x03}, 
 	{.continueWith = 0x06, .continueFor = 0x03}, 
 	{.continueWith = 0x72, .continueFor = 0x01},
+	*/
 };
 
 #endif

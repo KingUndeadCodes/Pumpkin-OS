@@ -20,7 +20,7 @@ enum Types {
 };
 
 // static int init_serial();
-FILE mkfile(void);
+// FILE mkfile(void);
 char read_serial();
 void write_serial(char a);
 void serial_write_string(const char* string, bool time_show = true, enum Types Type = INFO);
