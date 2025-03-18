@@ -41,4 +41,16 @@ static inline bool are_interrupts_enabled() {
 static inline void io_wait(void) {
     outb(0x80, 0);
 }
+
+static inline uint32_t syscall(uint32_t number, uint32_t arg1, uint32_t arg2, uint32_t arg3, uint32_t arg4, uint32_t arg5) {
+    uint32_t ret;
+    asm volatile (
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(number), "b"(arg1), "c"(arg2), "d"(arg3), "S"(arg4), "D"(arg5)
+        : "memory"
+    );
+    return ret;
+}
+
 #endif

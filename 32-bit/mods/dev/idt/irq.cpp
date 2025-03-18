@@ -16,6 +16,7 @@ extern "C" void IRQ12();
 extern "C" void IRQ13();
 extern "C" void IRQ14();
 extern "C" void IRQ15();
+extern "C" void syscall_handler();
 
 void *irq_routines[16] = {
 	0, 0, 0, 0, 0, 0, 0, 0,
@@ -65,6 +66,7 @@ void IRQInstall() {
 	IDTSetGate(45, (unsigned)IRQ13, 0x08, 0x8E);
 	IDTSetGate(46, (unsigned)IRQ14, 0x08, 0x8E);
 	IDTSetGate(47, (unsigned)IRQ15, 0x08, 0x8E);
+	IDTSetGate(0x80, (unsigned)syscall_handler, 0x08, 0x8E);
 }
 
 int currentInterrupt = -1;

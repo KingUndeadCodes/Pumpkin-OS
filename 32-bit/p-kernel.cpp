@@ -12,6 +12,7 @@
 #include "mods/dev/pit/pit.h"
 #include "mods/dev/pci/pci.h"
 #include "mods/dev/vbe/vbe.h"
+#include "mods/dev/port.cpp"
 #include "mods/dev/kb/kb.h"
 #include <graphics.h>
 #include <tasking.h>
@@ -48,6 +49,7 @@ extern "C" void _start() {
     // test(); 
     graphics_initalize();
     ViewTest::CalendarTest();
+    syscall(0, "loq.txt", 3, 4, 5, 6);
     /*
     file_test:
         FILE *f = fopen("test.txt", "w");
