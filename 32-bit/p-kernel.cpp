@@ -46,9 +46,7 @@ extern "C" void _start() {
     initTasking();
     print(" - Checking for PCI devices...\n", PURPLE);
     checkAllBuses();
-    // test(); 
     graphics_initalize();
-    ViewTest::CalendarTest();
     syscall(0, "loq.txt", 3, 4, 5, 6);
     /*
     file_test:

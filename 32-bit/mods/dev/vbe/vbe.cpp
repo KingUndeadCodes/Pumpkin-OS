@@ -1,8 +1,6 @@
 #include "vbe.h"
 #include "../serial/serial.h"
 #include "../../std/include/graphics/icons.h"
-#include "../../std/include/graphics/image_struct.h"
-#include "../../std/include/graphics/image_background.h"
 #include "../../std/include/graphics/font.h"
 #include "vga_table.h"
 
@@ -74,18 +72,6 @@ void init(void) {
     BgaSetVideoMode(SCREEN_X, SCREEN_Y, SCREEN_BPP, 0, 1);
     return;
 }
-
-/*
-void test(void) {
-    fill(rgb(11, 26, 28));
-    // draw_icon(220, 0, 3);
-    // draw_char(288, 0, 'H', COLOR_R);
-    // draw_char(320, 0, 'e', COLOR_G);
-    // draw_char(352, 0, 'l', COLOR_B);
-    // draw_char(384, 0, 'l', rgb(11, 51, 50));
-    // draw_char(416, 0, 'o', rgb(227, 71, 5));
-}
-*/
 
 void BgaWriteRegister(unsigned short IndexValue, unsigned short DataValue) {
     outw(VBE_DISPI_IOPORT_INDEX, IndexValue);
