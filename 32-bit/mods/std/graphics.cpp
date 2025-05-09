@@ -6,15 +6,18 @@
 #include "../dev/vbe/vbe.h"
 #include "../dev/pit/pit.h"
 #include "../dev/kb/kb.h"
+#include <text.h>
 
-static volatile int _xOffset = 0;
-static volatile int _yOffset = 0;
-
+/*
 /// Set Pixel<x, y> to the color c
 void DrawPixel(int x, int y, int c = 0xF) {
     unsigned char* Pixel = (unsigned char*)0xA0000 + 320 * y + x;
     *Pixel = c;
 }
+*/
+
+// https://wiki.osdev.org/Terminals
+// https://wiki.osdev.org/Creating_A_Shell
 
 namespace VBEScreen {
     const int fontScale = 2; // Must be divisible by 2
@@ -42,6 +45,11 @@ namespace VBEScreen {
 
 class Terminal {
 
+    public:
+        
+        static const int defaultForegroundColor = COLOR_W;
+        static const int defaultBackgroundColor = 0xb1a1c;
+
     private:
 
         char* buffer;
@@ -51,8 +59,8 @@ class Terminal {
         int cursorY;
         int lineSpacing;
 
-        int currentTextForegroundColor = COLOR_W;
-        int currentTextBackgroundColor = 0xb1a1c;
+        int currentTextForegroundColor = Terminal::defaultForegroundColor;
+        int currentTextBackgroundColor = Terminal::defaultBackgroundColor;
 
         // Write a function that given a bufferIndex, would modify the cursorX and cursorY with the correct position of that characters index, account for newlines, assuming a resolution of 1024x768
         void setCursor(int bufferIndex) {
@@ -87,31 +95,10 @@ class Terminal {
         }
 
         inline char checkCharacter(char c) {
-            switch (c) {
-                case '0': return 0;
-                case '1': return 1;
-                case '2': return 2;
-                case '3': return 3;
-                case '4': return 4;
-                case '5': return 5;
-                case '6': return 6;
-                case '7': return 7;
-                case '8': return 8;
-                case '9': return 9;
-                case 'a': return 10;
-                case 'b': return 11;
-                case 'c': return 12;
-                case 'd': return 13;
-                case 'e': return 14;
-                case 'f': return 15;
-                case 'A': return 10;
-                case 'B': return 11;
-                case 'C': return 12;
-                case 'D': return 13;
-                case 'E': return 14;
-                case 'F': return 15;
-                default: return 255;
-            }
+            if (c >= '0' && c <= '9') return c - '0';
+            if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+            if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+            return 255;
         }
 
     public:
@@ -204,12 +191,20 @@ class Terminal {
         void operator delete[](void *p) { free(p); }
 };
 
+typedef struct TerminalPreferences {
+    bool suppressCharacterOutput;
+} __attribute__((packed)); 
+
 static Terminal* terminal = NULL;
+static TerminalPreferences terminalPreferences = { .suppressCharacterOutput = false };
 
 void terminalWriteCharacter(char key, bool shift, bool meta, unsigned char scancode) {
     if (!terminal) {
         serial_write_string("Terminal is NULL\n", false, NONE);
         return;
+    }
+    if (terminalPreferences.suppressCharacterOutput) {
+        return; // Suppress character output
     }
     if (scancode > 0x3A) return;
     switch (key) {
@@ -233,12 +228,21 @@ void terminalWriteCharacter(char key, bool shift, bool meta, unsigned char scanc
     }
 }
 
+void terminal_write(const char* string) {
+    if (!terminal) {
+        // serial_write_string("Terminal is NULL\n", false, NONE);
+        return;
+    }
+    terminal->write(string);
+    return;
+}
+
 void graphics_initalize(void) {
     init();
-    fill(0xb1a1c);
+    fill(Terminal::defaultBackgroundColor);
     terminal = new Terminal((1024 * 1024), 0, 0);
     terminal->setTextForegroundColor(COLOR_W);
-    terminal->write("\nWelcome to \\(FF5C0400)PumpkinOS\\(FFFFFF00)!\n");
+    terminal->write("\n# Welcome to \\(FF5C0400)PumpkinOS\\(FFFFFF00)!\n");
     kb_add_event(&terminalWriteCharacter);
     return;
 }

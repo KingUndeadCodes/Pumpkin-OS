@@ -9,5 +9,6 @@
 #include "graphics/icons.h"
 
 void graphics_initalize(void);
+void terminal_write(const char* string);
 
 #endif

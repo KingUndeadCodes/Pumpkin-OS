@@ -15,6 +15,7 @@
 #include "mods/dev/port.cpp"
 #include "mods/dev/kb/kb.h"
 #include <graphics.h>
+#include <logging.h>
 #include <tasking.h>
 #include <stdio.h>
 #include <ctype.h>
@@ -22,32 +23,38 @@
 #include <text.h>
 
 extern "C" void _start() {
-    #define BLUE (uint8_t)COLOR_CYAN | COLOR_BLACK << 4
-    #define GREEN (uint8_t)COLOR_GREEN | COLOR_BLACK << 4
-    #define PURPLE (uint8_t)COLOR_LIGHT_PURPLE | COLOR_BLACK << 4
     Cursor::enableCursor(0, 10);
-    print("Booting Pumpkin-OS (ver: 0)\n\n", BLUE);
     IDTInstall();
     ISRInstall();
     IRQInstall();
     asm volatile ("sti");
+    Logging::capture();
     if (!are_interrupts_enabled()) { serial_write_string("interupt setup failed. system halted!\n", FAIL); abort(); }
-    print(" - Interupts Enabled!\n", GREEN);
+    Logging::log("Interupts Enabled!");
     KeyboardInit();
-    print(" - Keyboard Enabled!\n", GREEN);
+    Logging::log("Keyboard Enabled!");
     mouse_install();
-    print(" - Mouse Enabled!\n", GREEN);
+    Logging::log("Mouse Enabled!");
     TimerInit();
-    print(" - PIT Enabled!\n", GREEN);
+    Logging::log("PIT Enabled!");
     PagingInstall();
-    print(" - Paging Enabled!\n", GREEN);
+    Logging::log("Paging Enabled!");
     initialize_memory_pool();
-    print(" - Tasking Enabled!\n", GREEN);
+    Logging::log("Memory pool initialized!");
     initTasking();
-    print(" - Checking for PCI devices...\n", PURPLE);
+    Logging::log("Tasking Enabled!\n");
+    Logging::log("Checking for PCI devices...");
     checkAllBuses();
     graphics_initalize();
     syscall(0, "loq.txt", 3, 4, 5, 6);
+    initLogging:
+        LogDevice printDevice = { .log = &print };
+        LogDevice terminalDevice = { .log = &terminal_write };
+        LogDevice serialDevice = { .log = &serial_write_string };
+        Logging::addLogDevice(&printDevice);
+        Logging::addLogDevice(&terminalDevice);
+        Logging::addLogDevice(&serialDevice);
+        Logging::flush();
     /*
     file_test:
         FILE *f = fopen("test.txt", "w");

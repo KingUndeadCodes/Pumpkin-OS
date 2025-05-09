@@ -1,5 +1,57 @@
 #include "include/string.h"
 
+int sprintf(char* buffer, const char* format, ...) {
+    va_list list;
+    va_start(list, format);
+    char* buf_ptr = buffer;
+
+    for (int i = 0; format[i]; ++i) {
+        if (format[i] == '%') {
+            switch ((char)format[++i]) {
+                case 'c': {
+                    *buf_ptr++ = (char)va_arg(list, int);
+                    break;
+                }
+                case 's': {
+                    const char* str = va_arg(list, char*);
+                    while (*str) {
+                        *buf_ptr++ = *str++;
+                    }
+                    break;
+                }
+                case 'd':
+                case 'i': {
+                    char* temp = itoa(va_arg(list, int), 10);
+                    for (char* t = temp; *t; ++t) {
+                        *buf_ptr++ = *t;
+                    }
+                    break;
+                }
+                case 'u':
+                case 'o':
+                case 'x':
+                case 'X': {
+                    char* temp = itoa(va_arg(list, unsigned int), 10);
+                    for (char* t = temp; *t; ++t) {
+                        *buf_ptr++ = *t;
+                    }
+                    break;
+                }
+                default: {
+                    *buf_ptr++ = format[i];
+                    break;
+                }
+            }
+        } else {
+            *buf_ptr++ = format[i];
+        }
+    }
+
+    *buf_ptr = '\0';
+    va_end(list);
+    return buf_ptr - buffer;
+}
+
 char* strchr(const char *str, int c) {
     while (*str != '\0') {
         if (*str == c) {

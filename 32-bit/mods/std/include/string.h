@@ -3,6 +3,9 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
+#include <stdarg.h>
+
+int sprintf(char* buffer, const char* format, ...); 
 
 // #define atoa(x) #x
 
