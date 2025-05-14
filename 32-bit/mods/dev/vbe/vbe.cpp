@@ -2,7 +2,7 @@
 #include "../serial/serial.h"
 #include "../../std/include/graphics/icons.h"
 #include "../../std/include/graphics/font.h"
-#include "vga_table.h"
+// #include "vga_table.h"
 
 volatile int currentBank = 0;
 const int kilobytes = (VBE_DISPI_BANK_SIZE_KB * 256);

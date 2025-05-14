@@ -1,10 +1,12 @@
 #ifndef PCI_H
 #define PCI_H
 
+#include <logging.h>
 #include <stdbool.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <text.h>
 #include <time.h>
 // #include "../port.cpp"

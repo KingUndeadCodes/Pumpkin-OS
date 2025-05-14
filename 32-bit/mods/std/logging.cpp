@@ -35,11 +35,12 @@ void Logging::flush() {
     if (Logging::capturing) {
         FILE* file = fopen("kmsglog", "a");
         if (file) {
+            // TODO: free the buffer.
             char* buffer = (char*)malloc(1024 * 2 * sizeof(char));
             fread(buffer, 1, 1024 * 2, file);
             Logging::log(buffer);
             fclose(file);
-            free(buffer);
+            // free(buffer);
         }
     }
     Logging::capturing = false;
@@ -50,7 +51,7 @@ void Logging::log(const char* message) {
     if (Logging::capturing == true) {
         FILE* file = fopen("kmsglog", "a");
         if (file) {
-            // Read the rest of the file and combine the message after a newline
+            // Free the buffer
             char* buffer = (char*)malloc(1024 * 2 * sizeof(char));
             fread(buffer, 1, 1024 * 2, file);
             // Check if the last character is a newline
@@ -58,6 +59,7 @@ void Logging::log(const char* message) {
                 fwrite("\n", 1, 1, file);
             }
             fwrite(message, 1, strlen(message), file);
+            // free(buffer);
             fclose(file);
         }
     }

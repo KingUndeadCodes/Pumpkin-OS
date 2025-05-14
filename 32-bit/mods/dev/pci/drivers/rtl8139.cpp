@@ -45,16 +45,16 @@ void RTL8139_SEND_PACKET(void* data, uint32_t len) {
     outl(NICDevice.ioaddr + TSD_array[NICDevice.tx_current++], status);
     uint32_t transmit_ok = inl(NICDevice.ioaddr + TSD_array[NICDevice.tx_current - 1]);
     while (transmit_ok & (1 << 15) == 0) {
-        serial_write_string("[RTL8139] Waiting for transmit_ok ...\n");
+        Logging::log("[RTL8139] Waiting for transmit_ok ...");
         transmit_ok = inl(NICDevice.ioaddr + TSD_array[NICDevice.tx_current - 1]);
     }
     if(NICDevice.tx_current > 3) NICDevice.tx_current = 0;
 }
 
 void RTL8139_HANDLER(struct regs* r) {
-    serial_write_string("[RTL8139] Interupt Fired!\n");
+    Logging::log("[RTL8139] Interupt Fired!");
     uint16_t irq = inw(NICDevice.ioaddr + 0x3E);
-    if (irq & (1<<2)) serial_write_string("[RTL8139] Packet sent!\n");
+    if (irq & (1<<2)) Logging::log("[RTL8139] Packet sent!");
     if (irq & (1<<0)) RTL8139_RECEIVE_PACKET();
     outw(NICDevice.ioaddr + 0x3E, 0x5);
 }

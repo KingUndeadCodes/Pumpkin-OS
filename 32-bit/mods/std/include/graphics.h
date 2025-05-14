@@ -8,7 +8,8 @@
 #include "graphics/font.h"
 #include "graphics/icons.h"
 
-void graphics_initalize(void);
+void graphics_initalize_stage1(void);
+void graphics_initalize_stage2(void);
 void terminal_write(const char* string);
 
 #endif

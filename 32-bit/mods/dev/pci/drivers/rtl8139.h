@@ -2,6 +2,7 @@
 #define __RTL8139_H
 
 #include <stdlib.h>
+#include <logging.h>
 #include "../../idt/irq.h"
 #include "../../idt/idt.h"
 #include "../../pci/pci.h"

@@ -1,5 +1,5 @@
+// #include "../dev/vbe/vga_table.h"
 #include "../dev/serial/serial.h"
-#include "../dev/vbe/vga_table.h"
 #include "../dev/audio/speaker.h"
 #include "./include/graphics.h"
 #include "../dev/cmos/cmos.h"
@@ -122,6 +122,11 @@ class Terminal {
         }
 
         void backspace(void) {
+            /*
+            char character[2] = {this->buffer[this->bufferIndex - 1], '\0'};
+            serial_write_string("\n", false, NONE);
+            serial_write_string(character, false, NONE);
+            */
             if (this->bufferIndex == 0) {
                 // beep(950, 1);
                 return;
@@ -237,12 +242,16 @@ void terminal_write(const char* string) {
     return;
 }
 
-void graphics_initalize(void) {
+void graphics_initalize_stage1(void) {
     init();
     fill(Terminal::defaultBackgroundColor);
     terminal = new Terminal((1024 * 1024), 0, 0);
     terminal->setTextForegroundColor(COLOR_W);
-    terminal->write("\n# Welcome to \\(FF5C0400)PumpkinOS\\(FFFFFF00)!\n");
+    return;
+}
+
+void graphics_initalize_stage2(void) {
+    terminal->write("\n\n# Welcome to \\(FF5C0400)PumpkinOS\\(FFFFFF00)!\n");
     kb_add_event(&terminalWriteCharacter);
     return;
 }

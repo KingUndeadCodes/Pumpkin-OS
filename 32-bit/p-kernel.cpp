@@ -42,11 +42,10 @@ extern "C" void _start() {
     initialize_memory_pool();
     Logging::log("Memory pool initialized!");
     initTasking();
-    Logging::log("Tasking Enabled!\n");
+    Logging::log("Tasking Enabled!");
     Logging::log("Checking for PCI devices...");
     checkAllBuses();
-    graphics_initalize();
-    syscall(0, "loq.txt", 3, 4, 5, 6);
+    // graphics_initalize_stage1();
     initLogging:
         LogDevice printDevice = { .log = &print };
         LogDevice terminalDevice = { .log = &terminal_write };
@@ -55,6 +54,9 @@ extern "C" void _start() {
         Logging::addLogDevice(&terminalDevice);
         Logging::addLogDevice(&serialDevice);
         Logging::flush();
+    // graphics_initalize_stage2();
+    print("\nHello, PumpkinOS!\n", 240);
+    // syscall(0, "loq.txt", 3, 4, 5, 6);
     /*
     file_test:
         FILE *f = fopen("test.txt", "w");

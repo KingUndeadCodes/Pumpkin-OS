@@ -20,30 +20,6 @@ static int init_serial() {
 }
 */
 
-char* serial_buffer = (char*)malloc(65535);
-
-void bputc(char a) {
-    *serial_buffer = a;
-    serial_buffer++;
-    return;
-}
-
-char bpopc(void) {
-    char a = *serial_buffer;
-    serial_buffer--;
-    return a;
-}
-
-/*
-FILE mkfile(void) {
-    FILE newFile;
-    newFile._ptr = serial_buffer;
-    newFile._flag = 744;
-    newFile._tmpfname = NULL;
-    return newFile;
-}
-*/
-
 inline int serial_received() { 
     return inb(PORT + 5) & 1; 
 }
@@ -60,7 +36,7 @@ char read_serial() {
 void write_serial(char a) {
     while (is_transmit_empty() == 0);
     outb(PORT,a);
-    bputc(a);
+    // bputc(a);
 }
 
 void __serial_write_string(const char* string) {

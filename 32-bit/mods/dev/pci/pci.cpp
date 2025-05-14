@@ -216,25 +216,22 @@ void checkFunction(uint8_t bus, uint8_t device, uint8_t function) {
     const int vendorID = (int)getVendorID(bus, device, function);
     const int deviceID = (int)getDeviceID(bus, device, function);
     const char* device_name = deviceName(vendorID, deviceID);
-    serial_write_string("Found PCI ", true, INFO);
-    getSubClassName(getClassId(bus, device, function), getSubClassId(bus, device, function)) == "Other" ? serial_write_string(__PCI_classes[getClassId(bus, device, function)], false, NONE) : serial_write_string(getSubClassName(getClassId(bus, device, function), getSubClassId(bus, device, function)), false, NONE);
-    print("[");
-    print("PCI", 10);
-    printf("] - %s / %s", __PCI_classes[getClassId(bus, device, function)], getSubClassName(getClassId(bus, device, function), getSubClassId(bus, device, function)));
-    (device_name != "UNKNOWN_DEVICE") ? printf(" / %s", device_name) : 0;
-    print("\n");
+    char* buffer = (char*)malloc(128);
+    sprintf(
+        buffer, 
+        "Found PCI %s<%d, %d> (%s)", 
+        getSubClassName(getClassId(bus, device, function), getSubClassId(bus, device, function)) == "Other" ? __PCI_classes[getClassId(bus, device, function)] : getSubClassName(getClassId(bus, device, function), getSubClassId(bus, device, function)),
+        vendorID,
+        deviceID,
+        (device_name != "UNKNOWN_DEVICE") ? device_name : "unsupported"
+    );
+    Logging::log(buffer);
     if (device_name == "RTL8139") { 
-        serial_write_string(" | RTL8139\n", false, NONE);
         RTL8139Methods.test(bus, device, function);
     } else if (device_name == "AC97") {
-        serial_write_string(" | AC97 (unsupported)\n", false, NONE);
-    } else {
-        serial_write_string("<", false, NONE);
-        serial_write_string(itoa(vendorID, 10), false, NONE);
-        serial_write_string(", ", false, NONE);
-        serial_write_string(itoa(deviceID, 10), false, NONE);
-        serial_write_string(">\n", false, NONE);
+        // serial_write_string(" | AC97 (unsupported)\n", false, NONE);
     }
+    free(buffer);
     return;
 }
 
