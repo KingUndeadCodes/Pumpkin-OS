@@ -247,3 +247,61 @@ void* memcpy(void* dstptr, const void* srcptr, size_t size) {
 	for (size_t i = 0; i < size; i++) dst[i] = src[i];
 	return dstptr;
 }
+
+char* strdup(const char *str) {
+    if (str == NULL) {
+        return NULL;
+    }
+    size_t len = strlen(str);
+    char *new_str = malloc(len + 1);
+    if (new_str == NULL) {
+        return NULL;
+    }
+    strcpy(new_str, str);
+    return new_str;
+}
+
+char* strtok_r(char *str, const char *delim, char **saveptr) {
+    char *start;
+    if (str) {
+        start = str;
+    } else if (*saveptr) {
+        start = *saveptr;
+    } else {
+        return NULL;
+    }
+
+    // Skip leading delimiters
+    start += strspn(start, delim);
+    if (*start == '\0') {
+        *saveptr = NULL;
+        return NULL;
+    }
+
+    // Find end of token
+    char *end = start + strcspn(start, delim);
+    if (*end != '\0') {
+        *end = '\0';      // Null-terminate token
+        *saveptr = end + 1; // Save position for next call
+    } else {
+        *saveptr = NULL;  // No more tokens
+    }
+
+    return start;
+}
+
+size_t strcspn(const char *s, const char *reject) {
+    const char *p, *r;
+    size_t count = 0;
+
+    for (p = s; *p != '\0'; ++p) {
+        for (r = reject; *r != '\0'; ++r) {
+            if (*p == *r) {
+                return count;
+            }
+        }
+        ++count;
+    }
+
+    return count;
+}

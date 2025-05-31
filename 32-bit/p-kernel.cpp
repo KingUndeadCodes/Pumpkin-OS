@@ -45,7 +45,7 @@ extern "C" void _start() {
     Logging::log("Tasking Enabled!");
     Logging::log("Checking for PCI devices...");
     checkAllBuses();
-    // graphics_initalize_stage1();
+    graphics_initalize_stage1();
     initLogging:
         LogDevice printDevice = { .log = &print };
         LogDevice terminalDevice = { .log = &terminal_write };
@@ -54,8 +54,8 @@ extern "C" void _start() {
         Logging::addLogDevice(&terminalDevice);
         Logging::addLogDevice(&serialDevice);
         Logging::flush();
-    // graphics_initalize_stage2();
-    print("\nHello, PumpkinOS!\n", 240);
+    graphics_initalize_stage2();
+    print("\n\n# Welcome to PumpkinOS!\n", 240);
     // syscall(0, "loq.txt", 3, 4, 5, 6);
     /*
     file_test:

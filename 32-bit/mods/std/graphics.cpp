@@ -205,7 +205,7 @@ static TerminalPreferences terminalPreferences = { .suppressCharacterOutput = fa
 
 void terminalWriteCharacter(char key, bool shift, bool meta, unsigned char scancode) {
     if (!terminal) {
-        serial_write_string("Terminal is NULL\n", false, NONE);
+        serial_write_string("Terminal is NULL\n", false, FAIL);
         return;
     }
     if (terminalPreferences.suppressCharacterOutput) {
