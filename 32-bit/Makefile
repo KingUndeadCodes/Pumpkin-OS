@@ -2,7 +2,7 @@ AS      =nasm
 CC      =x86_64-elf-g++
 LD      =x86_64-elf-ld
 CFLAGS  =-fpermissive -ffreestanding -m32 -g -c -w -I mods/std/include -fno-exceptions -fno-rtti -lrt
-LDFLAGS =-m elf_i386 -o kernel.bin -Ttext 0x7dfe
+LDFLAGS =-m elf_i386 -o kernel.bin -Ttext 0x7e00
 
 # https://forum.osdev.org/viewtopic.php?f=1&t=31529 (-fno-exceptions -fno-rtti for Graphics Classes)
 ### REMOVE 'graphics.cpp' !!!

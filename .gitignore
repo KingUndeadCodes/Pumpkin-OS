@@ -12,3 +12,6 @@
 *.yml
 experemental
 docker
+
+# Files to ignore
+main.asm

@@ -7,7 +7,7 @@ mov ah, 0x0
 mov al, 0x03 ; 0x13
 int 0x10
 
-KERNEL_LOCATION equ 0x7dfe
+KERNEL_LOCATION equ 0x7e00
 
 mov [BOOT_DISK], dl         ; Stores the boot disk number
 cli
