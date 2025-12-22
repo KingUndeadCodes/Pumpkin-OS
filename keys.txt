@@ -1,6 +1,0 @@
-L Arrow     Shift Window Left
-R Arrow     Shift Window Right
-U Arrow     Shift Window Up
-D Arrow     Shift Window Down
-Shift       Move Window Center
-Control
