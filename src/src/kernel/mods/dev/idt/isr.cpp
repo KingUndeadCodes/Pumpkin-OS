@@ -122,8 +122,8 @@ char* _utoa64_hex(uint64_t val, char* buf) {
 extern "C" void _fault_handler(struct regs *r)
 {
     if (r->int_no < 32) {
-        printf(exception_messages[r->int_no]);
-        printf(" Exception. System Halted!\n");
+        // printf(exception_messages[r->int_no]);
+        // printf(" Exception. System Halted!\n");
         // Serial output for debugging
         serial_write_string("\n", false, NONE);
         serial_write_string(exception_messages[r->int_no], true, FAIL);

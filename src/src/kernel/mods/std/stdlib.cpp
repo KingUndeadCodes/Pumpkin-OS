@@ -10,7 +10,7 @@ div_t div(int numerator, int denominator) {
 }
 
 __attribute__((__noreturn__)) void abort(void) {
-	printf("kernel: panic: abort()\n");
+	serial_write_string("kernel: panic: abort()\n");
     asm volatile("hlt");
 	while (1);
 	__builtin_unreachable();

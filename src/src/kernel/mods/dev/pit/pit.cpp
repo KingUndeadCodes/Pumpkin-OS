@@ -1,6 +1,6 @@
 #include "pit.h"
 
-int timer_ticks = 0;
+volatile int timer_ticks = 0;
 
 /* Handles the timer. In this case, it's very simple: We
 *  increment the 'timer_ticks' variable every time the
@@ -35,5 +35,5 @@ void timer_wait(int ticks)
 {
     unsigned long eticks;
     eticks = timer_ticks + ticks;
-    while(timer_ticks < eticks) asm("nop");
+    while(timer_ticks < eticks) asm("hlt");
 }

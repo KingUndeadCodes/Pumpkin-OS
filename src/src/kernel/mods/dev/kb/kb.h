@@ -3,7 +3,6 @@
 
 #include "../idt/irq.h"
 #include "../idt/idt.h"
-#include <text.h>
 
 #define MAX_CALLBACKS 32
 

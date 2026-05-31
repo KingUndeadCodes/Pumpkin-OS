@@ -83,3 +83,64 @@ inline bool serial_token_is_int(int c) {
     } 
     return isNumber;
 }
+
+int vprintf_serial(const char* format, va_list list) {
+    for (int i = 0; format[i]; ++i) {
+        if (format[i] == '%') {
+            switch ((char)format[++i]) {
+                case 'c': {
+                    char c[] = {(char)va_arg(list, int), '\0'};
+                    __serial_write_string(c);
+                    break;
+                }
+                case 's': {
+                    __serial_write_string(va_arg(list, char*));
+                    break;
+                }
+                case 'd':
+                case 'i': {
+                    __serial_write_string(itoa(va_arg(list, int), 10));
+                    break;
+                }
+                case 'u':
+                case 'o':
+                case 'x':
+                case 'X': {
+                    __serial_write_string(itoa(va_arg(list, unsigned int), 10));
+                    break;
+                }
+                case 'p': {
+                    void* ptr = va_arg(list, void*);
+                    __serial_write_string("0x");
+                    __serial_write_string(itoa((uintptr_t)ptr, 16));
+                    break;
+                }
+                default: {
+                    char c[] = {format[i], '\0'};
+                    __serial_write_string(c);
+                    break;
+                }
+            }
+            continue;
+        } else {
+            char c[] = {format[i], '\0'};
+            __serial_write_string(c);
+        }
+    }
+    return 0;
+};
+
+__attribute__ ((format (printf, 3, 4))) int printf_serial(bool time_show, enum Types Type, const char* format, ...) {
+    if (time_show) serial_write_time();
+    switch (Type) {
+        case INFO: __serial_write_string("\033[0;34mINFO\033[0m - "); break;
+        case WARN: __serial_write_string("\033[1;33mWARN\033[0m - "); break;
+        case FAIL: __serial_write_string("\033[0;31mFAIL\033[0m - "); break;
+        default: break;
+    }
+    va_list list;
+    va_start(list, format);
+    int result = vprintf_serial(format, list);
+    va_end(list);
+    return result;
+}

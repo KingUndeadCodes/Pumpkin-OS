@@ -5,7 +5,6 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <text.h>
 
 #define IP_IPV4 4
 #define IP_PACKET_NO_FRAGMENT 2

@@ -25,6 +25,6 @@ void irq_install_handler(int irq, void (*handler)(struct regs *r));
 void irq_uninstall_handler(int irq);
 void irq_remap(void);
 void IRQInstall();
-extern "C" void _irq_handler(struct regs *r);
+extern "C" uint32_t* _irq_handler(struct regs *r);
 void irq_wait(int n);
 #endif

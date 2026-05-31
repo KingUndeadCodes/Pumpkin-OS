@@ -5,7 +5,6 @@
 #include "../idt/irq.h"
 #include "../idt/idt.h"
 #include <graphics.h>
-#include <text.h>
 
 // void pit_init(uint32_t hz);
 

@@ -7,8 +7,6 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <text.h>
-#include <time.h>
 // #include "../port.cpp"
 
 #define PCI_CLASS_UNCLASSIFIED                          0x00

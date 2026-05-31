@@ -1,5 +1,6 @@
 #include "elf.h"
 #include <stdint.h>
+#include <stdarg.h>
 #include "../serial/serial.h"
 
 // This needs to be worked on.
@@ -49,24 +50,24 @@ static int elf_get_symval(Elf32_Ehdr *hdr, int table, uint32_t idx) {
 
     Elf32_Shdr *symtab = elf_section(hdr, table);
     if (!symtab) {
-        printf("ERROR: symtab section %d not found\n", table);
+        printf_serial(false, FAIL, "ERROR: symtab section %d not found\n", table);
         return ELF_RELOC_ERR;
     }
     if (symtab->sh_entsize == 0) {
-        printf("ERROR: symtab section %d has sh_entsize == 0\n", table);
+        printf_serial(false, FAIL, "ERROR: symtab section %d has sh_entsize == 0\n", table);
         return ELF_RELOC_ERR;
     }
 
     uint32_t symtab_entries = symtab->sh_size / symtab->sh_entsize;
     if (idx >= symtab_entries) {
-        printf("Symbol Index out of Range (%d:%u).\n", table, idx);
+        printf_serial(false, FAIL, "Symbol Index out of Range (%d:%u).\n", table, idx);
         return ELF_RELOC_ERR;
     }
 
     /* get pointer to symbol table data (file-backed or allocated) */
     Elf32_Sym *symbols = (Elf32_Sym *)elf_section_data(hdr, symtab);
     if (!symbols) {
-        printf("ERROR: symtab data for section %d is NULL\n", table);
+        printf_serial(false, FAIL, "ERROR: symtab data for section %d is NULL\n", table);
         return ELF_RELOC_ERR;
     }
     Elf32_Sym *symbol = &symbols[idx];
@@ -75,12 +76,12 @@ static int elf_get_symval(Elf32_Ehdr *hdr, int table, uint32_t idx) {
         /* External symbol: look up in linked string table and call elf_lookup_symbol */
         Elf32_Shdr *strtab = elf_section(hdr, symtab->sh_link);
         if (!strtab) {
-            printf("ERROR: symtab linked strtab %u missing\n", symtab->sh_link);
+            printf_serial(false, FAIL, "ERROR: symtab linked strtab %u missing\n", symtab->sh_link);
             return ELF_RELOC_ERR;
         }
         const char *strbase = (const char *)elf_section_data(hdr, strtab);
         if (!strbase) {
-            printf("ERROR: strtab data is NULL for section %u\n", symtab->sh_link);
+            printf_serial(false, FAIL, "ERROR: strtab data is NULL for section %u\n", symtab->sh_link);
             return ELF_RELOC_ERR;
         }
         const char *name = strbase + symbol->st_name;
@@ -91,7 +92,7 @@ static int elf_get_symval(Elf32_Ehdr *hdr, int table, uint32_t idx) {
             if ((ELF32_ST_BIND(symbol->st_info) & STB_WEAK)) {
                 return 0; /* weak symbol resolves to 0 */
             } else {
-                printf("Undefined External Symbol : %s.\n", name);
+                printf_serial(false, FAIL, "Undefined External Symbol : %s.\n", name);
                 return ELF_RELOC_ERR;
             }
         } else {
@@ -104,12 +105,12 @@ static int elf_get_symval(Elf32_Ehdr *hdr, int table, uint32_t idx) {
         /* internal symbol: locate referenced section and compute runtime address */
         Elf32_Shdr *target = elf_section(hdr, symbol->st_shndx);
         if (!target) {
-            printf("ERROR: symbol references invalid section %u\n", symbol->st_shndx);
+            printf_serial(false, FAIL, "ERROR: symbol references invalid section %u\n", symbol->st_shndx);
             return ELF_RELOC_ERR;
         }
         void *target_base = elf_section_data(hdr, target);
         if (!target_base) {
-            printf("ERROR: target section %u has no data\n", symbol->st_shndx);
+            printf_serial(false, FAIL, "ERROR: target section %u has no data\n", symbol->st_shndx);
             return ELF_RELOC_ERR;
         }
         /* symbol->st_value is the offset inside the section */
@@ -130,7 +131,7 @@ static int elf_load_stage1(Elf32_Ehdr *hdr) {
             if (section->sh_flags & SHF_ALLOC) {
                 void *mem = malloc(section->sh_size);
                 if (!mem) {
-                    printf("ERROR: malloc failed allocating %u bytes for section %u\n",
+                    printf_serial(false, FAIL, "ERROR: malloc failed allocating %u bytes for section %u\n",
                            (unsigned)section->sh_size, i);
                     return ELF_RELOC_ERR;
                 }
@@ -139,7 +140,7 @@ static int elf_load_stage1(Elf32_Ehdr *hdr) {
                 /* store runtime pointer in sh_addr and clear sh_offset to indicate no file data */
                 section->sh_addr = (Elf32_Addr)(uintptr_t)mem;
                 section->sh_offset = 0;
-                printf("DEBUG: Allocated %u bytes for section %u at %p.\n",
+                printf_serial(false, INFO, "DEBUG: Allocated %u bytes for section %u at %p.\n",
                        (unsigned)section->sh_size, i, mem);
             }
         }
@@ -150,24 +151,24 @@ static int elf_load_stage1(Elf32_Ehdr *hdr) {
 
 static int elf_do_reloc(Elf32_Ehdr *hdr, Elf32_Rel *rel, Elf32_Shdr *reltab_section) {
     if (!reltab_section) {
-        printf("ERROR: reltab_section is NULL\n");
+        printf_serial(false, FAIL, "ERROR: reltab_section is NULL\n");
         return ELF_RELOC_ERR;
     }
     Elf32_Shdr *target_section = elf_section(hdr, reltab_section->sh_info);
     if (!target_section) {
-        printf("ERROR: target section (sh_info=%u) missing\n", (unsigned)reltab_section->sh_info);
+        printf_serial(false, FAIL, "ERROR: target section (sh_info=%u) missing\n", (unsigned)reltab_section->sh_info);
         return ELF_RELOC_ERR;
     }
 
     uint8_t *base = (uint8_t *)elf_section_data(hdr, target_section);
     if (!base) {
-        printf("ERROR: target section %u has no base pointer\n", (unsigned)reltab_section->sh_info);
+        printf_serial(false, FAIL, "ERROR: target section %u has no base pointer\n", (unsigned)reltab_section->sh_info);
         return ELF_RELOC_ERR;
     }
 
     /* sanity check offset */
     if ((uintptr_t)rel->r_offset + sizeof(int) > (uintptr_t)target_section->sh_size) {
-        printf("ERROR: relocation offset out of bounds (off=%u secsize=%u)\n",
+        printf_serial(false, FAIL, "ERROR: relocation offset out of bounds (off=%u secsize=%u)\n",
                (unsigned)rel->r_offset, (unsigned)target_section->sh_size);
         return ELF_RELOC_ERR;
     }
@@ -193,7 +194,7 @@ static int elf_do_reloc(Elf32_Ehdr *hdr, Elf32_Rel *rel, Elf32_Shdr *reltab_sect
             break;
         }
         default:
-            printf("Unsupported Relocation Type (%u).\n", (unsigned)ELF32_R_TYPE(rel->r_info));
+            printf_serial(false, FAIL, "Unsupported Relocation Type (%u).\n", (unsigned)ELF32_R_TYPE(rel->r_info));
             return ELF_RELOC_ERR;
     }
     return symval;
@@ -207,16 +208,16 @@ static int elf_load_stage2(Elf32_Ehdr *hdr) {
     for (i = 0; i < hdr->e_shnum; i++) {
         /*
         char* string = (char*)malloc(50);
-        sprintf(string, "DEBUG: Processing section %u/%u\n", i + 1, hdr->e_shnum);
+        sprintf_serial(false, FAIL, string, "DEBUG: Processing section %u/%u\n", i + 1, hdr->e_shnum);
         serial_write_string(string);
         free(string);
         */
-		// printf("DEBUG: Processing section %u/%u\n", i + 1, hdr->e_shnum);
+		// printf_serial(false, FAIL, "DEBUG: Processing section %u/%u\n", i + 1, hdr->e_shnum);
         Elf32_Shdr *section = &shdr[i];
 
         if (section->sh_type == SHT_REL) {
             if (section->sh_entsize == 0) {
-                printf("ERROR: relocation section %u has sh_entsize == 0\n", i);
+                printf_serial(false, FAIL, "ERROR: relocation section %u has sh_entsize == 0\n", i);
                 return ELF_RELOC_ERR;
             }
             uint32_t entries = section->sh_size / section->sh_entsize;
@@ -224,7 +225,7 @@ static int elf_load_stage2(Elf32_Ehdr *hdr) {
             /* get pointer to the relocation table (file-backed or in-memory) */
             Elf32_Rel *rel_table = (Elf32_Rel *)elf_section_data(hdr, section);
             if (!rel_table) {
-                printf("ERROR: could not get relocation table pointer for section %u\n", i);
+                printf_serial(false, FAIL, "ERROR: could not get relocation table pointer for section %u\n", i);
                 return ELF_RELOC_ERR;
             }
 
@@ -232,7 +233,7 @@ static int elf_load_stage2(Elf32_Ehdr *hdr) {
                 Elf32_Rel *rel = &rel_table[idx];
                 int result = elf_do_reloc(hdr, rel, section);
                 if (result == ELF_RELOC_ERR) {
-                    printf("Failed to relocate symbol (rel idx %u in section %u).\n", idx, i);
+                    printf_serial(false, FAIL, "Failed to relocate symbol (rel idx %u in section %u).\n", idx, i);
                     return ELF_RELOC_ERR;
                 }
             }
@@ -273,7 +274,7 @@ void *load_segment_to_memory(void *mem, Elf64_Phdr *phdr, int elf_fd) {
 
 void assert(bool condition, const char* message, bool* error) {
     if (!condition) {
-        printf("Assertion failed: %s\n", message);
+        printf_serial(false, FAIL, "Assertion failed: %s\n", message);
         *error = true;
         return;
     }
@@ -302,12 +303,12 @@ static inline void *elf_load_rel(Elf32_Ehdr *hdr) {
 	int result;
     result = elf_load_stage1(hdr);
     if(result == ELF_RELOC_ERR) {
-		printf("%s", "Unable to load ELF file.\n");
+		printf_serial(false, FAIL, "%s", "Unable to load ELF file.\n");
 		return NULL;
 	}
 	result = elf_load_stage2(hdr);
 	if(result == ELF_RELOC_ERR) {
-		printf("%s", "Unable to load ELF file.\n");
+		printf_serial(false, FAIL, "%s", "Unable to load ELF file.\n");
 		return NULL;
 	}
 	// TODO : Parse the program header (if present)
@@ -319,7 +320,7 @@ void* elf_load_file(void* b) {
 	// Elf32_Ehdr* ehdr = (Elf32_Ehdr*)b;
 	Elf32_Ehdr* ehdr = (Elf32_Ehdr*)b;
     if (!elf_check_supported(ehdr)) {
-        printf("%s", "ELF cannot be loaded.\n");
+        printf_serial(false, FAIL, "%s", "ELF cannot be loaded.\n");
         return NULL;
     }
     switch (ehdr->e_type) {
@@ -333,13 +334,13 @@ void* elf_load_file(void* b) {
 /*
 int main(int argc, char** argv) {
     if (argc < 2) {
-        printf("Usage: %s <elf_file>\n", argv[0]);
+        printf_serial(false, FAIL, "Usage: %s <elf_file>\n", argv[0]);
         return 1;
     }
     const char* elf_file = argv[1];
     FILE* fp = fopen(elf_file, "rb");
     if (!fp) {
-        printf("Failed to open file: %s\n", elf_file);
+        printf_serial(false, FAIL, "Failed to open file: %s\n", elf_file);
         return 1;
     }
     fseek(fp, 0, SEEK_END);
@@ -347,13 +348,13 @@ int main(int argc, char** argv) {
     fseek(fp, 0, SEEK_SET);
     void* buffer = malloc(file_size);
     if (!buffer) {
-        printf("Failed to allocate memory for file\n");
+        printf_serial(false, FAIL, "Failed to allocate memory for file\n");
         fclose(fp);
         return 1;
     }
     size_t read_size = fread(buffer, 1, file_size, fp);
     if (read_size != file_size) {
-        printf("Failed to read file\n");
+        printf_serial(false, FAIL, "Failed to read file\n");
         free(buffer);
         fclose(fp);
         return 1;

@@ -1,4 +1,5 @@
 #include "irq.h"
+#include "../tasking/tasking.h"
 
 extern "C" void IRQ0();
 extern "C" void IRQ1();
@@ -71,6 +72,7 @@ void IRQInstall() {
 
 int currentInterrupt = -1;
 
+/*
 extern "C" void _irq_handler(struct regs *r)
 {
 	currentInterrupt = r -> int_no;
@@ -84,6 +86,30 @@ extern "C" void _irq_handler(struct regs *r)
 	}
 	outb(0x20, 0x20);
 }
+*/
+
+// extern "C" uint32_t* scheduler_on_tick(uint32_t* current_esp);
+
+extern "C" uint32_t* _irq_handler(struct regs *r)
+{
+    // dispatch device handler (your existing code)
+    void (*handler)(struct regs *r) =
+        (void (*)(regs*))irq_routines[r->int_no - 32];
+    if (handler) handler(r);
+
+    // EOI
+    if (r->int_no >= 40) outb(0xA0, 0x20);
+    outb(0x20, 0x20);
+
+    // Only timer tick triggers scheduling
+    if (r->int_no == 32) {
+        return scheduler_on_tick((uint32_t*)r);
+    }
+
+    // Everyone else resumes the same task
+    return (uint32_t*)r;
+}
+
 
 void irq_wait(int n){
 	while(currentInterrupt != n){};

@@ -2,7 +2,6 @@
 #include "../idt/irq.h"
 #include "../idt/idt.h"
 #include "../port.cpp"
-// #include <text.h>
 
 unsigned char mouse_cycle = 0;
 signed char mouse_byte[3];
@@ -27,6 +26,7 @@ void mouse_handler(struct regs *regs) {
             mouse_cycle = 0;
             break;
     }
+    printf_serial(false, NONE, "Mouse: (%d, %d)\n", mouse_x, mouse_y);
     // serial_write_string(itoa((int)mouse_x, 10), false, NONE);
     // serial_write_string(" mouse!\n", false, NONE);
 }

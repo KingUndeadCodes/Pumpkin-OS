@@ -5,7 +5,6 @@
 #include "../dev/vbe/vbe.h"
 #include "../dev/pit/pit.h"
 #include "../dev/kb/kb.h"
-#include <text.h>
 
 /*
 /// Set Pixel<x, y> to the color c
@@ -242,7 +241,10 @@ static void terminalWriteCharacter(char key, bool shift, bool meta, unsigned cha
 }
 
 void terminal_delete(void) {
-    if (terminal) delete terminal;
+    if (terminal) {
+        delete terminal;
+        terminal = nullptr;
+    }
     if (associatedKeyboardEvent != -1) kb_remove_event(associatedKeyboardEvent);
 }
 

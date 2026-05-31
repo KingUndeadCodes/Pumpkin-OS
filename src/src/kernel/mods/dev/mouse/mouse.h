@@ -1,7 +1,7 @@
+#pragma once
 #include "../idt/irq.h"
 #include "../idt/idt.h"
 #include "../port.cpp"
-#include <text.h>
 
 void mouse_handler(struct regs *regs);
 inline void mouse_wait(unsigned char a_type);

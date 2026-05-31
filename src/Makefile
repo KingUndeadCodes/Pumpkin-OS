@@ -56,17 +56,15 @@ $(IMAGE): $(STAGE0) $(STAGE1) $(STAGE2) $(KERNEL)
 	dd if=$(STAGE2) of=$(IMAGE) bs=512 seek=2 conv=notrunc
 	mcopy -i $(IMAGE) $(KERNEL) "::kernel.bin"
 	mcopy -i $(IMAGE) bin/test.wav "::test.wav"
-	mcopy -i $(IMAGE) bin/oh.wav "::oh.wav"
 	mcopy -i $(IMAGE) bin/main.elf "::main.elf"
 	mcopy -i $(IMAGE) bin/test.txt "::test.txt"
 # cat $(STAGE0) $(STAGE1) $(STAGE2) $(KERNEL) > $(IMAGE)
 
-# mcopy -i $(IMAGE) oh.wav "::oh.wav"
-# mcopy -i $(IMAGE) hey.wav "::hey.wav"
+QEMU_RAM_AMOUNT = 1G
 
 run: $(IMAGE)
 	qemu-system-x86_64 \
-		-m 1G \
+		-m $(QEMU_RAM_AMOUNT) \
 		-netdev socket,id=network0,udp=127.0.0.1:12345,localaddr=127.0.0.1:12346 \
   		-device rtl8139,mac=52:54:00:12:34:56,netdev=network0 \
 		-fda $(IMAGE) \
