@@ -19,23 +19,6 @@ extern "C" void IRQ14();
 extern "C" void IRQ15();
 extern "C" void syscall_handler();
 
-void *irq_routines[16] = {
-	0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0
-};
-
-void irq_install_handler(int irq, void (*handler)(struct regs *r))
-{
-	irq_routines[irq] = (void*)handler;
-}
-
-
-void irq_uninstall_handler(int irq)
-{
-	irq_routines[irq] = 0;
-}
-
-
 void irq_remap(void) {
 	outb(0x20, 0x11);
 	outb(0xA0, 0x11);
@@ -50,68 +33,113 @@ void irq_remap(void) {
 }
 
 void IRQInstall() {
-	irq_remap();
-	IDTSetGate(32, (unsigned)IRQ0, 0x08, 0x8E);
-	IDTSetGate(33, (unsigned)IRQ1, 0x08, 0x8E);
-	IDTSetGate(34, (unsigned)IRQ2, 0x08, 0x8E);
-	IDTSetGate(35, (unsigned)IRQ3, 0x08, 0x8E);
-	IDTSetGate(36, (unsigned)IRQ4, 0x08, 0x8E);
-	IDTSetGate(37, (unsigned)IRQ5, 0x08, 0x8E);
-	IDTSetGate(38, (unsigned)IRQ6, 0x08, 0x8E);
-	IDTSetGate(39, (unsigned)IRQ7, 0x08, 0x8E);
-	IDTSetGate(40, (unsigned)IRQ8, 0x08, 0x8E);
-	IDTSetGate(41, (unsigned)IRQ9, 0x08, 0x8E);
-	IDTSetGate(42, (unsigned)IRQ10, 0x08, 0x8E);
-	IDTSetGate(43, (unsigned)IRQ11, 0x08, 0x8E);
-	IDTSetGate(44, (unsigned)IRQ12, 0x08, 0x8E);
-	IDTSetGate(45, (unsigned)IRQ13, 0x08, 0x8E);
-	IDTSetGate(46, (unsigned)IRQ14, 0x08, 0x8E);
-	IDTSetGate(47, (unsigned)IRQ15, 0x08, 0x8E);
-	IDTSetGate(0x80, (unsigned)syscall_handler, 0x08, 0x8E);
+    irq_remap();
+    IDTSetGate(32, (unsigned)IRQ0, 0x08, 0x8E);
+    IDTSetGate(33, (unsigned)IRQ1, 0x08, 0x8E);
+    IDTSetGate(34, (unsigned)IRQ2, 0x08, 0x8E);
+    IDTSetGate(35, (unsigned)IRQ3, 0x08, 0x8E);
+    IDTSetGate(36, (unsigned)IRQ4, 0x08, 0x8E);
+    IDTSetGate(37, (unsigned)IRQ5, 0x08, 0x8E);
+    IDTSetGate(38, (unsigned)IRQ6, 0x08, 0x8E);
+    IDTSetGate(39, (unsigned)IRQ7, 0x08, 0x8E);
+    IDTSetGate(40, (unsigned)IRQ8, 0x08, 0x8E);
+    IDTSetGate(41, (unsigned)IRQ9, 0x08, 0x8E);
+    IDTSetGate(42, (unsigned)IRQ10, 0x08, 0x8E);
+    IDTSetGate(43, (unsigned)IRQ11, 0x08, 0x8E);
+    IDTSetGate(44, (unsigned)IRQ12, 0x08, 0x8E);
+    IDTSetGate(45, (unsigned)IRQ13, 0x08, 0x8E);
+    IDTSetGate(46, (unsigned)IRQ14, 0x08, 0x8E);
+    IDTSetGate(47, (unsigned)IRQ15, 0x08, 0x8E);
+    IDTSetGate(0x80, (unsigned)syscall_handler, 0x08, 0x8E);
 }
+
+static irq_handler_t irq_routines[IRQ_COUNT][IRQ_MAX_HANDLERS] = {};
 
 int currentInterrupt = -1;
 
+static bool irq_valid(int irq) {
+    return irq >= 0 && irq < IRQ_COUNT;
+}
+
+void irq_install_handler(int irq, irq_handler_t handler) {
+    if (!irq_valid(irq) || handler == NULL) return;
+
+    // Avoid registering same handler twice.
+    for (int i = 0; i < IRQ_MAX_HANDLERS; i++) {
+        if (irq_routines[irq][i] == handler) {
+            return;
+        }
+    }
+
+    // Find empty slot.
+    for (int i = 0; i < IRQ_MAX_HANDLERS; i++) {
+        if (irq_routines[irq][i] == NULL) {
+            irq_routines[irq][i] = handler;
+            return;
+        }
+    }
+
+    // Optional: log that IRQ handler table is full.
+}
+
+void irq_remove_handler(int irq, irq_handler_t handler) {
+    if (!irq_valid(irq) || handler == NULL) return;
+
+    for (int i = 0; i < IRQ_MAX_HANDLERS; i++) {
+        if (irq_routines[irq][i] == handler) {
+            irq_routines[irq][i] = NULL;
+            return;
+        }
+    }
+}
+
+// Keep your old function as "remove all handlers on this IRQ".
+void irq_uninstall_handler(int irq) {
+    if (!irq_valid(irq)) return;
+
+    for (int i = 0; i < IRQ_MAX_HANDLERS; i++) {
+        irq_routines[irq][i] = NULL;
+    }
+}
+
 /*
-extern "C" void _irq_handler(struct regs *r)
-{
-	currentInterrupt = r -> int_no;
-	void (*handler)(struct regs *r);
-	handler = (void (*)(regs*))irq_routines[r->int_no - 32];
-	if (handler) {
-		handler(r);
-	}
-	if (r->int_no >= 40) {
-	   	outb(0xA0, 0x20);
-	}
-	outb(0x20, 0x20);
+void irq_wait(int irq) {
+    if (!irq_valid(irq)) return;
+
+    uint32_t start_count = irq_counters[irq];
+
+    while (irq_counters[irq] == start_count) {
+        asm volatile("hlt");
+    }
 }
 */
 
-// extern "C" uint32_t* scheduler_on_tick(uint32_t* current_esp);
+extern "C" uint32_t* _irq_handler(struct regs *r) {
+    int irq = (int)r->int_no - 32;
 
-extern "C" uint32_t* _irq_handler(struct regs *r)
-{
-    // dispatch device handler (your existing code)
-    void (*handler)(struct regs *r) =
-        (void (*)(regs*))irq_routines[r->int_no - 32];
-    if (handler) handler(r);
+    if (irq_valid(irq)) {
+        currentInterrupt = irq;
 
-    // EOI
-    if (r->int_no >= 40) outb(0xA0, 0x20);
+        for (int i = 0; i < IRQ_MAX_HANDLERS; i++) {
+            irq_handler_t handler = irq_routines[irq][i];
+
+            if (handler != NULL) {
+                handler(r);
+            }
+        }
+    }
+
+    // Send EOI after device handlers have acknowledged their own hardware.
+    if (r->int_no >= 40) {
+        outb(0xA0, 0x20);
+    }
+
     outb(0x20, 0x20);
 
-    // Only timer tick triggers scheduling
+    // Only IRQ0 should trigger task scheduling.
     if (r->int_no == 32) {
         return scheduler_on_tick((uint32_t*)r);
     }
 
-    // Everyone else resumes the same task
     return (uint32_t*)r;
-}
-
-
-void irq_wait(int n){
-	while(currentInterrupt != n){};
-	currentInterrupt = -1;
 }

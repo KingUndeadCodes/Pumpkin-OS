@@ -131,11 +131,24 @@ void RTL8139_SEND_PACKET(void* data, uint32_t len) {
 }
 
 void RTL8139_HANDLER(struct regs* r) {
-    // Logging::log("[RTL8139] Interupt Fired!");
-    uint16_t irq = inw(NICDevice.ioaddr + 0x3E);
-    if (irq & (1<<0)) RTL8139_RECEIVE_PACKET();
-    if (irq & (1<<2)) Logging::log("[RTL8139] Packet sent!");
-    outw(NICDevice.ioaddr + 0x3E, 0x5);
+    uint16_t status = inw(NICDevice.ioaddr + 0x3E);
+
+    // If this device did not raise the interrupt, ignore it.
+    if ((status & 0x0005) == 0) {
+        return;
+    }
+
+    if (status & (1 << 0)) {
+        RTL8139_RECEIVE_PACKET();
+    }
+
+    if (status & (1 << 2)) {
+        // Avoid heavy logging inside IRQs if possible.
+        // Logging::log("[RTL8139] Packet sent!");
+    }
+
+    // Acknowledge only the bits that were actually set.
+    outw(NICDevice.ioaddr + 0x3E, status & 0x0005);
 }
 
 // TODO: Redo this function.

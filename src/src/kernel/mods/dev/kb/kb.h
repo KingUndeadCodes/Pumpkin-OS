@@ -4,8 +4,6 @@
 #include "../idt/irq.h"
 #include "../idt/idt.h"
 
-#define MAX_CALLBACKS 32
-
 typedef void (*GlobalKbCallback)(char key, bool shift, bool meta, unsigned char scancode);
 
 typedef struct GlobalCallbackEntry {

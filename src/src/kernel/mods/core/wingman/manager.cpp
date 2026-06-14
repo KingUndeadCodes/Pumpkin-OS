@@ -21,13 +21,9 @@ color_t blend(color_t src, color_t dst) {
 }
 
 WindowManager::keyboard_handler(char key, bool shift, bool meta, unsigned char scancode) {
-    for (uint32_t i = 0; i < this->maxWindowCount; i++) {
-        Window* window = this->windows[i];
-        if (window == NULL) continue;
-        if (window->fn == NULL) continue;
-        window->fn(key, shift, meta, scancode);
-    };
-    return;
+    if (focusedWindow != nullptr) {
+        focusedWindow->handleKeyboard(key, shift, meta, scancode);
+    }
 };
 
 WindowManager::WindowManager(/* Constraints constraints, Environment environment */ void) {
@@ -37,6 +33,7 @@ WindowManager::WindowManager(/* Constraints constraints, Environment environment
     this->maxWindowCount = constraints.maxWindowCount;
     this->windowCount = 0;
     this->windows = (Window**)malloc(sizeof(Window*) * this->maxWindowCount);
+    this->focusedWindow = nullptr;
     if (this->windows != nullptr) {
         for (uint32_t i = 0; i < this->maxWindowCount; i++) {
             this->windows[i] = nullptr;
@@ -67,6 +64,9 @@ window_ref_t WindowManager::add(Window* window) {
     if (this->windowCount >= this->maxWindowCount) return WINGMAN_INVALID_WINDOW;
     for (uint32_t i = 0; i < this->maxWindowCount; i++) {
         if (this->windows[i] == NULL) {
+            if (focusedWindow == nullptr) {
+                focusedWindow = window;
+            }
             this->windows[i] = window;
             this->windowCount++;
             return (window_ref_t)i;

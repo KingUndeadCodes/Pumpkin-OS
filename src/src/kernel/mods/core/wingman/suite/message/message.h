@@ -42,7 +42,6 @@ class MessageBox {
         void draw_body(void);
         void draw_options(void);
     public:
-        // virtual void keyboard_callback(char key, bool shift, bool meta, unsigned char scancode);
         ~MessageBox();
         void *operator new(size_t size) { return malloc(size); }
         void *operator new[](size_t size) { return malloc(size); }

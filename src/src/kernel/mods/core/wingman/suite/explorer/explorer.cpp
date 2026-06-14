@@ -12,15 +12,6 @@ inline color_t rgb24_to_argb32(uint32_t color24) {
 */
 
 void FileManager::utility_draw_pixel(unsigned x, unsigned y, unsigned color) {
-    /*
-    if (this->window == nullptr) {
-        serial_write_string("Window does not exist.");
-    } else if (this->window->surface == nullptr) {
-        serial_write_string("Window surface does not exist.");
-    } else {
-        this->window->surface->putPixel(x, y, rgb24_to_argb32(color));
-    }
-    */
     this->window->surface->putPixelUnsafe(x, y, color);
 };
 
@@ -157,6 +148,7 @@ FileManager::FileManager(void) {
     this->files = readDirectory();
     this->path = nullptr;
     this->redraw(0b11111000);
+    this->window->setKeyboardDelegate(this);
 };
 
 void FileManager::redraw(uint8_t description = 0b00111000) {
@@ -177,11 +169,12 @@ void FileManager::draw_border(void) {
         int y0 = k * padding;
         int w = width - 2 * k * padding;
         int h = height - 2 * k * padding;
+        constexpr auto borderColor = 0xFFFFFFFF;
         for (int t = 0; t < thickness; t++) {
-            for (int x = 0; x < w; x++) utility_draw_pixel(x0 + x, y0 + t, 0xFFFFFFFF);
-            for (int x = 0; x < w; x++) utility_draw_pixel(x0 + x, y0 + h - 1 - t, 0xFFFFFFFF);
-            for (int y = 0; y < h; y++) utility_draw_pixel(x0 + t, y0 + y, 0xFFFFFFFF);
-            for (int y = 0; y < h; y++) utility_draw_pixel(x0 + w - 1 - t, y0 + y, 0xFFFFFFFF);
+            for (int x = 0; x < w; x++) utility_draw_pixel(x0 + x, y0 + t, borderColor);
+            for (int x = 0; x < w; x++) utility_draw_pixel(x0 + x, y0 + h - 1 - t, borderColor);
+            for (int y = 0; y < h; y++) utility_draw_pixel(x0 + t, y0 + y, borderColor);
+            for (int y = 0; y < h; y++) utility_draw_pixel(x0 + w - 1 - t, y0 + y, borderColor);
         }
     }
 };
@@ -251,7 +244,7 @@ void FileManager::draw_options(void) {
     }
 };
 
-void FileManager::keyboard_callback(char key, bool shift, bool meta, unsigned char scancode) {
+void FileManager::onKeyboard(char key, bool shift, bool meta, unsigned char scancode) {
     bool redrawNeeded = false; // prevents other keys from redrawing.
     uint8_t redraw_description = 0;
     if (key == 's') {

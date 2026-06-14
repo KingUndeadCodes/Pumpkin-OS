@@ -45,8 +45,8 @@ build:
 	$(CC) $(CFLAGS) mods/dev/chorus/chorus.cpp -o chorus.o
 	$(CC) $(CFLAGS) mods/dev/chorus/wav.cpp -o wav.o
 	$(CC) $(CFLAGS) mods/dev/elf/elf.cpp -o elf.o
-	$(CC) $(CFLAGS) mods/core/wingman/tests/explorer/explorer.cpp -o explorerWingman.o
-	$(CC) $(CFLAGS) mods/core/wingman/tests/message/message.cpp -o messageWingman.o
+	$(CC) $(CFLAGS) mods/core/wingman/suite/explorer/explorer.cpp -o explorerWingman.o
+	$(CC) $(CFLAGS) mods/core/wingman/suite/message/message.cpp -o messageWingman.o
 	$(CC) $(CFLAGS) mods/core/wingman/window.cpp -o window.o
 	$(CC) $(CFLAGS) mods/core/wingman/surface.cpp -o surface.o
 	$(CC) $(CFLAGS) mods/core/wingman/manager.cpp -o manager.o

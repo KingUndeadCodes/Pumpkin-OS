@@ -33,6 +33,7 @@ class WindowManager {
         Window** windows;
         uint32_t maxWindowCount;
         uint32_t windowCount;
+        Window* focusedWindow;
     public: 
         keyboard_handler(char key, bool shift, bool meta, unsigned char scancode);
     public:

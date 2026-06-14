@@ -158,23 +158,26 @@ irq_common_stub:
     push es
     push fs
     push gs
+
     mov ax, 0x10
     mov ds, ax
     mov es, ax
     mov fs, ax
     mov gs, ax
-	sti
-    mov eax, esp        ; eax = regs frame pointer
+
+    mov eax, esp
     push eax
     call _irq_handler
     add esp, 4
-	cli
-    mov esp, eax        ; always adopt returned frame (same or different)
+
+    mov esp, eax
+
     pop gs
     pop fs
     pop es
     pop ds
     popa
+
     add esp, 8
     iret
 

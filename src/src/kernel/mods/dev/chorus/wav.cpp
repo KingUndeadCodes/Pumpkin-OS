@@ -193,101 +193,104 @@ struct wav_info_t *read_wav_info(uint8_t *wav_memory, uint32_t wav_length)
 
 uint32_t play_wav(struct wav_info_t *wav_info, uint32_t offset_to_first_uint8_to_play)
 {
-    // calculate mp3 PCM data offset
-    uint32_t offset_to_first_uint8_to_pcm_data_in_original_wav = ((offset_to_first_uint8_to_play / 2 / 2) / (wav_info->output_pcm_data_sample_rate / wav_info->pcm_data_sample_rate) * (wav_info->pcm_data_number_of_channels * (wav_info->pcm_data_bits_per_sample / 8)));
+    uint32_t rate_ratio = wav_info->output_pcm_data_sample_rate / wav_info->pcm_data_sample_rate;
+    if (rate_ratio == 0) {
+        rate_ratio = 1;
+    }
 
-    // save wav info pointer
+    uint32_t input_bytes_per_frame =
+        wav_info->pcm_data_number_of_channels * (wav_info->pcm_data_bits_per_sample / 8);
+
+    uint32_t offset_to_first_uint8_to_pcm_data_in_original_wav =
+        ((offset_to_first_uint8_to_play / 4) / rate_ratio) * input_bytes_per_frame;
+
     actually_played_wav_info = wav_info;
-    
-    // play wav file
+
     play_sound_with_refilling_buffer(
         (uint8_t *)wav_info->start_of_pcm_data + offset_to_first_uint8_to_pcm_data_in_original_wav,
-        wav_info->length_of_pcm_data - offset_to_first_uint8_to_pcm_data_in_original_wav, 
-        wav_info->length_of_output_pcm_data - offset_to_first_uint8_to_play, 
-        wav_info->output_pcm_data_sample_rate, 
-        wav_info->output_pcm_data_sample_rate * 4, 
+        wav_info->length_of_pcm_data - offset_to_first_uint8_to_pcm_data_in_original_wav,
+        wav_info->length_of_output_pcm_data - offset_to_first_uint8_to_play,
+        wav_info->output_pcm_data_sample_rate,
+        wav_info->output_pcm_data_sample_rate * 4,
         wav_refill_buffer
-    ); // buffer contains 1 sec of PCM data
+    );
+
+    return 0;
 }
-
-
 
 void wav_refill_buffer(uint8_t *buffer)
 {
-    // clear buffer
-    // NOTE: I replaced `sound_buffer_refilling_info->buffer_size` with `SIZE_OF_PCM_DATA_BUFFER` because it didn't work.
-    clear_memory((uint32_t)buffer, sound_buffer_refilling_info->buffer_size /* SIZE_OF_PCM_DATA_BUFFER */);
+    clear_memory((uint32_t)buffer, sound_buffer_refilling_info->buffer_size);
 
-    // serial_write_string("Cleared Buffer.\n");
-
-    // exit if we already converted all file
-    if (sound_buffer_refilling_info->source_data_length == 0)
-    {
+    if (!actually_played_wav_info || sound_buffer_refilling_info->source_data_length == 0) {
         return;
     }
 
-    // fill buffer
-    uint16_t first_channel_sample = 0, second_channel_sample = 0;
-    uint32_t number_of_frames_to_convert = 0, length_of_processed_data = 0;
-    if (sound_buffer_refilling_info->source_data_length < actually_played_wav_info->pcm_data_sample_rate)
-    {
-        number_of_frames_to_convert = (sound_buffer_refilling_info->source_data_length / (actually_played_wav_info->pcm_data_number_of_channels * (actually_played_wav_info->pcm_data_bits_per_sample / 8)));
+    uint32_t input_bytes_per_frame =
+        actually_played_wav_info->pcm_data_number_of_channels *
+        (actually_played_wav_info->pcm_data_bits_per_sample / 8);
+
+    if (input_bytes_per_frame == 0) {
+        return;
     }
-    else
-    {
-        number_of_frames_to_convert = actually_played_wav_info->pcm_data_sample_rate;
+
+    uint32_t rate_ratio =
+        actually_played_wav_info->output_pcm_data_sample_rate /
+        actually_played_wav_info->pcm_data_sample_rate;
+
+    if (rate_ratio == 0) {
+        rate_ratio = 1;
     }
-    
-    int ticks = 0;
+
+    uint32_t output_frames_fit = sound_buffer_refilling_info->buffer_size / 4;
+    uint32_t source_frames_fit = output_frames_fit / rate_ratio;
+    uint32_t source_frames_available =
+        sound_buffer_refilling_info->source_data_length / input_bytes_per_frame;
+
+    uint32_t number_of_frames_to_convert = source_frames_fit;
+    if (number_of_frames_to_convert > source_frames_available) {
+        number_of_frames_to_convert = source_frames_available;
+    }
 
     for (uint32_t i = 0; i < number_of_frames_to_convert; i++)
     {
-        uint16_t *wav = (uint16_t *)(sound_buffer_refilling_info->source_data_pointer);
-        // read frame
+        int16_t first_channel_sample = 0;
+        int16_t second_channel_sample = 0;
+
         if (actually_played_wav_info->pcm_data_bits_per_sample == 16)
         {
-            // These parts are the problem.
-            // serial_write_string("Attempting to read frame (16 bit sample)\n");
+            int16_t *wav16 = (int16_t *)(sound_buffer_refilling_info->source_data_pointer);
+            first_channel_sample = wav16[0];
 
-            /*
-            if (ticks % 1000 == 0) {
-                char* allocation = malloc(512);
-                sprintf(allocation, "Final: %d, %d\n", wav[0], wav[1]);
-                serial_write_string(allocation);
-                free(allocation);
+            if (actually_played_wav_info->pcm_data_number_of_channels == 2) {
+                second_channel_sample = wav16[1];
+            } else {
+                second_channel_sample = first_channel_sample;
             }
-            */
-
-            ticks++;
-           
-            first_channel_sample = wav[0];
-            second_channel_sample = wav[1];
-            // serial_write_string("Reading frame (16 bit sample)\n");
         }
         else if (actually_played_wav_info->pcm_data_bits_per_sample == 8)
         {
-            first_channel_sample = (wav[0] & 0xFF) * 0x40;
-            second_channel_sample = (wav[0] >> 8) * 0x40;
+            uint8_t *wav8 = (uint8_t *)(sound_buffer_refilling_info->source_data_pointer);
+            first_channel_sample = (int16_t)((int16_t)wav8[0] - 128) << 8;
+
+            if (actually_played_wav_info->pcm_data_number_of_channels == 2) {
+                second_channel_sample = (int16_t)((int16_t)wav8[1] - 128) << 8;
+            } else {
+                second_channel_sample = first_channel_sample;
+            }
         }
 
-        if (actually_played_wav_info->pcm_data_number_of_channels == 1)
+        for (uint32_t j = 0; j < rate_ratio; j++)
         {
-            second_channel_sample = first_channel_sample;
-        }
-
-        // save frame according to new sample rate
-        for (uint32_t j = 0; j < (actually_played_wav_info->output_pcm_data_sample_rate / actually_played_wav_info->pcm_data_sample_rate); j++)
-        {
-            buffer[0] = (first_channel_sample & 0xFF);
-            buffer[1] = (first_channel_sample >> 8);
-            buffer[2] = (second_channel_sample & 0xFF);
-            buffer[3] = (second_channel_sample >> 8);
+            buffer[0] = (uint8_t)(first_channel_sample & 0xFF);
+            buffer[1] = (uint8_t)((first_channel_sample >> 8) & 0xFF);
+            buffer[2] = (uint8_t)(second_channel_sample & 0xFF);
+            buffer[3] = (uint8_t)((second_channel_sample >> 8) & 0xFF);
             buffer += 4;
         }
 
-        // go to next frame
-        sound_buffer_refilling_info->source_data_pointer = (sound_buffer_refilling_info->source_data_pointer + (actually_played_wav_info->pcm_data_number_of_channels * (actually_played_wav_info->pcm_data_bits_per_sample / 8)));
-        sound_buffer_refilling_info->source_data_length -= (actually_played_wav_info->pcm_data_number_of_channels * (actually_played_wav_info->pcm_data_bits_per_sample / 8));
+        sound_buffer_refilling_info->source_data_pointer += input_bytes_per_frame;
+        sound_buffer_refilling_info->source_data_length -= input_bytes_per_frame;
     }
 }
 

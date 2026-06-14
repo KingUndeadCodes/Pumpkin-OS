@@ -24,6 +24,7 @@ struct AC97 {
     uint32_t nabm_base;     // bus master I/O base
     uint8_t* buffer;        // virtual pointer to BDL
     uintptr_t buffer_phys;  // physical address of BDL
+    uint8_t  irq_line;
     uint8_t  aux_out_number_of_volume_steps;
     uint16_t extended_capabilities;
 } __attribute__((packed));
@@ -105,6 +106,25 @@ namespace AC97Registers {
 #define AC97_EXTENDED_CAPABILITY_VARIABLE_SAMPLE_RATE 0x0001
 #define AC97_SPEAKER_OUTPUT_NUMBER_OF_VOLUME_STEPS    31
 
+#define AC97_BDL_ENTRY_COUNT       32
+#define AC97_RING_FRAGMENT_BYTES   0x4000  /* 16 KiB, safely below one BD limit */
+#define AC97_MAX_BD_WORDS          0xFFFE
+
+/* PCM OUT status bits */
+#define AC97_PCM_SR_DCH            0x0001
+#define AC97_PCM_SR_CELV           0x0002
+#define AC97_PCM_SR_LVBCI          0x0004
+#define AC97_PCM_SR_FIFOE          0x0008
+#define AC97_PCM_SR_BCIS           0x0010
+#define AC97_PCM_SR_CLEAR_MASK     0x001C
+
+/* PCM OUT control bits */
+#define AC97_PCM_CR_RUN            0x01
+#define AC97_PCM_CR_RESET          0x02
+#define AC97_PCM_CR_LVBIE          0x04
+#define AC97_PCM_CR_FEIE           0x08
+#define AC97_PCM_CR_IOCE           0x10
+
 /* -------------------------------------------------------------------------- */
 /* Function Declarations                                                      */
 /* -------------------------------------------------------------------------- */
@@ -113,8 +133,9 @@ void AC97_INIT(uint8_t bus, uint8_t device, uint8_t function);
 void AC97SetVolumeRegister(uint32_t offset, uint8_t number_of_volume_steps, uint8_t volume);
 void AC97SetSampleRate(uint16_t sample_rate);
 void AC97PlayData(uint32_t sample_rate);
+void AC97StopPlayback(void);
+bool AC97IsPlaying(void);
 bool AC97IsSupportedSampleRate(uint16_t sample_rate);
-
-// void AC97_BeepSmokeTest();
+uint32_t AC97GetPreferredBufferSize(void);
 
 #endif /* __AC97_H__ */

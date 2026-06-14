@@ -4,6 +4,8 @@
 bool shift_key = false;
 bool meta_mode = false;
 
+#define MAX_CALLBACKS 32
+
 static GlobalCallbackEntry global_callbacks[MAX_CALLBACKS] = {0};
 static int next_global_id = 1;
 
