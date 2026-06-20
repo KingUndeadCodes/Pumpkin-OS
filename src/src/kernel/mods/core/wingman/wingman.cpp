@@ -35,6 +35,22 @@ void keyboardFunctionWindowManager(char key, bool shift, bool meta, unsigned cha
 void mouseFunctionWindowManager(int x, int y, int dx, int dy, unsigned char buttons) {
     (void)dx;
     (void)dy;
+    isInsideFocusedWindow:
+        const Window* foucsedWindow = wm->focusedWindow;
+        const int rectX = foucsedWindow->offsetX;
+        const int rectY = foucsedWindow->offsetY;
+        const int width = foucsedWindow->width;
+        const int height = foucsedWindow->height;
+        if (mouse_x >= rectX && mouse_x <= (rectX + width)) {
+            // Check vertical boundaries (assuming screen coordinates where Y goes down)
+            if (mouse_y >= rectY && mouse_y <= (rectY + height)) {
+                const int _x = mouse_x - rectX;
+                const int _y = mouse_y - rectY;
+                foucsedWindow->handleMouse(_x, _y, dx, dy, buttons);
+                wm->composite();
+                redraw_screen();
+            }
+        }
     const color_t* buffer = wm->screen->getBuffer();
     const int screenWidth = wm->screen->getWidth();
     const int screenHeight = wm->screen->getHeight();
@@ -65,6 +81,7 @@ void mouseFunctionWindowManager(int x, int y, int dx, int dy, unsigned char butt
     }
     mouse_x = x;
     mouse_y = y;
+    return false;
 }
 
 void initalizeWindowSystem(void) {

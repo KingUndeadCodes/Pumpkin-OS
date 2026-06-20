@@ -14,6 +14,7 @@ Window::Window(int width, int height, int offsetX, int offsetY, const char* titl
     }
     this->surface = new Surface(width, height);
     this->keyboardDelegate = nullptr;
+    this->mouseDelegate = nullptr;
 };
 
 Window::~Window() {
@@ -31,8 +32,18 @@ void Window::setKeyboardDelegate(KeyboardDelegate* delegate) {
     keyboardDelegate = delegate;
 }
 
+void Window::setMouseDelegate(MouseDelegate* delegate) {
+    mouseDelegate = delegate;
+}
+
 void Window::handleKeyboard(char key, bool shift, bool meta, unsigned char scancode) {
     if (keyboardDelegate != nullptr) {
         keyboardDelegate->onKeyboard(key, shift, meta, scancode);
+    }
+}
+
+void Window::handleMouse(int x, int y, int dx, int dy, unsigned char buttons) {
+    if (mouseDelegate != nullptr) {
+        mouseDelegate->onMouseEvent(x, y, dx, dy, buttons);
     }
 }

@@ -149,6 +149,7 @@ FileManager::FileManager(void) {
     this->path = nullptr;
     this->redraw(0b11111000);
     this->window->setKeyboardDelegate(this);
+    this->window->setMouseDelegate(this);
 };
 
 void FileManager::redraw(uint8_t description = 0b00111000) {
@@ -243,6 +244,52 @@ void FileManager::draw_options(void) {
         i++;
     }
 };
+
+/*
+void FileManager::onMouseEvent(int x, int y, int dx, int dy, unsigned char buttons) {
+    (void)dx;
+    (void)dy;
+    if (buttons == 1) {
+        const char* selection = files[this->currentSelection].filename;
+        int posX = padding * frames + 78 - 49;
+        int posY = padding * frames + 106 + (35 * currentSelection);
+        int rectWidth = 200;
+        int rectHeight = 32;
+        if (x >= posX && x <= (posX + rectWidth)) {
+            if (y >= posY && y <= (posY + rectHeight)) {
+                // I need to calculate the currentSelection based on (x, y).
+                printf_serial(false, NONE, "Clicked!\n");
+                return;
+            }
+        }
+    }
+}
+*/
+
+void FileManager::onMouseEvent(int x, int y, int dx, int dy, unsigned char buttons) {
+    (void)dx;
+    (void)dy;
+    if (buttons == 1) {
+        int listStartX = padding * frames + 78 - 49;
+        int listStartY = padding * frames + 106;
+        int rowHeight = 35;
+        int rectWidth = 200;
+        int rectHeight = 32;
+        // Bail early if x is outside the list region
+        if (x < listStartX || x > listStartX + rectWidth) return;
+        // Bail early if y is above the first entry
+        if (y < listStartY) return;
+        int clicked = (y - listStartY) / rowHeight;
+        // Validate: within bounds, and within the row's drawn height (not in the gap)
+        if (clicked < 0 || clicked >= this->fileCount) return;
+        if (y > listStartY + (clicked * rowHeight) + rectHeight) return;
+        this->currentSelection = clicked;
+        // printf_serial(false, NONE, "Clicked: %s\n", files[this->currentSelection].filename);
+        // Trigger the same logic as pressing Enter
+        // (or just redraw the selection highlight for now)
+        this->redraw(0b00001000);
+    }
+}
 
 void FileManager::onKeyboard(char key, bool shift, bool meta, unsigned char scancode) {
     bool redrawNeeded = false; // prevents other keys from redrawing.

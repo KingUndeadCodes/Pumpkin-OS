@@ -17,8 +17,11 @@ class MouseDelegate {
 class Window {
     public:
         KeyboardDelegate* keyboardDelegate;
+        MouseDelegate* mouseDelegate;
         void setKeyboardDelegate(KeyboardDelegate* delegate);
+        void setMouseDelegate(MouseDelegate* delegate);
         void handleKeyboard(char key, bool shift, bool meta, unsigned char scancode);
+        void handleMouse(int x, int y, int dx, int dy, unsigned char buttons);
     public:
         int width;
         int height;

@@ -24,7 +24,7 @@ struct FileEntity {
 
 // ISS - Integrated Software Suite
 
-class FileManager : public KeyboardDelegate {
+class FileManager : public KeyboardDelegate, MouseDelegate {
     private:
         void utility_draw_pixel(unsigned x, unsigned y, unsigned color);
         void utility_draw_char(unsigned x, unsigned y, char c, unsigned color, unsigned scale = 4);
@@ -56,6 +56,7 @@ class FileManager : public KeyboardDelegate {
         void draw_options(void);
     public:
         void onKeyboard(char key, bool shift, bool meta, unsigned char scancode) override;
+        void onMouseEvent(int x, int y, int dx, int dy, unsigned char buttons) override;
         ~FileManager();
         void *operator new(size_t size) { return malloc(size); }
         void *operator new[](size_t size) { return malloc(size); }

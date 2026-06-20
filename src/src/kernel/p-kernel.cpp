@@ -112,44 +112,6 @@ extern "C" void kernel_main(read_file load_floppy) {
             goto jumppoint;
         }
     serial_write_string("Starting test of AC97 Audio Codec...\n");
-    /*
-    waveTest:
-        const uint32_t lengthFloppyBuffer = 52640;
-        floppyBuffer = malloc(lengthFloppyBuffer);
-        disablePaging();
-        load_floppy("TEST.WAV", lowmem_floppy);
-        enablePaging();
-        memcpy(floppyBuffer, lowmem_floppy, lengthFloppyBuffer);
-        // File
-        FILE* file = fopen("/test.wav", "a");
-        fwrite(floppyBuffer, 1, lengthFloppyBuffer, file);
-        fclose(file);
-        // Close
-        initalize();
-        struct wav_info_t* wav_info = read_wav_info(floppyBuffer, lengthFloppyBuffer);
-        char* string_alloc = malloc(512);
-        sprintf(
-            string_alloc, 
-            "WAV_AudioFile {\n\t\"start_of_pcm_data\": %d,\n\t\"length_of_pcm_data\": %d,\n\t\"pcm_data_number_of_channels\": %d,\n\t\"pcm_data_sample_rate\": %d,\n\t\"pcm_data_bits_per_sample\": %d,\n\t\"length_of_output_pcm_data\": %d,\n\t\"output_pcm_data_sample_rate\": %d\n}\n", 
-            wav_info->start_of_pcm_data,
-            wav_info->length_of_pcm_data,
-            wav_info->pcm_data_number_of_channels,
-            wav_info->pcm_data_sample_rate,
-            wav_info->pcm_data_bits_per_sample, 
-            wav_info->length_of_output_pcm_data,
-            wav_info->output_pcm_data_sample_rate
-        );
-        serial_write_string(string_alloc, false, NONE);
-        free(string_alloc);
-        // Play WAV is the problem.
-        for (int i = 0; i < 1; i++) {
-            // play_wav(wav_info, lengthFloppyBuffer);
-            play_wav(wav_info, 0);
-            // timer_wait(18);
-        }
-        free(floppyBuffer);
-        serial_write_string("AC97 Audio Codec test has ended.\n");
-    */
     copyLua: {
         // File
         FILE* luaFile = fopen("/m.lua", "a");
