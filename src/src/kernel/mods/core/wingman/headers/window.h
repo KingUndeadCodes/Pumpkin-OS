@@ -6,12 +6,12 @@
 
 class KeyboardDelegate {
     public:
-        virtual void onKeyboard(char key, bool shift, bool meta, unsigned char scancode) = 0;
+        virtual bool onKeyboard(char key, bool shift, bool meta, unsigned char scancode) = 0;
 };
 
 class MouseDelegate {
     public:
-        virtual void onMouseEvent(int x, int y, int dx, int dy, unsigned char buttons) = 0;
+        virtual bool onMouseEvent(int x, int y, int dx, int dy, unsigned char buttons) = 0;
 };
 
 class Window {
@@ -20,8 +20,8 @@ class Window {
         MouseDelegate* mouseDelegate;
         void setKeyboardDelegate(KeyboardDelegate* delegate);
         void setMouseDelegate(MouseDelegate* delegate);
-        void handleKeyboard(char key, bool shift, bool meta, unsigned char scancode);
-        void handleMouse(int x, int y, int dx, int dy, unsigned char buttons);
+        bool handleKeyboard(char key, bool shift, bool meta, unsigned char scancode);
+        bool handleMouse(int x, int y, int dx, int dy, unsigned char buttons);
     public:
         int width;
         int height;

@@ -36,14 +36,14 @@ void Window::setMouseDelegate(MouseDelegate* delegate) {
     mouseDelegate = delegate;
 }
 
-void Window::handleKeyboard(char key, bool shift, bool meta, unsigned char scancode) {
+bool Window::handleKeyboard(char key, bool shift, bool meta, unsigned char scancode) {
     if (keyboardDelegate != nullptr) {
-        keyboardDelegate->onKeyboard(key, shift, meta, scancode);
+        return keyboardDelegate->onKeyboard(key, shift, meta, scancode);
     }
 }
 
-void Window::handleMouse(int x, int y, int dx, int dy, unsigned char buttons) {
+bool Window::handleMouse(int x, int y, int dx, int dy, unsigned char buttons) {
     if (mouseDelegate != nullptr) {
-        mouseDelegate->onMouseEvent(x, y, dx, dy, buttons);
+        return mouseDelegate->onMouseEvent(x, y, dx, dy, buttons);
     }
 }

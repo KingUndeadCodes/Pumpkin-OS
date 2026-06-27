@@ -54,9 +54,11 @@ class FileManager : public KeyboardDelegate, MouseDelegate {
         void draw_background(void);
         void draw_title(void);
         void draw_options(void);
+    private:
+        bool fileClick(bool* redrawNeeded, uint8_t* redraw_description);
     public:
-        void onKeyboard(char key, bool shift, bool meta, unsigned char scancode) override;
-        void onMouseEvent(int x, int y, int dx, int dy, unsigned char buttons) override;
+        bool onKeyboard(char key, bool shift, bool meta, unsigned char scancode) override;
+        bool onMouseEvent(int x, int y, int dx, int dy, unsigned char buttons) override;
         ~FileManager();
         void *operator new(size_t size) { return malloc(size); }
         void *operator new[](size_t size) { return malloc(size); }

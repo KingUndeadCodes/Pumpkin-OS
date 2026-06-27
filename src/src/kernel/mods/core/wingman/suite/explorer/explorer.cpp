@@ -245,53 +245,150 @@ void FileManager::draw_options(void) {
     }
 };
 
-/*
-void FileManager::onMouseEvent(int x, int y, int dx, int dy, unsigned char buttons) {
+bool FileManager::onMouseEvent(int x, int y, int dx, int dy, unsigned char buttons) {
     (void)dx;
     (void)dy;
     if (buttons == 1) {
-        const char* selection = files[this->currentSelection].filename;
-        int posX = padding * frames + 78 - 49;
-        int posY = padding * frames + 106 + (35 * currentSelection);
-        int rectWidth = 200;
-        int rectHeight = 32;
-        if (x >= posX && x <= (posX + rectWidth)) {
-            if (y >= posY && y <= (posY + rectHeight)) {
-                // I need to calculate the currentSelection based on (x, y).
-                printf_serial(false, NONE, "Clicked!\n");
-                return;
-            }
-        }
-    }
-}
-*/
-
-void FileManager::onMouseEvent(int x, int y, int dx, int dy, unsigned char buttons) {
-    (void)dx;
-    (void)dy;
-    if (buttons == 1) {
+        uint8_t redraw_description = 0b00001000;
         int listStartX = padding * frames + 78 - 49;
         int listStartY = padding * frames + 106;
         int rowHeight = 35;
         int rectWidth = 200;
         int rectHeight = 32;
         // Bail early if x is outside the list region
-        if (x < listStartX || x > listStartX + rectWidth) return;
+        if (x < listStartX || x > listStartX + rectWidth) return false;
         // Bail early if y is above the first entry
-        if (y < listStartY) return;
+        if (y < listStartY) return false;
         int clicked = (y - listStartY) / rowHeight;
         // Validate: within bounds, and within the row's drawn height (not in the gap)
-        if (clicked < 0 || clicked >= this->fileCount) return;
-        if (y > listStartY + (clicked * rowHeight) + rectHeight) return;
-        this->currentSelection = clicked;
+        if (clicked < 0 || clicked >= this->fileCount) return false;
+        if (y > listStartY + (clicked * rowHeight) + rectHeight) return false;
+        if (this->currentSelection == clicked) {
+            bool redraw_needed = false;
+            redraw_description = 0;
+            if (fileClick(&redraw_needed, &redraw_description) == false) return false;
+            if (redraw_needed == false) return false;
+        } else {
+            this->currentSelection = clicked;
+        }
         // printf_serial(false, NONE, "Clicked: %s\n", files[this->currentSelection].filename);
         // Trigger the same logic as pressing Enter
         // (or just redraw the selection highlight for now)
-        this->redraw(0b00001000);
+        this->redraw(redraw_description);
+        return true;
+    };
+    return false;
+};
+
+bool FileManager::fileClick(bool* redrawNeeded, uint8_t* redraw_description) {
+    const char* selection = files[this->currentSelection].filename;
+    if (files[this->currentSelection].type == VFS_NODE_DIR) {
+        if (strcmp(selection, "..") == 0) {
+            if (this->path == nullptr) {
+                // this code should never execute assuming readDirectory works correctly.
+                serial_write_string("Illegal Directory Change\n", true, FAIL);
+                return false;
+            } else {
+                char* _path = parent_path(this->path);
+                if (!_path) {
+                    serial_write_string("Failed to get the parent directory.\n", true, FAIL);
+                    return false;
+                } else {
+                    free(this->path);
+                    this->path = _path;
+                    if (strcmp(this->path, "/") == 0) {
+                        free(this->path);
+                        this->path = nullptr;
+                    }
+                }
+            }
+        } else {
+            // No Special Directory Names 
+            if (this->path == nullptr) {
+                size_t length = strlen(selection) + 2; // "/" + name + '\0'
+                char* newPath = (char*)malloc(length);
+                if (!newPath) {
+                    serial_write_string("Failed to allocate path.\n", true, FAIL);
+                    return false;
+                }
+                sprintf(newPath, "/%s", selection);
+                this->path = newPath;
+            } else {
+                size_t length = strlen(this->path) + strlen(selection) + 2; // old + "/" + name + '\0'
+                char* newPath = (char*)malloc(length);
+                if (!newPath) {
+                    serial_write_string("Failed to allocate path.\n", true, FAIL);
+                    return false;
+                }
+                sprintf(newPath, "%s/%s", this->path, selection);
+                free(this->path);
+                this->path = newPath;
+            }
+        }
+        this->currentSelection = 0; // Default selection to the first option, always. 
+        FileEntity* newFiles = readDirectory(this->path != nullptr ? this->path : "/");
+        if (newFiles) {
+            freeFileList(this->files);
+            this->files = newFiles;
+        } else {
+            serial_write_string("Failed to load new directory.\n", true, FAIL);
+            return false;
+        }
+        *(redraw_description) |= 0b00111000;
+        *(redrawNeeded) = true;
+    } else if (files[this->currentSelection].type == VFS_NODE_FILE) {
+        if (EndsWith(files[this->currentSelection].filename, ".wav") == 1) {
+            openFile:
+                const char* fname = files[this->currentSelection].filename;
+                size_t len = strlen(fname);
+                char* path = (char*)malloc(len + 2);
+                if (!path) {
+                    serial_write_string("Failed to allocate path buffer\n", FAIL);
+                    return false;
+                }
+                path[0] = '/';
+                memcpy(path + 1, fname, len + 1);
+                FILE* file = fopen(path, "r");
+                free(path);
+            if (!file) {
+                serial_write_string("Failed to open file.\n", false, FAIL);
+                return false;
+            } else {
+                uint32_t buffer_len = 52640;
+                char* buffer = (char*)malloc(buffer_len);
+                fread(buffer, 1, buffer_len, file);
+                struct wav_info_t* wav_info = read_wav_info(buffer, buffer_len);
+                play_wav(wav_info, 0);
+                free(buffer);
+            }
+            fclose(file);
+        } else if (EndsWith(files[this->currentSelection].filename, ".elf") == 1) {
+            openPath:
+                const char* fname = files[this->currentSelection].filename;
+                size_t len = strlen(fname);
+                char* path = (char*)malloc(len + 2);
+                if (!path) {
+                    serial_write_string("Failed to allocate path buffer\n", FAIL);
+                    return false;
+                }
+                path[0] = '/';
+                memcpy(path + 1, fname, len + 1);
+                FILE* file = fopen(path, "r");
+                free(path);
+            // serial_write_string("User tried to run ELF file which is currently unsupported.\n");
+            uint32_t buffer_len = 1024;
+            char* buffer = (char*)malloc(buffer_len);
+            fread(buffer, 1, buffer_len, file);
+            // This needs to be worked on.
+            (void (*)())elf_load_file(buffer);
+            free(buffer);
+            fclose(file);
+        }
     }
+    return true; // success
 }
 
-void FileManager::onKeyboard(char key, bool shift, bool meta, unsigned char scancode) {
+bool FileManager::onKeyboard(char key, bool shift, bool meta, unsigned char scancode) {
     bool redrawNeeded = false; // prevents other keys from redrawing.
     uint8_t redraw_description = 0;
     if (key == 's') {
@@ -307,110 +404,12 @@ void FileManager::onKeyboard(char key, bool shift, bool meta, unsigned char scan
             redrawNeeded = true;
         }
     } else if (key == '\n') {
-        const char* selection = files[this->currentSelection].filename;
-        if (files[this->currentSelection].type == VFS_NODE_DIR) {
-            if (strcmp(selection, "..") == 0) {
-                if (this->path == nullptr) {
-                    // this code should never execute assuming readDirectory works correctly.
-                    serial_write_string("Illegal Directory Change\n", true, FAIL);
-                } else {
-                    char* _path = parent_path(this->path);
-                    if (!_path) {
-                        serial_write_string("Failed to get the parent directory.\n", true, FAIL);
-                    } else {
-                        free(this->path);
-                        this->path = _path;
-                        if (strcmp(this->path, "/") == 0) {
-                            free(this->path);
-                            this->path = nullptr;
-                        }
-                    }
-                }
-            } else {
-                // No Special Directory Names 
-                if (this->path == nullptr) {
-                    size_t length = strlen(selection) + 2; // "/" + name + '\0'
-                    char* newPath = (char*)malloc(length);
-                    if (!newPath) {
-                        serial_write_string("Failed to allocate path.\n", true, FAIL);
-                        return;
-                    }
-                    sprintf(newPath, "/%s", selection);
-                    this->path = newPath;
-                } else {
-                    size_t length = strlen(this->path) + strlen(selection) + 2; // old + "/" + name + '\0'
-                    char* newPath = (char*)malloc(length);
-                    if (!newPath) {
-                        serial_write_string("Failed to allocate path.\n", true, FAIL);
-                        return;
-                    }
-                    sprintf(newPath, "%s/%s", this->path, selection);
-                    free(this->path);
-                    this->path = newPath;
-                }
-            }
-            this->currentSelection = 0; // Default selection to the first option, always. 
-            FileEntity* newFiles = readDirectory(this->path != nullptr ? this->path : "/");
-            if (newFiles) {
-                freeFileList(this->files);
-                this->files = newFiles;
-            } else {
-                serial_write_string("Failed to load new directory.\n", true, FAIL);
-            }
-            redraw_description |= 0b00111000;
-            redrawNeeded = true;
-        } else if (files[this->currentSelection].type == VFS_NODE_FILE) {
-            if (EndsWith(files[this->currentSelection].filename, ".wav") == 1) {
-                openFile:
-                    const char* fname = files[this->currentSelection].filename;
-                    size_t len = strlen(fname);
-                    char* path = (char*)malloc(len + 2);
-                    if (!path) {
-                        serial_write_string("Failed to allocate path buffer\n", FAIL);
-                        return;
-                    }
-                    path[0] = '/';
-                    memcpy(path + 1, fname, len + 1);
-                    FILE* file = fopen(path, "r");
-                    free(path);
-                if (!file) {
-                    serial_write_string("Failed to open file.\n", false, FAIL);
-                } else {
-                    uint32_t buffer_len = 52640;
-                    char* buffer = (char*)malloc(buffer_len);
-                    fread(buffer, 1, buffer_len, file);
-                    struct wav_info_t* wav_info = read_wav_info(buffer, buffer_len);
-                    play_wav(wav_info, 0);
-                    free(buffer);
-                }
-                fclose(file);
-            } else if (EndsWith(files[this->currentSelection].filename, ".elf") == 1) {
-                openPath:
-                    const char* fname = files[this->currentSelection].filename;
-                    size_t len = strlen(fname);
-                    char* path = (char*)malloc(len + 2);
-                    if (!path) {
-                        serial_write_string("Failed to allocate path buffer\n", FAIL);
-                        return;
-                    }
-                    path[0] = '/';
-                    memcpy(path + 1, fname, len + 1);
-                    FILE* file = fopen(path, "r");
-                    free(path);
-                // serial_write_string("User tried to run ELF file which is currently unsupported.\n");
-                uint32_t buffer_len = 1024;
-                char* buffer = (char*)malloc(buffer_len);
-                fread(buffer, 1, buffer_len, file);
-                // This needs to be worked on.
-                (void (*)())elf_load_file(buffer);
-                free(buffer);
-                fclose(file);
-            }
-        }
+        if (fileClick(&redrawNeeded, &redraw_description) == false) return false;
     }
     if (redrawNeeded) {
         this->redraw(redraw_description);
     }
+    return redrawNeeded;
 }
 
 FileManager::~FileManager() {
