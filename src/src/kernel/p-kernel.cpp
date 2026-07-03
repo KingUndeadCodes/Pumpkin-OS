@@ -12,6 +12,7 @@
 #include "mods/dev/ramfs/ramfs.h"
 #include "mods/dev/mouse/mouse.h"
 #include "mods/dev/chorus/wav.h"
+#include "mods/dev/chorus/mp3.h"
 #include "mods/dev/cmos/cmos.h"
 #include "mods/dev/elf/elf.h"
 #include "mods/dev/idt/isr.h"
@@ -117,6 +118,7 @@ extern "C" void kernel_main(read_file load_floppy) {
         FILE* luaFile = fopen("/m.lua", "a");
         fclose(luaFile);
     }
+    /*
     waveTest: {
         uint8_t* lowmem_floppy = (uint8_t*)0x100000;
         disablePaging();
@@ -155,18 +157,62 @@ extern "C" void kernel_main(read_file load_floppy) {
             free(string_alloc);
         }
         play_wav(wav_info, 0);
-        /*
-        * Blocking test version:
-        * Wait until the AC97 driver stops the stream, then free the source buffer.
-        * This is okay for testing, but a real desktop should poll this from the
-        * main loop instead of blocking the whole kernel here.
-        */
+        // 
+        // * Blocking test version:
+        // * Wait until the AC97 driver stops the stream, then free the source buffer.
+        // * This is okay for testing, but a real desktop should poll this from the
+        // * main loop instead of blocking the whole kernel here.
+        // 
         while (AC97IsPlaying()) {
             asm volatile("hlt");
         }
         free(floppyBuffer);
         floppyBuffer = NULL;
         serial_write_string("AC97 Audio Codec test has ended. WAV buffer freed.\n", false, NONE);
+    }
+    */
+    mp3Test: {
+        uint8_t* lowmem_floppy = (uint8_t*)0x100000;
+        disablePaging();
+        uint32_t lengthFloppyBuffer = load_floppy("TEST.MP3", lowmem_floppy);
+        enablePaging();
+        if (lengthFloppyBuffer == 0) {
+            serial_write_string("Failed to load TEST.MP3\n", false, FAIL);
+            goto procTestOne;
+        }
+        floppyBuffer = malloc(lengthFloppyBuffer);
+        if (!floppyBuffer) {
+            serial_write_string("Failed to allocate MP3 buffer\n", false, FAIL);
+            goto procTestOne;
+        }
+        memcpy(floppyBuffer, lowmem_floppy, lengthFloppyBuffer);
+        initalize();
+        struct mp3_info_t* mp3_info = read_mp3_info((uint8_t*)floppyBuffer, lengthFloppyBuffer);
+        if (!mp3_info) {
+            serial_write_string("Failed to parse MP3 file\n", false, FAIL);
+            free(floppyBuffer);
+            goto procTestOne;
+        } else {
+            char* string_alloc = malloc(512);
+            sprintf(
+                string_alloc,
+                "MP3_AudioFile {\n\t\"length_of_mp3_data\": %d,\n\t\"pcm_data_number_of_channels\": %d,\n\t\"pcm_data_sample_rate\": %d,\n\t\"length_of_output_pcm_data\": %d,\n\t\"output_pcm_data_sample_rate\": %d\n}\n",
+                mp3_info->length_of_mp3_data,
+                mp3_info->pcm_data_number_of_channels,
+                mp3_info->pcm_data_sample_rate,
+                mp3_info->length_of_output_pcm_data,
+                mp3_info->output_pcm_data_sample_rate
+            );
+            serial_write_string(string_alloc, false, NONE);
+            free(string_alloc);
+        }
+        play_mp3(mp3_info, 0);
+        while (AC97IsPlaying()) {
+            asm volatile("hlt");
+        }
+        free(floppyBuffer);
+        floppyBuffer = NULL;
+        serial_write_string("AC97 Audio Codec test has ended. MP3 buffer freed.\n", false, NONE);
     }
     procTestOne:
         floppyBuffer = malloc(1024);

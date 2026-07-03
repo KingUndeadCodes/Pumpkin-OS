@@ -128,7 +128,11 @@ extern "C" void _fault_handler(struct regs *r)
         serial_write_string("\n", false, NONE);
         serial_write_string(exception_messages[r->int_no], true, FAIL);
         serial_write_string(" Exception. System Halted!\n", false, NONE);
+        // eip points at the faulting instruction itself for #UD, so this is
+        // enough to locate it with `objdump -d kernel.bin` / the .map file.
+        printf_serial(false, FAIL, "eip=%u esp=%u int_no=%u err_code=%u eax=%u ebx=%u ecx=%u edx=%u\n",
+            r->eip, r->esp, r->int_no, r->err_code, r->eax, r->ebx, r->ecx, r->edx);
         // Halt the system
         for (;;);
-    } 
+    }
 }

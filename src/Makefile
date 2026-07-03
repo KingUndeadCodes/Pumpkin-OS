@@ -56,6 +56,7 @@ $(IMAGE): $(STAGE0) $(STAGE1) $(STAGE2) $(KERNEL)
 	dd if=$(STAGE2) of=$(IMAGE) bs=512 seek=2 conv=notrunc
 	mcopy -i $(IMAGE) $(KERNEL) "::kernel.bin"
 	mcopy -i $(IMAGE) bin/test.wav "::test.wav"
+	mcopy -i $(IMAGE) bin/test.mp3 "::test.mp3"
 	mcopy -i $(IMAGE) bin/main.elf "::main.elf"
 	mcopy -i $(IMAGE) bin/test.txt "::test.txt"
 # cat $(STAGE0) $(STAGE1) $(STAGE2) $(KERNEL) > $(IMAGE)
