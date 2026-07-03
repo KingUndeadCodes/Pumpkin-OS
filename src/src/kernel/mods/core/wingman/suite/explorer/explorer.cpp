@@ -373,16 +373,25 @@ bool FileManager::fileClick(bool* redrawNeeded, uint8_t* redraw_description) {
                 }
                 path[0] = '/';
                 memcpy(path + 1, fname, len + 1);
+                vfs_node_t* node = vfs_find(path);
+                uint32_t buffer_len = node ? (uint32_t)node->size : 0;
                 FILE* file = fopen(path, "r");
                 free(path);
-            // serial_write_string("User tried to run ELF file which is currently unsupported.\n");
-            uint32_t buffer_len = 1024;
+            if (!file || buffer_len == 0) {
+                serial_write_string("Failed to open ELF file.\n", false, FAIL);
+                if (file) fclose(file);
+                return false;
+            }
             char* buffer = (char*)malloc(buffer_len);
             fread(buffer, 1, buffer_len, file);
-            // This needs to be worked on.
-            (void (*)())elf_load_file(buffer);
-            free(buffer);
             fclose(file);
+            void* entry = elf_load_file(buffer);
+            if (entry) {
+                elf_run(entry);
+            } else {
+                serial_write_string("Failed to load ELF (no entry point)\n", false, FAIL);
+            }
+            free(buffer);
         }
     }
     return true; // success

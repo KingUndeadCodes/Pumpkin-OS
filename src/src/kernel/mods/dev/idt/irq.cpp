@@ -117,6 +117,16 @@ void irq_wait(int irq) {
 extern "C" uint32_t* _irq_handler(struct regs *r) {
     int irq = (int)r->int_no - 32;
 
+    // Send EOI before dispatching to registered handlers, not after: a
+    // handler chain can end up doing unbounded work (e.g. a mouse click
+    // launching a program that blocks on keyboard input), and delaying EOI
+    // until it returns would hold this IRQ line "in service" at the PIC for
+    // that entire duration, starving further interrupts on it.
+    if (r->int_no >= 40) {
+        outb(0xA0, 0x20);
+    }
+    outb(0x20, 0x20);
+
     if (irq_valid(irq)) {
         currentInterrupt = irq;
 
@@ -128,13 +138,6 @@ extern "C" uint32_t* _irq_handler(struct regs *r) {
             }
         }
     }
-
-    // Send EOI after device handlers have acknowledged their own hardware.
-    if (r->int_no >= 40) {
-        outb(0xA0, 0x20);
-    }
-
-    outb(0x20, 0x20);
 
     // Only IRQ0 should trigger task scheduling.
     if (r->int_no == 32) {

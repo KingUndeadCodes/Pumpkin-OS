@@ -38,10 +38,15 @@ static inline uint32_t ac97_align4_down(uint32_t value) {
     return value & ~3u;
 }
 
+// timer_wait(N) waits N PIT ticks. pit_init(1000) makes a tick 1ms instead
+// of the old ~18.2Hz default's ~55ms, so these loop bounds are scaled up
+// ~55x to keep the same ~5.5s worst-case timeout — polling now happens
+// every 1ms instead of every ~55ms, so the typical (codec already ready)
+// case is also faster, not just the timeout unchanged.
 static inline void ac97_wait_codec_ready(uint16_t nabm_base) {
     const uint32_t GS = nabm_base + AC97Registers::GlobalStatus;
     int ticks = 0;
-    while (((inl(GS) & (1u << 8)) == 0) && ticks < 100) {
+    while (((inl(GS) & (1u << 8)) == 0) && ticks < 5500) {
         timer_wait(1);
         ticks++;
     }
@@ -54,7 +59,7 @@ static inline void ac97_reset_stream(uint16_t nabm_base, uint8_t box_base) {
     outb(CR, AC97_PCM_CR_RESET);
 
     int ticks = 0;
-    while ((inb(CR) & AC97_PCM_CR_RESET) && ticks < 100) {
+    while ((inb(CR) & AC97_PCM_CR_RESET) && ticks < 5500) {
         timer_wait(1);
         ticks++;
     }
@@ -147,7 +152,7 @@ void AC97_INIT(uint8_t bus, uint8_t device, uint8_t function) {
 
     /* Enable global AC97 interrupt bit as well as controller reset. */
     outl(nabm_base + AC97Registers::GlobalControl, (1 << 1));
-    timer_wait(3);
+    timer_wait(165); // ~165ms settle delay; was timer_wait(3) at the old ~18.2Hz tick rate
     ac97_wait_codec_ready(nabm_base);
 
     ac97_reset_stream(nabm_base, AC97Registers::PCMInputRegisterBox);

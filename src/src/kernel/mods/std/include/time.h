@@ -3,6 +3,7 @@
 
 #include "../../dev/cmos/cmos.h"
 #include <stddef.h>
+#include <stdint.h>
 
 #ifndef NULL
 #define NULL ((void*)0)
@@ -10,7 +11,12 @@
 
 #ifndef __utc
 #define __utc "UTC"
-#endif  
+#endif
+
+// timer_ticks (mods/dev/pit/pit.h) increments at this rate once pit_init()
+// has been called with a matching hz, so clock() is directly comparable to
+// real elapsed seconds via clock() / CLOCKS_PER_SEC.
+#define CLOCKS_PER_SEC 1000
 
 typedef long int clock_t;
 typedef long int time_t;
@@ -40,6 +46,11 @@ struct tm *gmtime(const time_t *time);
 struct tm *localtime(const time_t *time);
 time_t mktime(struct tm *tm);
 size_t strftime(char *s, size_t max, const char *format, const struct tm *tm);
-// time_t time(void);
+time_t time(time_t *tloc);
+
+// Milliseconds since the Unix epoch. Cheap (no CMOS access on the common
+// path) — backed by a periodically-resynced (unix_seconds, timer_ticks)
+// reference pair rather than reading the RTC every call.
+uint64_t unix_millis(void);
 
 #endif

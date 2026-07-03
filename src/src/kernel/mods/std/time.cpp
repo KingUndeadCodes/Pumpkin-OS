@@ -1,6 +1,7 @@
 // Work in Progress!!!
 
 #include "include/time.h"
+#include "../dev/pit/pit.h"
 
 /*
 I have no idea what I'm doing. I'll be copying directly from mlibc (https://github.com/managarm/mlibc/blob/master/options/ansi/generic/time-stubs.cpp).
@@ -16,22 +17,47 @@ One More Thing: This is REAL C++ code... oh no.
 #define CLOCK_MONOTONIC_COARSE 6
 #define CLOCK_BOOTTIME 7
 
+// clock_t is elapsed time, not time-of-day, so this is ticks (== ms, at
+// pit_init's recommended 1000Hz) since boot, matching CLOCKS_PER_SEC.
 clock_t clock(void) {
-	struct timespec ts;
-	/*
-	if(clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &ts) return -1;
-	if(ts.tv_sec > LONG_MAX / 1000000 || ts.tv_nsec / 1000 > LONG_MAX - 1000000 * ts.tv_sec) return -1;
-	*/
-	CMOSTime T = FetchCurrentCMOSTime();
-	ts.tv_sec = T.seconds;
-	ts.tv_nsec = 0; // No way of getting nanoseconds from CMOS
-	return ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
+	return (clock_t)timer_ticks;
 }
 
-/*
-must add later
-time_t time(time_t *tloc);
-*/
+// Builds a struct tm from the current CMOS RTC reading and folds it through
+// the (already-correct) mktime() to get real Unix seconds.
+time_t time(time_t *tloc) {
+	CMOSTime T = FetchCurrentCMOSTime();
+
+	struct tm tmv;
+	tmv.tm_sec  = T.seconds;
+	tmv.tm_min  = T.minutes;
+	tmv.tm_hour = T.hours;
+	tmv.tm_mday = T.month_day;
+	tmv.tm_mon  = T.month - 1;
+	tmv.tm_year = (T.century * 100 + T.year) - 1900;
+
+	time_t t = mktime(&tmv);
+	if (tloc) *tloc = t;
+	return t;
+}
+
+// Reference pair resynced periodically against the RTC; everything between
+// resyncs is pure ticks-since-reference arithmetic, no CMOS access.
+static time_t   millis_ref_unix_seconds = 0;
+static uint64_t millis_ref_ticks = 0;
+static bool     millis_ref_valid = false;
+
+#define MILLIS_RESYNC_INTERVAL_MS 60000 // resync roughly once a minute
+
+uint64_t unix_millis(void) {
+	if (!millis_ref_valid || (timer_ticks - millis_ref_ticks) >= MILLIS_RESYNC_INTERVAL_MS) {
+		millis_ref_unix_seconds = time(NULL);
+		millis_ref_ticks = timer_ticks;
+		millis_ref_valid = true;
+	}
+
+	return (uint64_t)millis_ref_unix_seconds * 1000ULL + (timer_ticks - millis_ref_ticks);
+}
 
 void civil_from_days(time_t days_since_epoch, int *year, unsigned int *month, unsigned int *day) {
 	time_t time = days_since_epoch + 719468;

@@ -162,5 +162,7 @@ static int elf_do_reloc(Elf32_Ehdr *hdr, Elf32_Rel *rel, Elf32_Shdr *reltab);
 */
 
 void* elf_load_file(void* b);
+int elf_run(void *entry_point);
+void elf_exit(int code);
 
 #endif

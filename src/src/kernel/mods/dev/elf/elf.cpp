@@ -1,6 +1,7 @@
 #include "elf.h"
 #include <stdint.h>
 #include <stdarg.h>
+#include "../context/setjmp.h"
 #include "../serial/serial.h"
 
 // This needs to be worked on.
@@ -116,6 +117,46 @@ static int elf_get_symval(Elf32_Ehdr *hdr, int table, uint32_t idx) {
         /* symbol->st_value is the offset inside the section */
         return (int)((uintptr_t)target_base + (uintptr_t)symbol->st_value);
     }
+}
+
+/* Find a defined (non-external) symbol by name and return its resolved
+ * runtime address. Used to locate "_start" since e_entry is 0/unreliable
+ * for ET_REL objects. */
+static void *elf_find_symbol_addr(Elf32_Ehdr *hdr, const char *name) {
+    Elf32_Shdr *shdr = elf_sheader(hdr);
+
+    for (unsigned int i = 0; i < hdr->e_shnum; i++) {
+        Elf32_Shdr *section = &shdr[i];
+        if (section->sh_type != SHT_SYMTAB) continue;
+        if (section->sh_entsize == 0) continue;
+
+        Elf32_Shdr *strtab = elf_section(hdr, section->sh_link);
+        const char *strbase = strtab ? (const char *)elf_section_data(hdr, strtab) : NULL;
+        if (!strbase) continue;
+
+        Elf32_Sym *symbols = (Elf32_Sym *)elf_section_data(hdr, section);
+        if (!symbols) continue;
+
+        uint32_t count = section->sh_size / section->sh_entsize;
+        for (uint32_t s = 0; s < count; s++) {
+            Elf32_Sym *symbol = &symbols[s];
+            if (symbol->st_shndx == SHN_UNDEF) continue; // not defined in this file
+
+            const char *symname = strbase + symbol->st_name;
+            if (strcmp(symname, name) != 0) continue;
+
+            if (symbol->st_shndx == SHN_ABS) {
+                return (void *)(uintptr_t)symbol->st_value;
+            }
+
+            Elf32_Shdr *target = elf_section(hdr, symbol->st_shndx);
+            void *target_base = target ? elf_section_data(hdr, target) : NULL;
+            if (!target_base) continue;
+            return (void *)((uintptr_t)target_base + (uintptr_t)symbol->st_value);
+        }
+    }
+
+    return NULL;
 }
 
 // ...existing code...
@@ -312,7 +353,14 @@ static inline void *elf_load_rel(Elf32_Ehdr *hdr) {
 		return NULL;
 	}
 	// TODO : Parse the program header (if present)
-	return (void*)hdr->e_entry;
+	void *entry = elf_find_symbol_addr(hdr, "_start");
+	if (!entry && hdr->e_entry != 0) {
+		entry = (void*)hdr->e_entry;
+	}
+	if (!entry) {
+		printf_serial(false, FAIL, "%s", "ELF: could not resolve _start entry point.\n");
+	}
+	return entry;
 }
 
 void* elf_load_file(void* b) {
@@ -330,6 +378,44 @@ void* elf_load_file(void* b) {
     // Load each program header
     return NULL;
 };
+
+static jmp_buf elf_exit_env;
+static int elf_exit_code;
+static bool elf_running = false;
+
+/* Called by sys_exit to terminate the currently running loaded program.
+ * There's no separate process context to unwind here (ring 0, shared
+ * stack), so we longjmp back to the setjmp captured in elf_run(). This skips
+ * syscall_handler's iretd, which is what would normally restore EFLAGS/IF
+ * from the int 0x80 interrupt gate clearing it on entry — without an
+ * explicit sti here, interrupts would stay disabled system-wide forever. */
+void elf_exit(int code) {
+    if (!elf_running) return;
+    elf_exit_code = code;
+    asm volatile("sti");
+    longjmp(elf_exit_env, 1);
+}
+
+int elf_run(void *entry_point) {
+    if (!entry_point) return -1;
+    // elf_exit_env is a single shared buffer; a second, re-entrant elf_run()
+    // call (e.g. clicking a .elf again while one is still blocked on stdin)
+    // would clobber the first one's saved jump target and corrupt its
+    // eventual sys_exit longjmp. Refuse to nest.
+    if (elf_running) {
+        printf_serial(false, FAIL, "%s", "ELF: a program is already running.\n");
+        return -1;
+    }
+
+    elf_running = true;
+    if (setjmp(elf_exit_env) == 0) {
+        ((void (*)(void))entry_point)();
+        elf_exit_code = 0; // fell off the end without an exit syscall
+    }
+    elf_running = false;
+
+    return elf_exit_code;
+}
 
 /*
 int main(int argc, char** argv) {

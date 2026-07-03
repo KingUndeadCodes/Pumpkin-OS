@@ -1,26 +1,28 @@
 #include "pit.h"
 
-volatile int timer_ticks = 0;
+volatile uint64_t timer_ticks = 0;
 
 /* Handles the timer. In this case, it's very simple: We
 *  increment the 'timer_ticks' variable every time the
-*  timer fires. By default, the timer fires 18.222 times
-*  per second. Why 18.222Hz? Some engineer at IBM must've
-*  been smoking something funky */
+*  timer fires. Rate is whatever pit_init() last programmed
+*  (1000Hz if called as recommended, so this is milliseconds
+*  since boot rather than the PIT's uninitialized ~18.222Hz default). */
 void timer_handler(struct regs *r)
 {
     /* Increment our 'tick count' */
     timer_ticks++;
     // scheduler_tick(r);
+}
 
-    /* Every 18 clocks (approximately 1 second), we will
-    *  display a message on the screen */
-    /*
-    if (timer_ticks % 18 == 0)
-    {
-        // print("One second has passed\n");
-    }
-    */
+/* Programs PIT channel 0 (ports 0x40/0x43) for the given interrupt rate.
+ * Call before enabling interrupts so the very first IRQ0 already ticks at
+ * the desired rate. */
+void pit_init(uint32_t hz)
+{
+    uint32_t divisor = PIT_BASE_FREQUENCY / hz;
+    outb(0x43, 0x36); // channel 0, lobyte/hibyte access, mode 3 (square wave), binary
+    outb(0x40, (uint8_t)(divisor & 0xFF));
+    outb(0x40, (uint8_t)((divisor >> 8) & 0xFF));
 }
 
 /* Sets up the system clock by installing the timer handler
@@ -33,7 +35,7 @@ void TimerInit()
 
 void timer_wait(int ticks)
 {
-    unsigned long eticks;
+    uint64_t eticks;
     eticks = timer_ticks + ticks;
     while(timer_ticks < eticks) asm("hlt");
 }
