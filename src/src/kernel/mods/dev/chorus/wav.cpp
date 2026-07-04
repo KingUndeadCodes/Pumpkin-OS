@@ -325,3 +325,60 @@ void convert_sound_data_to_wav(uint8_t *pcm_data_pointer, uint32_t size_of_pcm_d
     converted_file_size = (size_of_pcm_data_in_bytes + 44);
 }
 */
+
+/*
+ * Boot-time smoke test (previously lived in p-kernel.cpp as
+ * test_wav_playback). Not wired into kernel_main right now -- kept here as
+ * a reference for how to load a WAV off the boot floppy and play it
+ * through the AC97 driver. `read_file` is the same typedef kernel_main
+ * uses: `typedef uint32_t (*read_file)(const char* filename, uint8_t* dest);`
+ *
+static void test_wav_playback(read_file load_floppy) {
+    uint8_t* lowmem_floppy = (uint8_t*)0x100000;
+    disablePaging();
+    uint32_t lengthFloppyBuffer = load_floppy("TEST.WAV", lowmem_floppy);
+    enablePaging();
+    if (lengthFloppyBuffer == 0) {
+        serial_write_string("Failed to load TEST.WAV\n", false, FAIL);
+        return;
+    }
+    char* floppyBuffer = malloc(lengthFloppyBuffer);
+    if (!floppyBuffer) {
+        serial_write_string("Failed to allocate WAV buffer\n", false, FAIL);
+        return;
+    }
+    memcpy(floppyBuffer, lowmem_floppy, lengthFloppyBuffer);
+    initalize();
+    struct wav_info_t* wav_info = read_wav_info((uint8_t*)floppyBuffer, lengthFloppyBuffer);
+    if (!wav_info) {
+        serial_write_string("Failed to parse WAV file\n", false, FAIL);
+        free(floppyBuffer);
+        return;
+    } else {
+        char* string_alloc = malloc(512);
+        sprintf(
+            string_alloc,
+            "WAV_AudioFile {\n\t\"start_of_pcm_data\": %d,\n\t\"length_of_pcm_data\": %d,\n\t\"pcm_data_number_of_channels\": %d,\n\t\"pcm_data_sample_rate\": %d,\n\t\"pcm_data_bits_per_sample\": %d,\n\t\"length_of_output_pcm_data\": %d,\n\t\"output_pcm_data_sample_rate\": %d\n}\n",
+            wav_info->start_of_pcm_data,
+            wav_info->length_of_pcm_data,
+            wav_info->pcm_data_number_of_channels,
+            wav_info->pcm_data_sample_rate,
+            wav_info->pcm_data_bits_per_sample,
+            wav_info->length_of_output_pcm_data,
+            wav_info->output_pcm_data_sample_rate
+        );
+        serial_write_string(string_alloc, false, NONE);
+        free(string_alloc);
+    }
+    play_wav(wav_info, 0);
+    // Blocking test version: wait until the AC97 driver stops the stream,
+    // then free the source buffer. This is okay for testing, but a real
+    // desktop should poll this from the main loop instead of blocking the
+    // whole kernel here.
+    while (AC97IsPlaying()) {
+        asm volatile("hlt");
+    }
+    free(floppyBuffer);
+    serial_write_string("AC97 Audio Codec test has ended. WAV buffer freed.\n", false, NONE);
+}
+*/

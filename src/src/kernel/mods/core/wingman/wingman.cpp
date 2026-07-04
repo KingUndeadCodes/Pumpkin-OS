@@ -6,8 +6,13 @@ static FileManager* fileManager = nullptr;
 static WindowManager* wm = nullptr;
 static bool mouseEnabled = false;
 static size_t bufferSize = 0;
-// static uint64_t time = 0;
-// static MessageBox* messageBox = nullptr;
+// PS/2 delivers a packet at a fairly high rate, not just on state changes,
+// so a single physical click can arrive as several packets with buttons=1.
+// Tracking the previous packet's button state here lets us compute a
+// press-edge (0->1 this packet) once, globally, before any window/delegate
+// ever sees it -- instead of every MouseDelegate treating "buttons == 1"
+// as its own fresh click and re-firing on every packet held down.
+static unsigned char lastButtons = 0;
 
 inline void redraw_screen(void) {
     color_t* buffer = wm->screen->getBuffer();
@@ -28,6 +33,8 @@ void mouseFunctionWindowManager(int x, int y, int dx, int dy, unsigned char butt
     (void)dx;
     (void)dy;
     mouseEnabled = true;
+    const unsigned char pressedEdge = buttons & (unsigned char)~lastButtons;
+    lastButtons = buttons;
     isInsideFocusedWindow:
         const Window* foucsedWindow = wm->focusedWindow;
         const int rectX = foucsedWindow->offsetX;
@@ -46,7 +53,7 @@ void mouseFunctionWindowManager(int x, int y, int dx, int dy, unsigned char butt
                 printf_serial(false, NONE, "%d\n", _time - time);
                 time = rdtsc();
                 */
-                if (foucsedWindow->handleMouse(_x, _y, dx, dy, buttons)) {
+                if (foucsedWindow->handleMouse(_x, _y, dx, dy, buttons, pressedEdge)) {
                     wm->composite();
                     redraw_screen();
                 }
@@ -67,8 +74,10 @@ void initalizeWindowSystem(void) {
     wm->add(messageBox->window);
     wm->add(windowTest);
     */
+    MessageBox* messageBox = new MessageBox(DialogBoxWarning, "chorus: not initialized; call initalize() first.");
     // -
     wm->add(fileManager->window);
+    wm->add(messageBox->window);
     kb_add_event(keyboardFunctionWindowManager);
     mouse_add_event(mouseFunctionWindowManager);
     set_cursor_id(0);

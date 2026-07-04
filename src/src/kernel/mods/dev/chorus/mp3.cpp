@@ -1,7 +1,7 @@
 #include "./mp3.h"
 #include "./chorus.h"
-#include "./minimp3/minimp3.h"
 #include "../serial/serial.h"
+#include "../../core/minimp3/minimp3.h"
 
 static struct mp3_info_t *actually_played_mp3_info;
 
@@ -186,3 +186,54 @@ void mp3_refill_buffer(uint8_t *buffer)
         mp3_carry_frames_remaining--;
     }
 }
+
+/*
+ * Boot-time smoke test (previously lived in p-kernel.cpp as
+ * test_mp3_playback). Not wired into kernel_main right now -- kept here as
+ * a reference for how to load an MP3 off the boot floppy and play it
+ * through the AC97 driver. `read_file` is the same typedef kernel_main
+ * uses: `typedef uint32_t (*read_file)(const char* filename, uint8_t* dest);`
+ *
+static void test_mp3_playback(read_file load_floppy) {
+    uint8_t* lowmem_floppy = (uint8_t*)0x100000;
+    disablePaging();
+    uint32_t lengthFloppyBuffer = load_floppy("TEST.MP3", lowmem_floppy);
+    enablePaging();
+    if (lengthFloppyBuffer == 0) {
+        serial_write_string("Failed to load TEST.MP3\n", false, FAIL);
+        return;
+    }
+    char* floppyBuffer = malloc(lengthFloppyBuffer);
+    if (!floppyBuffer) {
+        serial_write_string("Failed to allocate MP3 buffer\n", false, FAIL);
+        return;
+    }
+    memcpy(floppyBuffer, lowmem_floppy, lengthFloppyBuffer);
+    initalize();
+    struct mp3_info_t* mp3_info = read_mp3_info((uint8_t*)floppyBuffer, lengthFloppyBuffer);
+    if (!mp3_info) {
+        serial_write_string("Failed to parse MP3 file\n", false, FAIL);
+        free(floppyBuffer);
+        return;
+    } else {
+        char* string_alloc = malloc(512);
+        sprintf(
+            string_alloc,
+            "MP3_AudioFile {\n\t\"length_of_mp3_data\": %d,\n\t\"pcm_data_number_of_channels\": %d,\n\t\"pcm_data_sample_rate\": %d,\n\t\"length_of_output_pcm_data\": %d,\n\t\"output_pcm_data_sample_rate\": %d\n}\n",
+            mp3_info->length_of_mp3_data,
+            mp3_info->pcm_data_number_of_channels,
+            mp3_info->pcm_data_sample_rate,
+            mp3_info->length_of_output_pcm_data,
+            mp3_info->output_pcm_data_sample_rate
+        );
+        serial_write_string(string_alloc, false, NONE);
+        free(string_alloc);
+    }
+    play_mp3(mp3_info, 0);
+    while (AC97IsPlaying()) {
+        asm volatile("hlt");
+    }
+    free(floppyBuffer);
+    serial_write_string("AC97 Audio Codec test has ended. MP3 buffer freed.\n", false, NONE);
+}
+*/

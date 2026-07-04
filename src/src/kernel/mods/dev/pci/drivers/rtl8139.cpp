@@ -82,7 +82,7 @@ void ethernet_handle_packet(ethernet_frame* packet, int len) {
         } 
         case EthernetPacketType::IPv4: {
             // Handle IP packet
-            InternetProtocol::handlePacket((ip_packet_t*)data);
+            InternetProtocol::handlePacket((ip_packet_t*)data, packet->src_mac_addr);
             serial_write_string("Received IPv4 packet\n");
             break;
         }

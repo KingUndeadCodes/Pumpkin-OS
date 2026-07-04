@@ -1,4 +1,5 @@
 #include "arp.h"
+#include "ip.h"
 #include "../pci/drivers/rtl8139.h"
 #include "../serial/serial.h"
 
@@ -24,16 +25,12 @@ namespace AddressResolutionProtocol {
         uint16_t op = ntohs(arp_packet->opcode);
         switch (op) {
             case ARP_REQUEST: {
-                uint32_t my_ip = 0x0e02000a;
-                if (memcmp(arp_packet->dst_protocol_addr, &my_ip, 4) == 0) {
+                if (memcmp(arp_packet->dst_protocol_addr, my_ip, 4) == 0) {
                     serial_write_string("Received ARP request for my IP address.\n");
-                    // Set source MAC address, IP address (hardcode the IP address as 10.2.2.3 until we really get one..)
+                    // Set source MAC address, IP address
                     uint8_t* macAddress = RTL8139_MAC_ADDR();
                     memcpy(arp_packet->src_hardware_addr, macAddress, 6);
-                    arp_packet->src_protocol_addr[0] = 10;
-                    arp_packet->src_protocol_addr[1] = 0;
-                    arp_packet->src_protocol_addr[2] = 2;
-                    arp_packet->src_protocol_addr[3] = 14;
+                    memcpy(arp_packet->src_protocol_addr, my_ip, 4);
                     // Set destination MAC address, IP address
                     memcpy(arp_packet->dst_hardware_addr, arp_packet->src_hardware_addr, 6);
                     memcpy(arp_packet->dst_protocol_addr, arp_packet->src_protocol_addr, 4);
@@ -61,17 +58,15 @@ namespace AddressResolutionProtocol {
         memcpy(&arp_table[arp_table_curr].ip_addr, dst_protocol_addr, 4);
         memcpy(&arp_table[arp_table_curr].mac_addr, dst_hardware_addr, 6);
         if(arp_table_size < 512) arp_table_size++;
+        arp_table_curr++;
         // Wrap around
         if(arp_table_curr >= 512) arp_table_curr = 0;
     }
     void sendPacket(uint8_t* dst_hardware_addr, uint8_t* dst_protocol_addr) {
-        arp_packet_t* arp_packet = malloc(sizeof(arp_packet_t));
+        arp_packet_t* arp_packet = (arp_packet_t*)malloc(sizeof(arp_packet_t));
         uint8_t* macAddress = RTL8139_MAC_ADDR();
         memcpy(arp_packet->src_hardware_addr, macAddress, 6);
-        arp_packet->src_protocol_addr[0] = 10;
-        arp_packet->src_protocol_addr[1] = 0;
-        arp_packet->src_protocol_addr[2] = 2;
-        arp_packet->src_protocol_addr[3] = 14;
+        memcpy(arp_packet->src_protocol_addr, my_ip, 4);
         memcpy(arp_packet->dst_hardware_addr, dst_hardware_addr, 6);
         memcpy(arp_packet->dst_protocol_addr, dst_protocol_addr, 4);
         // Set opcode
@@ -102,6 +97,7 @@ namespace AddressResolutionProtocol {
         memcpy(&arp_table[arp_table_curr].ip_addr, ip_addr, 4);
         memcpy(&arp_table[arp_table_curr].mac_addr, ret_hardware_addr, 6);
         if(arp_table_size < 512) arp_table_size++;
+        arp_table_curr++;
         // Wrap around
         if(arp_table_curr >= 512) arp_table_curr = 0;
     }

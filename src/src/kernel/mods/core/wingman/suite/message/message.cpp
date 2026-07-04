@@ -1,5 +1,20 @@
 #include "./message.h"
 
+/*
+class MessageBoxButton {
+    public:
+        char* message;
+        uint32_t color;
+
+        MessageBoxButton(const char* message, uint32_t color);
+        ~MessageBoxButton();
+        void *operator new(size_t size) { return malloc(size); }
+        void *operator new[](size_t size) { return malloc(size); }
+        void operator delete(void *p) { free(p); }
+        void operator delete[](void *p) { free(p); }
+};
+*/
+
 #define COLOR_R 0xFFFF0000
 #define COLOR_G 0xFF00FF00
 #define COLOR_B 0xFF0000FF
@@ -55,7 +70,7 @@ MessageBox::MessageBox(enum MessageBoxType dialogBoxType, const char* message) {
         this->message = NULL;
     }
     this->window = new Window(width, height, offsetX, offsetY, "Message");
-    this->redraw(0b11111000);
+    this->redraw(0b11111100);
 };
 
 void MessageBox::redraw(uint8_t description = 0b00111000) {
@@ -69,7 +84,7 @@ void MessageBox::redraw(uint8_t description = 0b00111000) {
     if ((description >> 5) & 1) this->draw_background();
     if ((description >> 4) & 1) this->draw_title();
     if ((description >> 3) & 1) this->draw_body();
-    if ((description >> 2) & 1) this->draw_options();
+    if ((description >> 2) & 1) this->draw_buttons();
 };
 
 void MessageBox::draw_border(void) {
@@ -124,8 +139,32 @@ void MessageBox::draw_body(void) {
     return;
 };
 
-void MessageBox::draw_options(void) {
-    
+void MessageBox::draw_buttons(void) {
+    const char* label = "Okay";
+    constexpr uint32_t scale = 2;
+    constexpr int buttonHeight = 40;
+    const int buttonMargin = 2 * padding;
+    int buttonX = buttonMargin;
+    int buttonY = height - thickness - padding - buttonHeight;
+    int buttonWidth = width - 2 * buttonMargin;
+    for (int y = 0; y < buttonHeight; y++) {
+        for (int x = 0; x < buttonWidth; x++) utility_draw_pixel(buttonX + x, buttonY + y, 0xFF605a59);
+    }
+    for (int t = 0; t < thickness; t++) {
+        for (int x = 0; x < buttonWidth; x++) utility_draw_pixel(buttonX + x, buttonY + t, COLOR_W);
+        for (int x = 0; x < buttonWidth; x++) utility_draw_pixel(buttonX + x, buttonY + buttonHeight - 1 - t, COLOR_W);
+        for (int y = 0; y < buttonHeight; y++) utility_draw_pixel(buttonX + t, buttonY + y, COLOR_W);
+        for (int y = 0; y < buttonHeight; y++) utility_draw_pixel(buttonX + buttonWidth - 1 - t, buttonY + y, COLOR_W);
+    }
+    int labelLen = strlen(label);
+    int charWidth = 8 * scale;
+    int charHeight = 8 * scale;
+    int textWidth = labelLen * charWidth;
+    int textX = buttonX + (buttonWidth - textWidth) / 2;
+    int textY = buttonY + (buttonHeight - charHeight) / 2;
+    for (int i = 0; i < labelLen; i++) {
+        utility_draw_char(textX + i * charWidth, textY, label[i], COLOR_W, scale);
+    }
 };
 
 MessageBox::~MessageBox() {

@@ -42,8 +42,9 @@ bool Window::handleKeyboard(char key, bool shift, bool meta, unsigned char scanc
     }
 }
 
-bool Window::handleMouse(int x, int y, int dx, int dy, unsigned char buttons) {
+bool Window::handleMouse(int x, int y, int dx, int dy, unsigned char buttons, unsigned char pressedEdge) {
     if (mouseDelegate != nullptr) {
-        return mouseDelegate->onMouseEvent(x, y, dx, dy, buttons);
+        return mouseDelegate->onMouseEvent(x, y, dx, dy, buttons, pressedEdge);
     }
+    return false;
 }

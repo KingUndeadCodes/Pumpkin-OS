@@ -10,8 +10,10 @@
 #include "../../headers/surface.h"
 #include "../../../../dev/elf/elf.h"
 #include "../../../../dev/chorus/wav.h"
+#include "../../../../dev/chorus/mp3.h"
 #include "../../../../dev/ramfs/ramfs.h"
 #include "../../../../dev/vbe/vga_table.h"
+#include "../../../../dev/pci/drivers/ac97.h"
 #include "../../../../std/include/graphics/font.h"
 #include "../../../../std/include/graphics/icons.h"
 
@@ -58,7 +60,7 @@ class FileManager : public KeyboardDelegate, MouseDelegate {
         bool fileClick(bool* redrawNeeded, uint8_t* redraw_description);
     public:
         bool onKeyboard(char key, bool shift, bool meta, unsigned char scancode) override;
-        bool onMouseEvent(int x, int y, int dx, int dy, unsigned char buttons) override;
+        bool onMouseEvent(int x, int y, int dx, int dy, unsigned char buttons, unsigned char pressedEdge) override;
         ~FileManager();
         void *operator new(size_t size) { return malloc(size); }
         void *operator new[](size_t size) { return malloc(size); }

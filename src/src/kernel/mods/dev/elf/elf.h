@@ -161,7 +161,7 @@ static int elf_load_stage2(Elf32_Ehdr *hdr);
 static int elf_do_reloc(Elf32_Ehdr *hdr, Elf32_Rel *rel, Elf32_Shdr *reltab);
 */
 
-void* elf_load_file(void* b);
+void* elf_load_file(void* b, size_t buffer_size);
 int elf_run(void *entry_point);
 void elf_exit(int code);
 

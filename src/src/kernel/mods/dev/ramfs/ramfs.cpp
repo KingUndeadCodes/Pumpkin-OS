@@ -1,190 +1,205 @@
 #include "ramfs.h"
+#include <stdlib.h>
 #include <string.h>
 
-// Pools (no malloc)
-static ramfs_dir_t dirs_pool[RAMFS_MAX_TOTAL_DIRS];
-static uint8_t dirs_used[RAMFS_MAX_TOTAL_DIRS];
+typedef struct ramfs_block ramfs_block_t;
+struct ramfs_block {
+    ramfs_block_t* next;
+    uint8_t data[RAMFS_BLOCK_SIZE];
+};
 
-static ramfs_file_t files_pool[RAMFS_MAX_TOTAL_FILES];
-static uint8_t files_used[RAMFS_MAX_TOTAL_FILES];
+typedef struct ramfs_dirent ramfs_dirent_t;
+struct ramfs_dirent {
+    vfs_node_t* node;
+    ramfs_dirent_t* next;
+};
 
-/* helper: safe strncpy */
+// Stashed in vfs_node_t::fs_data. `parent` is NULL only for the root node,
+// which is otherwise indistinguishable from any other directory.
+typedef struct {
+    vfs_node_t* parent;
+    union {
+        struct { // VFS_NODE_FILE
+            ramfs_block_t* head;
+            ramfs_block_t* tail;
+            size_t block_count;
+        } file;
+        struct { // VFS_NODE_DIR
+            ramfs_dirent_t* children;
+            size_t child_count;
+        } dir;
+    };
+} ramfs_node_data_t;
+
+static int ramfs_readdir(vfs_node_t* node, size_t idx, struct dirent* out);
+static vfs_node_t* ramfs_finddir(vfs_node_t* node, const char* name);
+static vfs_node_t* ramfs_create_node(vfs_node_t* parent, const char* name, int type, int permissions);
+
 static void safe_strncpy(char *dst, const char *src, size_t n) {
     if (n == 0) return;
     strncpy(dst, src, n - 1);
     dst[n - 1] = '\0';
 }
 
-/* pool alloc/free helpers */
-static ramfs_dir_t* alloc_dir(void) {
-    for (size_t i = 0; i < RAMFS_MAX_TOTAL_DIRS; ++i) {
-        if (!dirs_used[i]) {
-            dirs_used[i] = 1;
-            memset(&dirs_pool[i], 0, sizeof(ramfs_dir_t));
-            return &dirs_pool[i];
-        }
+/* --- file block-list helpers --- */
+
+static ramfs_block_t* ramfs_block_at(ramfs_node_data_t* d, size_t index) {
+    ramfs_block_t* b = d->file.head;
+    while (b && index--) b = b->next;
+    return b;
+}
+
+// Appends blocks until the file has at least `needed_blocks`. Returns -1 if
+// an allocation fails partway through (whatever got allocated is kept).
+static int ramfs_grow_file(ramfs_node_data_t* d, size_t needed_blocks) {
+    while (d->file.block_count < needed_blocks) {
+        ramfs_block_t* nb = (ramfs_block_t*)malloc(sizeof(ramfs_block_t));
+        if (!nb) return -1;
+        nb->next = NULL;
+        if (d->file.tail) d->file.tail->next = nb;
+        else d->file.head = nb;
+        d->file.tail = nb;
+        d->file.block_count++;
     }
-    serial_write_string("ramfs: no free dir in pool\n");
-    return NULL;
+    return 0;
 }
 
-static void free_dir(ramfs_dir_t* d) {
-    if (!d) return;
-    size_t idx = d - dirs_pool;
-    if (idx < RAMFS_MAX_TOTAL_DIRS) dirs_used[idx] = 0;
-}
-
-static ramfs_file_t* alloc_file(void) {
-    for (size_t i = 0; i < RAMFS_MAX_TOTAL_FILES; ++i) {
-        if (!files_used[i]) {
-            files_used[i] = 1;
-            memset(&files_pool[i], 0, sizeof(ramfs_file_t));
-            return &files_pool[i];
-        }
+static void ramfs_free_file_blocks(ramfs_node_data_t* d) {
+    ramfs_block_t* b = d->file.head;
+    while (b) {
+        ramfs_block_t* next = b->next;
+        free(b);
+        b = next;
     }
-    serial_write_string("ramfs: no free file in pool\n");
-    return NULL;
-}
-static void free_file(ramfs_file_t* f) {
-    if (!f) return;
-    size_t idx = f - files_pool;
-    if (idx < RAMFS_MAX_TOTAL_FILES) files_used[idx] = 0;
+    d->file.head = d->file.tail = NULL;
+    d->file.block_count = 0;
 }
 
-/* --- File ops --- */
+/* --- file read/write --- */
+
 static size_t ramfs_read(vfs_node_t* node, size_t offset, size_t size, void* buf) {
     if (!node || !buf) return 0;
-    ramfs_file_t* file = (ramfs_file_t*)node;
-    if (offset >= file->size) return 0;
-    if (offset + size > file->size) size = file->size - offset;
-    memcpy(buf, file->data + offset, size);
-    return size;
+    ramfs_node_data_t* d = (ramfs_node_data_t*)node->fs_data;
+    if (offset >= node->size) return 0;
+    if (offset + size > node->size) size = node->size - offset;
+
+    size_t remaining = size;
+    uint8_t* out = (uint8_t*)buf;
+    ramfs_block_t* blk = ramfs_block_at(d, offset / RAMFS_BLOCK_SIZE);
+    size_t block_offset = offset % RAMFS_BLOCK_SIZE;
+
+    while (remaining > 0 && blk) {
+        size_t chunk = RAMFS_BLOCK_SIZE - block_offset;
+        if (chunk > remaining) chunk = remaining;
+        memcpy(out, blk->data + block_offset, chunk);
+        out += chunk;
+        remaining -= chunk;
+        block_offset = 0;
+        blk = blk->next;
+    }
+    return size - remaining;
 }
 
 static size_t ramfs_write(vfs_node_t* node, size_t offset, size_t size, const void* buf) {
     if (!node || !buf) return 0;
-    ramfs_file_t* file = (ramfs_file_t*)node;
+    ramfs_node_data_t* d = (ramfs_node_data_t*)node->fs_data;
 
-    if (offset >= RAMFS_MAX_FILE_SIZE) return 0;
-    if (offset + size > RAMFS_MAX_FILE_SIZE) size = RAMFS_MAX_FILE_SIZE - offset;
+    size_t needed_blocks = (offset + size + RAMFS_BLOCK_SIZE - 1) / RAMFS_BLOCK_SIZE;
+    if (ramfs_grow_file(d, needed_blocks) < 0) {
+        // Out of memory partway through growth -- clamp to what we actually got.
+        size_t available = d->file.block_count * RAMFS_BLOCK_SIZE;
+        if (offset >= available) return 0;
+        if (offset + size > available) size = available - offset;
+    }
 
-    memcpy(file->data + offset, buf, size);
-    if (offset + size > file->size) file->size = offset + size;
-    node->size = file->size;
-    return size;
+    size_t remaining = size;
+    const uint8_t* in = (const uint8_t*)buf;
+    ramfs_block_t* blk = ramfs_block_at(d, offset / RAMFS_BLOCK_SIZE);
+    size_t block_offset = offset % RAMFS_BLOCK_SIZE;
+
+    while (remaining > 0 && blk) {
+        size_t chunk = RAMFS_BLOCK_SIZE - block_offset;
+        if (chunk > remaining) chunk = remaining;
+        memcpy(blk->data + block_offset, in, chunk);
+        in += chunk;
+        remaining -= chunk;
+        block_offset = 0;
+        blk = blk->next;
+    }
+
+    size_t written = size - remaining;
+    if (offset + written > node->size) node->size = offset + written;
+    return written;
 }
 
-/* --- Directory helpers --- */
-static int ramfs_has_file(ramfs_dir_t* dir, const char* name) {
-    for (size_t i = 0; i < RAMFS_MAX_FILES; ++i) {
-        if (dir->files[i] && strcmp(dir->files[i]->node.name, name) == 0) return 1;
-    }
-    return 0;
-}
-static int ramfs_has_dir(ramfs_dir_t* dir, const char* name) {
-    for (size_t i = 0; i < RAMFS_MAX_DIRS; ++i) {
-        if (dir->subdirs[i] && strcmp(dir->subdirs[i]->node.name, name) == 0) return 1;
-    }
-    return 0;
-}
+/* --- node allocation --- */
 
-/* --- Create --- */
-static ramfs_file_t* ramfs_create_file(ramfs_dir_t* dir, const char* name, int permissions) {
-    if (!dir || !name) {
-        serial_write_string("ramfs: create_file invalid args\n");
-        return NULL;
-    }
-    if (ramfs_has_file(dir, name) || ramfs_has_dir(dir, name)) {
-        serial_write_string("ramfs: create_file duplicate\n");
-        return NULL;
-    }
-    /* find free slot in directory */
-    size_t slot = (size_t)-1;
-    for (size_t i = 0; i < RAMFS_MAX_FILES; ++i) {
-        if (dir->files[i] == NULL) { slot = i; break; }
-    }
-    if (slot == (size_t)-1) {
-        serial_write_string("ramfs: create_file dir full\n");
-        return NULL;
-    }
-    ramfs_file_t* file = alloc_file();
-    if (!file) return NULL;
+static vfs_node_t* ramfs_alloc_node(vfs_node_t* parent, const char* name, int type, int permissions) {
+    vfs_node_t* node = (vfs_node_t*)malloc(sizeof(vfs_node_t));
+    if (!node) return NULL;
+    memset(node, 0, sizeof(vfs_node_t));
 
-    safe_strncpy(file->node.name, name, RAMFS_MAX_NAME);
-    file->node.type = VFS_NODE_FILE;
-    file->node.permissions = permissions;
-    file->node.read = ramfs_read;
-    file->node.write = ramfs_write;
-    file->node.finddir = NULL;
-    file->node.readdir = NULL;
-    file->node.create = NULL;
-    file->parent = dir;
-    file->size = 0;
+    ramfs_node_data_t* d = (ramfs_node_data_t*)malloc(sizeof(ramfs_node_data_t));
+    if (!d) { free(node); return NULL; }
+    memset(d, 0, sizeof(ramfs_node_data_t));
+    d->parent = parent;
 
-    dir->files[slot] = file;
-    dir->file_count++;
-    return file;
+    safe_strncpy(node->name, name, VFS_MAX_NAME);
+    node->type = (vfs_node_type_t)type;
+    node->permissions = permissions;
+    node->size = 0;
+    node->fs_data = d;
+
+    if (type == VFS_NODE_DIR) {
+        node->readdir = ramfs_readdir;
+        node->finddir = ramfs_finddir;
+        node->create  = ramfs_create_node;
+    } else {
+        node->read  = ramfs_read;
+        node->write = ramfs_write;
+    }
+    return node;
 }
 
-static ramfs_dir_t* ramfs_create_dir(ramfs_dir_t* parent, const char* name, int permissions) {
-    if (!parent || !name) return NULL;
-    if (ramfs_has_dir(parent, name) || ramfs_has_file(parent, name)) {
-        serial_write_string("ramfs: create_dir duplicate\n");
+/* --- directory operations --- */
+
+static vfs_node_t* ramfs_create_node(vfs_node_t* parent_node, const char* name, int type, int permissions) {
+    if (!parent_node || !name || parent_node->type != VFS_NODE_DIR) return NULL;
+    ramfs_node_data_t* pd = (ramfs_node_data_t*)parent_node->fs_data;
+
+    if (ramfs_finddir(parent_node, name)) {
+        serial_write_string("ramfs: create duplicate\n");
         return NULL;
     }
-    size_t slot = (size_t)-1;
-    for (size_t i = 0; i < RAMFS_MAX_DIRS; ++i) {
-        if (parent->subdirs[i] == NULL) { slot = i; break; }
-    }
-    if (slot == (size_t)-1) {
-        serial_write_string("ramfs: create_dir parent full\n");
+
+    vfs_node_t* node = ramfs_alloc_node(parent_node, name, type, permissions);
+    if (!node) {
+        serial_write_string("ramfs: out of memory creating node\n");
         return NULL;
     }
-    ramfs_dir_t* dir = alloc_dir();
-    if (!dir) return NULL;
 
-    safe_strncpy(dir->node.name, name, RAMFS_MAX_NAME);
-    dir->node.type = VFS_NODE_DIR;
-    dir->node.permissions = permissions;
-    dir->node.readdir = ramfs_readdir;
-    dir->node.finddir = ramfs_finddir;
-    dir->node.create = ramfs_create_node;
-    dir->node.read = NULL;
-    dir->node.write = NULL;
-    dir->parent = parent;
-    dir->dir_count = 0;
-    dir->file_count = 0;
-
-    parent->subdirs[slot] = dir;
-    parent->dir_count++;
-    return dir;
+    ramfs_dirent_t* entry = (ramfs_dirent_t*)malloc(sizeof(ramfs_dirent_t));
+    if (!entry) {
+        free(node->fs_data);
+        free(node);
+        return NULL;
+    }
+    entry->node = node;
+    entry->next = pd->dir.children;
+    pd->dir.children = entry;
+    pd->dir.child_count++;
+    return node;
 }
 
-/* --- vfs wrappers --- */
 static int ramfs_readdir(vfs_node_t* node, size_t idx, struct dirent* out) {
     if (!node || !out) return -1;
-    ramfs_dir_t* dir = (ramfs_dir_t*)node;
-    /* enumerate subdirs first */
-    size_t d = 0;
-    for (size_t i = 0; i < RAMFS_MAX_DIRS; ++i) {
-        if (dir->subdirs[i]) {
-            if (d == idx) {
-                safe_strncpy(out->d_name, dir->subdirs[i]->node.name, RAMFS_MAX_NAME);
-                out->d_type = VFS_NODE_DIR;
-                return 0;
-            }
-            d++;
-        }
-    }
-    size_t f = 0;
-    for (size_t i = 0; i < RAMFS_MAX_FILES; ++i) {
-        if (dir->files[i]) {
-            if (d + f == idx) {
-                safe_strncpy(out->d_name, dir->files[i]->node.name, RAMFS_MAX_NAME);
-                out->d_type = VFS_NODE_FILE;
-                return 0;
-            }
-            f++;
+    ramfs_node_data_t* d = (ramfs_node_data_t*)node->fs_data;
+    size_t i = 0;
+    for (ramfs_dirent_t* e = d->dir.children; e; e = e->next, i++) {
+        if (i == idx) {
+            safe_strncpy(out->d_name, e->node->name, VFS_MAX_NAME);
+            out->d_type = e->node->type;
+            return 0;
         }
     }
     return -1;
@@ -192,87 +207,41 @@ static int ramfs_readdir(vfs_node_t* node, size_t idx, struct dirent* out) {
 
 static vfs_node_t* ramfs_finddir(vfs_node_t* node, const char* name) {
     if (!node || !name) return NULL;
-    ramfs_dir_t* dir = (ramfs_dir_t*)node;
-    for (size_t i = 0; i < RAMFS_MAX_DIRS; ++i) {
-        if (dir->subdirs[i] && strcmp(dir->subdirs[i]->node.name, name) == 0)
-            return &dir->subdirs[i]->node;
-    }
-    for (size_t i = 0; i < RAMFS_MAX_FILES; ++i) {
-        if (dir->files[i] && strcmp(dir->files[i]->node.name, name) == 0)
-            return &dir->files[i]->node;
-    }
-    return NULL;
-}
-
-static vfs_node_t* ramfs_create_node(vfs_node_t* parent_node, const char* name, int type, int permissions) {
-    if (!parent_node || !name) return NULL;
-    ramfs_dir_t* parent = (ramfs_dir_t*)parent_node;
-    if (type == VFS_NODE_FILE) {
-        ramfs_file_t* f = ramfs_create_file(parent, name, permissions);
-        return f ? &f->node : NULL;
-    } else if (type == VFS_NODE_DIR) {
-        ramfs_dir_t* d = ramfs_create_dir(parent, name, permissions);
-        return d ? &d->node : NULL;
+    ramfs_node_data_t* d = (ramfs_node_data_t*)node->fs_data;
+    for (ramfs_dirent_t* e = d->dir.children; e; e = e->next) {
+        if (strcmp(e->node->name, name) == 0) return e->node;
     }
     return NULL;
 }
 
 /* --- delete --- */
+
 int ramfs_delete_node(vfs_node_t* node) {
     if (!node) return -1;
-    if (node->type == VFS_NODE_FILE) {
-        ramfs_file_t* file = (ramfs_file_t*)node;
-        ramfs_dir_t* parent = file->parent;
-        if (!parent) return -1;
-        /* find index */
-        size_t idx = (size_t)-1;
-        for (size_t i = 0; i < RAMFS_MAX_FILES; ++i) {
-            if (parent->files[i] == file) { idx = i; break; }
-        }
-        if (idx == (size_t)-1) return -1;
-        parent->files[idx] = NULL;
-        if (parent->file_count) parent->file_count--;
-        free_file(file);
-        return 0;
-    } else if (node->type == VFS_NODE_DIR) {
-        ramfs_dir_t* dir = (ramfs_dir_t*)node;
-        ramfs_dir_t* parent = dir->parent;
-        if (!parent) return -1;
-        /* ensure empty */
-        for (size_t i = 0; i < RAMFS_MAX_FILES; ++i) if (dir->files[i]) return -1;
-        for (size_t i = 0; i < RAMFS_MAX_DIRS; ++i) if (dir->subdirs[i]) return -1;
-        /* find index in parent */
-        size_t idx = (size_t)-1;
-        for (size_t i = 0; i < RAMFS_MAX_DIRS; ++i) {
-            if (parent->subdirs[i] == dir) { idx = i; break; }
-        }
-        if (idx == (size_t)-1) return -1;
-        parent->subdirs[idx] = NULL;
-        if (parent->dir_count) parent->dir_count--;
-        free_dir(dir);
-        return 0;
-    }
-    return -1;
+    ramfs_node_data_t* d = (ramfs_node_data_t*)node->fs_data;
+    vfs_node_t* parent_node = d->parent;
+    if (!parent_node) return -1; // can't delete root
+
+    if (node->type == VFS_NODE_DIR && d->dir.child_count != 0) return -1; // must be empty
+
+    ramfs_node_data_t* pd = (ramfs_node_data_t*)parent_node->fs_data;
+    ramfs_dirent_t** link = &pd->dir.children;
+    while (*link && (*link)->node != node) link = &(*link)->next;
+    if (!*link) return -1;
+
+    ramfs_dirent_t* entry = *link;
+    *link = entry->next;
+    free(entry);
+    if (pd->dir.child_count) pd->dir.child_count--;
+
+    if (node->type == VFS_NODE_FILE) ramfs_free_file_blocks(d);
+    free(d);
+    free(node);
+    return 0;
 }
 
 /* --- init --- */
+
 vfs_node_t* ramfs_init(void) {
-    memset(dirs_used, 0, sizeof(dirs_used));
-    memset(files_used, 0, sizeof(files_used));
-    /* allocate root dir from pool directly */
-    ramfs_dir_t* root = alloc_dir();
-    if (!root) return NULL;
-    safe_strncpy(root->node.name, "/", RAMFS_MAX_NAME);
-    root->node.type = VFS_NODE_DIR;
-    root->node.permissions = 0755;
-    root->node.readdir = ramfs_readdir;
-    root->node.finddir = ramfs_finddir;
-    root->node.create = ramfs_create_node;
-    root->node.read = NULL;
-    root->node.write = NULL;
-    root->node.size = 0;
-    root->parent = NULL;
-    root->dir_count = 0;
-    root->file_count = 0;
-    return &root->node;
+    return ramfs_alloc_node(NULL, "/", VFS_NODE_DIR, 0755);
 }

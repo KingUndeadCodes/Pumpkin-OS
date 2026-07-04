@@ -40,7 +40,7 @@ class MessageBox {
         void draw_background(void);
         void draw_title(void);
         void draw_body(void);
-        void draw_options(void);
+        void draw_buttons(void);
     public:
         ~MessageBox();
         void *operator new(size_t size) { return malloc(size); }

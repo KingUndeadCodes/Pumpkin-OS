@@ -11,7 +11,12 @@ class KeyboardDelegate {
 
 class MouseDelegate {
     public:
-        virtual bool onMouseEvent(int x, int y, int dx, int dy, unsigned char buttons) = 0;
+        // `buttons` is the raw current button state (still useful for
+        // drag/hold checks); `pressedEdge` has only the bits that
+        // transitioned from up to down on this exact packet, so a single
+        // physical click is observed exactly once regardless of how many
+        // packets arrive while the button stays held.
+        virtual bool onMouseEvent(int x, int y, int dx, int dy, unsigned char buttons, unsigned char pressedEdge) = 0;
 };
 
 class Window {
@@ -21,7 +26,7 @@ class Window {
         void setKeyboardDelegate(KeyboardDelegate* delegate);
         void setMouseDelegate(MouseDelegate* delegate);
         bool handleKeyboard(char key, bool shift, bool meta, unsigned char scancode);
-        bool handleMouse(int x, int y, int dx, int dy, unsigned char buttons);
+        bool handleMouse(int x, int y, int dx, int dy, unsigned char buttons, unsigned char pressedEdge);
     public:
         int width;
         int height;

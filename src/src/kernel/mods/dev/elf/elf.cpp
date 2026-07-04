@@ -11,12 +11,14 @@ static inline Elf32_Shdr *elf_sheader(Elf32_Ehdr *hdr) {
 }
 
 static inline Elf32_Shdr *elf_section(Elf32_Ehdr *hdr, uint32_t idx) {
+    if (idx >= hdr->e_shnum) return NULL;
     return &elf_sheader(hdr)[idx];
 }
 
 static inline char *elf_str_table(Elf32_Ehdr *hdr) {
     if (hdr->e_shstrndx == SHN_UNDEF) return NULL;
     Elf32_Shdr *s = elf_section(hdr, hdr->e_shstrndx);
+    if (!s) return NULL;
     /* If the section was moved to memory, prefer sh_addr; otherwise use file offset. */
     if (s->sh_offset != 0) return (char *)hdr + s->sh_offset;
     return (char *)(uintptr_t)s->sh_addr;
@@ -330,6 +332,36 @@ bool elf_check_file(const Elf32_Ehdr* ehdr) {
     return !error;
 };
 
+// Confirms e_shoff/e_shnum and e_phoff/e_phnum describe a header/program
+// table that actually fits inside the loaded buffer, before anything walks
+// off elf_sheader()/elf_section() using them. Must run before any other
+// field past e_ident is trusted, since a buffer smaller than the fixed
+// header itself would make even reading e_shoff/e_shnum an out-of-bounds
+// read.
+static bool elf_validate_bounds(const Elf32_Ehdr* ehdr, size_t buffer_size) {
+    if (buffer_size < sizeof(Elf32_Ehdr)) {
+        printf_serial(false, FAIL, "ELF: file too small for header (%u bytes)\n", (unsigned)buffer_size);
+        return false;
+    }
+    if (ehdr->e_shnum != 0) {
+        if ((size_t)ehdr->e_shoff > buffer_size ||
+            ehdr->e_shnum > (buffer_size - ehdr->e_shoff) / sizeof(Elf32_Shdr)) {
+            printf_serial(false, FAIL, "ELF: section header table out of bounds (shoff=%u shnum=%u size=%u)\n",
+                (unsigned)ehdr->e_shoff, (unsigned)ehdr->e_shnum, (unsigned)buffer_size);
+            return false;
+        }
+    }
+    if (ehdr->e_phnum != 0) {
+        if ((size_t)ehdr->e_phoff > buffer_size ||
+            ehdr->e_phnum > (buffer_size - ehdr->e_phoff) / sizeof(Elf32_Phdr)) {
+            printf_serial(false, FAIL, "ELF: program header table out of bounds (phoff=%u phnum=%u size=%u)\n",
+                (unsigned)ehdr->e_phoff, (unsigned)ehdr->e_phnum, (unsigned)buffer_size);
+            return false;
+        }
+    }
+    return true;
+}
+
 bool elf_check_supported(const Elf32_Ehdr* ehdr) {
     bool error = false;
     if (elf_check_file(ehdr) == false) return false;
@@ -363,10 +395,14 @@ static inline void *elf_load_rel(Elf32_Ehdr *hdr) {
 	return entry;
 }
 
-void* elf_load_file(void* b) {
+void* elf_load_file(void* b, size_t buffer_size) {
 	// Validate the ELF header
 	// Elf32_Ehdr* ehdr = (Elf32_Ehdr*)b;
 	Elf32_Ehdr* ehdr = (Elf32_Ehdr*)b;
+    if (!elf_validate_bounds(ehdr, buffer_size)) {
+        printf_serial(false, FAIL, "%s", "ELF cannot be loaded.\n");
+        return NULL;
+    }
     if (!elf_check_supported(ehdr)) {
         printf_serial(false, FAIL, "%s", "ELF cannot be loaded.\n");
         return NULL;

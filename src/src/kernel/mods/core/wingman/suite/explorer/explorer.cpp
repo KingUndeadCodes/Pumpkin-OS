@@ -222,6 +222,8 @@ void FileManager::draw_options(void) {
             int iconSelection = 0;
             if (EndsWith(optionString, ".wav") == 1) {
                 iconSelection = 5;
+            } else if (EndsWith(optionString, ".mp3") == 1) {
+                iconSelection = 5;
             } else if (EndsWith(optionString, ".elf") == 1) {
                 iconSelection = 9;
             } else if (EndsWith(optionString, ".lua")) {
@@ -245,10 +247,11 @@ void FileManager::draw_options(void) {
     }
 };
 
-bool FileManager::onMouseEvent(int x, int y, int dx, int dy, unsigned char buttons) {
+bool FileManager::onMouseEvent(int x, int y, int dx, int dy, unsigned char buttons, unsigned char pressedEdge) {
     (void)dx;
     (void)dy;
-    if (buttons == 1) {
+    (void)buttons;
+    if (pressedEdge & 1) {
         uint8_t redraw_description = 0b00001000;
         int listStartX = padding * frames + 78 - 49;
         int listStartY = padding * frames + 106;
@@ -338,30 +341,76 @@ bool FileManager::fileClick(bool* redrawNeeded, uint8_t* redraw_description) {
         *(redrawNeeded) = true;
     } else if (files[this->currentSelection].type == VFS_NODE_FILE) {
         if (EndsWith(files[this->currentSelection].filename, ".wav") == 1) {
-            openFile:
-                const char* fname = files[this->currentSelection].filename;
-                size_t len = strlen(fname);
-                char* path = (char*)malloc(len + 2);
-                if (!path) {
-                    serial_write_string("Failed to allocate path buffer\n", FAIL);
-                    return false;
-                }
-                path[0] = '/';
-                memcpy(path + 1, fname, len + 1);
-                FILE* file = fopen(path, "r");
-                free(path);
-            if (!file) {
-                serial_write_string("Failed to open file.\n", false, FAIL);
+            const char* fname = files[this->currentSelection].filename;
+            size_t len = strlen(fname);
+            char* path = (char*)malloc(len + 2);
+            if (!path) {
+                serial_write_string("Failed to allocate path buffer\n", FAIL);
                 return false;
-            } else {
-                uint32_t buffer_len = 52640;
-                char* buffer = (char*)malloc(buffer_len);
-                fread(buffer, 1, buffer_len, file);
-                struct wav_info_t* wav_info = read_wav_info(buffer, buffer_len);
-                play_wav(wav_info, 0);
-                free(buffer);
             }
+            path[0] = '/';
+            memcpy(path + 1, fname, len + 1);
+            vfs_node_t* node = vfs_find(path);
+            uint32_t buffer_len = node ? (uint32_t)node->size : 0;
+            FILE* file = fopen(path, "r");
+            free(path);
+            if (!file || buffer_len == 0) {
+                serial_write_string("Failed to open WAV file.\n", false, FAIL);
+                if (file) fclose(file);
+                return false;
+            }
+            char* buffer = (char*)malloc(buffer_len);
+            fread(buffer, 1, buffer_len, file);
             fclose(file);
+            struct wav_info_t* wav_info = read_wav_info(buffer, buffer_len);
+            play_wav(wav_info, 0);
+            free(buffer);
+        } else if (EndsWith(files[this->currentSelection].filename, ".mp3") == 1) {
+            const char* fname = files[this->currentSelection].filename;
+            size_t len = strlen(fname);
+            char* path = (char*)malloc(len + 2);
+            if (!path) {
+                serial_write_string("Failed to allocate path buffer\n", FAIL);
+                return false;
+            }
+            path[0] = '/';
+            memcpy(path + 1, fname, len + 1);
+            vfs_node_t* node = vfs_find(path);
+            uint32_t buffer_len = node ? (uint32_t)node->size : 0;
+            FILE* file = fopen(path, "r");
+            free(path);
+            if (!file || buffer_len == 0) {
+                serial_write_string("Failed to open MP3 file.\n", false, FAIL);
+                if (file) fclose(file);
+                return false;
+            }
+            char* buffer = (char*)malloc(buffer_len);
+            fread(buffer, 1, buffer_len, file);
+            fclose(file);
+            struct mp3_info_t* mp3_info = read_mp3_info((uint8_t*)buffer, buffer_len);
+            if (mp3_info) {
+                play_mp3(mp3_info, 0);
+                // The AC97 IRQ refill callback reads directly from this buffer
+                // for the whole playback duration, so it can't be freed until
+                // playback finishes (same constraint the boot-time MP3 test
+                // handles by blocking on AC97IsPlaying() before freeing).
+                //
+                // We got here via the mouse IRQ handler chain, which is an
+                // interrupt gate (irq.cpp's IDTSetGate(..., 0x8E) for IRQ12)
+                // and so cleared IF on entry. Without re-enabling it, neither
+                // the AC97 refill IRQ nor anything else can fire while we
+                // wait, and hlt below would halt the whole system instead of
+                // just pausing this handler. iretd restores the mouse
+                // handler's original EFLAGS when it eventually returns,
+                // regardless of what we do with IF here.
+                asm volatile("sti");
+                while (AC97IsPlaying()) {
+                    asm volatile("hlt");
+                }
+            } else {
+                serial_write_string("Failed to parse MP3 file\n", false, FAIL);
+            }
+            free(buffer);
         } else if (EndsWith(files[this->currentSelection].filename, ".elf") == 1) {
             openPath:
                 const char* fname = files[this->currentSelection].filename;
@@ -385,7 +434,7 @@ bool FileManager::fileClick(bool* redrawNeeded, uint8_t* redraw_description) {
             char* buffer = (char*)malloc(buffer_len);
             fread(buffer, 1, buffer_len, file);
             fclose(file);
-            void* entry = elf_load_file(buffer);
+            void* entry = elf_load_file(buffer, buffer_len);
             if (entry) {
                 elf_run(entry);
             } else {

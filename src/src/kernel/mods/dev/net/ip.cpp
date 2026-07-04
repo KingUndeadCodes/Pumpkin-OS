@@ -1,11 +1,12 @@
 #include "ip.h"
 #include "arp.h"
+#include "udp.h"
 #include "../port.cpp"
 #include "../serial/serial.h"
 #include "../pci/drivers/rtl8139.h"
+#include "../pit/pit.h"
 
 uint8_t my_ip[] = {10, 0, 2, 14};
-uint8_t test_target_ip[] = {10, 0, 2, 15};
 uint8_t zero_hardware_addr[] = {0,0,0,0,0,0};
 
 // https://raw.githubusercontent.com/szhou42/osdev/refs/heads/master/src/kernel/network/ip.c
@@ -31,9 +32,8 @@ namespace InternetProtocol {
         uint16_t ret = ~sum;
         return ret;
     };
-    void sendPacket(uint8_t* dst_ip, void* data, int len) {
-        int arp_sent = 3;
-        ip_packet_t* packet = malloc(sizeof(ip_packet_t) + len);
+    bool sendPacket(uint8_t* dst_ip, void* data, int len, uint8_t protocol) {
+        ip_packet_t* packet = (ip_packet_t*)malloc(sizeof(ip_packet_t) + len);
         memset(packet, 0, sizeof(ip_packet_t));
         packet->version = IP_IPV4;
         // 5 * 4 = 20 byte
@@ -48,10 +48,7 @@ namespace InternetProtocol {
         packet->fragment_offset_high = 0;
         packet->fragment_offset_low = 0;
         packet->ttl = 64;
-        // Normally there should be some other protocols embedded in ip protocol, we set it to udp for now, just for testing, the data could contain strings and anything
-        // Once we test the ip packeting sending works, we'll replace it with a packet corresponding to some protocol
-        packet->protocol = PROTOCOL_UDP;
-        memcpy(my_ip, RTL8139_MAC_ADDR(), sizeof(my_ip)); // gethostaddr(my_ip);
+        packet->protocol = protocol;
         memcpy(packet->src_ip, my_ip, 4);
         memcpy(packet->dst_ip, dst_ip, 4);
         void * packet_data = (void*)packet + packet->ihl * 4;
@@ -63,49 +60,44 @@ namespace InternetProtocol {
         // Make sure checksum is 0 before checksum calculation
         packet->header_checksum = 0;
         packet->header_checksum = htons(calculateChecksum(packet));
-        //packet->header_checksum = htons(cksum(packet));
-        // Don't care to pad, because we don't use the option field in ip packet
         // If the ip is in the same network, the destination mac address is the routers's mac address, the router'll figure out how to route the packet
         // Now, again, let's assume it's always in the same network, because i want to test if the simplest ip packet sending works as i write the code
-        // Now look at the arp, table, if we have the mac address, just send it. If not, we'll send an arp packet to get the mac address, and wait until its mac address show up in
-        // our arp  table
+        // Now look at the arp table -- if we have the mac address, just send it. If not, send an arp
+        // request and retry with a real delay between attempts, bailing out (instead of spinning
+        // forever) if nothing answers after a handful of tries.
         uint8_t dst_hardware_addr[6];
-        // Loop, until we get the mac address of the destination (this should probably done in a separate :))
-        while(!AddressResolutionProtocol::lookup(dst_hardware_addr, dst_ip)) {
-            if(arp_sent != 0) {
-                arp_sent--;
-                // Send an arp packet here
-                AddressResolutionProtocol::sendPacket(zero_hardware_addr, dst_ip);
+        int arp_attempts = 5;
+        while (!AddressResolutionProtocol::lookup(dst_hardware_addr, dst_ip)) {
+            if (arp_attempts <= 0) {
+                serial_write_string("IP: ARP resolution timed out; dropping packet.\n", false, FAIL);
+                free(packet);
+                return false;
             }
+            AddressResolutionProtocol::sendPacket(zero_hardware_addr, dst_ip);
+            arp_attempts--;
+            timer_wait(200); // give a reply time to arrive before retrying
         }
         serial_write_string("IP Packet Sent!\n");
-        // qemu_printf("IP Packet Sent...(checksum: %x)\n", packet->header_checksum);
-        // Got the mac address! Now send an ethernet packet
         ethernet_send_packet(dst_hardware_addr, (unsigned char*)packet, htons(packet->length), ETHERNET_TYPE_IP);
-        // xxd(packet, ntohs(packet->length));
+        free(packet);
+        return true;
     };
-    void handlePacket(ip_packet_t* packet) {
+    void handlePacket(ip_packet_t* packet, uint8_t* src_mac) {
         *((uint8_t*)(&packet->version_ihl_ptr)) = ntohb(*((uint8_t*)(&packet->version_ihl_ptr)), 4);
         *((uint8_t*)(packet->flags_fragment_ptr)) = ntohb(*((uint8_t*)(packet->flags_fragment_ptr)), 3);
-        // qemu_printf("Receive: the whole ip packet \n");
-        // xxd(packet, ntohs(packet->length));
-        // Now, the ip packet handler simply dumps ip header info and the data with xxd and display on screen
-        // Dump source ip, data, checksum
-        char src_ip[20];
-        if(packet->version == IP_IPV4) {
-            convertString(src_ip, packet->src_ip);
-            void* data_ptr = (void*)packet + packet->ihl * 4;
-            int data_len = ntohs(packet->length) - sizeof(ip_packet_t);
-            // qemu_printf("src: %s, data dump: \n", src_ip);
-            // xxd(data_ptr, data_len);
-            /*
-            // If this is a UDP packet
-            if(packet->protocol == PROTOCOL_UDP) {
-                udp_handle_packet(data_ptr);
-            }
-            */
-            // What ? that's it ? that's ip packet handling ??
-            // not really... u need to handle ip fragmentation... but let's make sure we can handle one ip packet first
+        if (packet->version != IP_IPV4) return;
+
+        // Opportunistically learn the sender's IP -> MAC mapping from any IP
+        // traffic, not just explicit ARP exchanges, so replying (e.g. a UDP
+        // echo) doesn't need its own ARP round-trip first.
+        AddressResolutionProtocol::lookupAdd(src_mac, packet->src_ip);
+
+        void* data_ptr = (void*)packet + packet->ihl * 4;
+        int data_len = ntohs(packet->length) - (packet->ihl * 4);
+        if (data_len < 0) return;
+
+        if (packet->protocol == PROTOCOL_UDP && data_len >= (int)sizeof(udp_header_t)) {
+            UserDatagramProtocol::handlePacket(packet, (udp_header_t*)data_ptr, (uint16_t)data_len);
         }
     };
 }

@@ -33,11 +33,16 @@ typedef struct ip_packet {
     uint8_t data[];
 } __attribute__((packed)) ip_packet_t;
 
+extern uint8_t my_ip[4];
+
 namespace InternetProtocol {
     void convertString(char* ip_str, uint8_t* ip);
     uint16_t calculateChecksum(ip_packet_t* packet);
-    void sendPacket(uint8_t* dst_ip, void* data, int len);
-    void handlePacket(ip_packet_t* packet);
+    bool sendPacket(uint8_t* dst_ip, void* data, int len, uint8_t protocol);
+    // src_mac is the sender's Ethernet address, passed down so the IP layer
+    // can opportunistically learn it into the ARP table -- otherwise a
+    // reply (e.g. a UDP echo) would need its own ARP round-trip first.
+    void handlePacket(ip_packet_t* packet, uint8_t* src_mac);
 }
 
 // void get_ip_str(char * ip_str, uint8_t * ip);

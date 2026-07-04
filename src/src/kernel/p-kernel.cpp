@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2025 KingUndeadCodes (https://github.com/KingUndeadCodes)
+ * Copyright (C) 2026 KingUndeadCodes (https://github.com/KingUndeadCodes)
  * Protected under MIT License which lays down the terms of use.
 */
 #include "mods/core/wingman/headers/wingman.h"
@@ -20,6 +20,7 @@
 #include "mods/dev/pci/pci.h"
 #include "mods/dev/vbe/vbe.h"
 #include "mods/dev/vfs/vfs.h"
+#include "mods/dev/net/udp.h"
 #include "mods/dev/port.cpp"
 #include "mods/dev/kb/kb.h"
 #include <graphics.h>
@@ -36,7 +37,7 @@
 
 typedef uint32_t (*read_file)(const char* filename, uint8_t* dest);
 
-static void test_load_flp(read_file load_floppy) {
+static void test_vfs_file_io(read_file load_floppy) {
     // int total = get_kmalloc_free_bytes();
     char* floppyBuffer = malloc(64);
     uint8_t* lowmem_floppy = (uint8_t*)0x90000;
@@ -86,104 +87,46 @@ static void copyLua() {
     fclose(luaFile);
 }
 
-// Disabled (not called from kernel_main): kept as a ready-to-run function so
-// re-enabling WAV playback testing is a one-line change instead of
-// uncommenting a whole block.
-static void waveTest(read_file load_floppy) {
-    uint8_t* lowmem_floppy = (uint8_t*)0x100000;
+// Loads a file off the boot floppy and copies its bytes into RAMFS at
+// /<ramfs_name>, so Explorer can find and open it like any other file.
+// Independent of whichever playback/execution test (if any) also runs
+// against the same floppy file -- this is just "make it show up in RAMFS".
+static void copy_floppy_file_to_ramfs(read_file load_floppy, const char* floppy_name, const char* ramfs_name) {
+    uint8_t* lowmem = (uint8_t*)0x100000;
     disablePaging();
-    uint32_t lengthFloppyBuffer = load_floppy("TEST.WAV", lowmem_floppy);
+    uint32_t length = load_floppy(floppy_name, lowmem);
     enablePaging();
-    if (lengthFloppyBuffer == 0) {
-        serial_write_string("Failed to load TEST.WAV\n", false, FAIL);
+    if (length == 0) {
+        serial_write_string("Failed to load floppy file for RAMFS copy\n", false, FAIL);
         return;
     }
-    char* floppyBuffer = malloc(lengthFloppyBuffer);
-    if (!floppyBuffer) {
-        serial_write_string("Failed to allocate WAV buffer\n", false, FAIL);
+    char* buffer = (char*)malloc(length);
+    if (!buffer) {
+        serial_write_string("Failed to allocate RAMFS copy buffer\n", false, FAIL);
         return;
     }
-    memcpy(floppyBuffer, lowmem_floppy, lengthFloppyBuffer);
-    initalize();
-    struct wav_info_t* wav_info = read_wav_info((uint8_t*)floppyBuffer, lengthFloppyBuffer);
-    if (!wav_info) {
-        serial_write_string("Failed to parse WAV file\n", false, FAIL);
-        free(floppyBuffer);
+    memcpy(buffer, lowmem, length);
+    size_t nameLen = strlen(ramfs_name);
+    char* path = (char*)malloc(nameLen + 2);
+    if (!path) {
+        serial_write_string("Failed to allocate path buffer\n", false, FAIL);
+        free(buffer);
         return;
+    }
+    path[0] = '/';
+    memcpy(path + 1, ramfs_name, nameLen + 1);
+    FILE* file = fopen(path, "a");
+    free(path);
+    if (file) {
+        fwrite(buffer, 1, length, file);
+        fclose(file);
     } else {
-        char* string_alloc = malloc(512);
-        sprintf(
-            string_alloc,
-            "WAV_AudioFile {\n\t\"start_of_pcm_data\": %d,\n\t\"length_of_pcm_data\": %d,\n\t\"pcm_data_number_of_channels\": %d,\n\t\"pcm_data_sample_rate\": %d,\n\t\"pcm_data_bits_per_sample\": %d,\n\t\"length_of_output_pcm_data\": %d,\n\t\"output_pcm_data_sample_rate\": %d\n}\n",
-            wav_info->start_of_pcm_data,
-            wav_info->length_of_pcm_data,
-            wav_info->pcm_data_number_of_channels,
-            wav_info->pcm_data_sample_rate,
-            wav_info->pcm_data_bits_per_sample,
-            wav_info->length_of_output_pcm_data,
-            wav_info->output_pcm_data_sample_rate
-        );
-        serial_write_string(string_alloc, false, NONE);
-        free(string_alloc);
+        serial_write_string("Failed to copy file into RAMFS\n", false, FAIL);
     }
-    play_wav(wav_info, 0);
-    /*
-     * Blocking test version:
-     * Wait until the AC97 driver stops the stream, then free the source buffer.
-     * This is okay for testing, but a real desktop should poll this from the
-     * main loop instead of blocking the whole kernel here.
-     */
-    while (AC97IsPlaying()) {
-        asm volatile("hlt");
-    }
-    free(floppyBuffer);
-    serial_write_string("AC97 Audio Codec test has ended. WAV buffer freed.\n", false, NONE);
+    free(buffer);
 }
 
-static void mp3Test(read_file load_floppy) {
-    uint8_t* lowmem_floppy = (uint8_t*)0x100000;
-    disablePaging();
-    uint32_t lengthFloppyBuffer = load_floppy("TEST.MP3", lowmem_floppy);
-    enablePaging();
-    if (lengthFloppyBuffer == 0) {
-        serial_write_string("Failed to load TEST.MP3\n", false, FAIL);
-        return;
-    }
-    char* floppyBuffer = malloc(lengthFloppyBuffer);
-    if (!floppyBuffer) {
-        serial_write_string("Failed to allocate MP3 buffer\n", false, FAIL);
-        return;
-    }
-    memcpy(floppyBuffer, lowmem_floppy, lengthFloppyBuffer);
-    initalize();
-    struct mp3_info_t* mp3_info = read_mp3_info((uint8_t*)floppyBuffer, lengthFloppyBuffer);
-    if (!mp3_info) {
-        serial_write_string("Failed to parse MP3 file\n", false, FAIL);
-        free(floppyBuffer);
-        return;
-    } else {
-        char* string_alloc = malloc(512);
-        sprintf(
-            string_alloc,
-            "MP3_AudioFile {\n\t\"length_of_mp3_data\": %d,\n\t\"pcm_data_number_of_channels\": %d,\n\t\"pcm_data_sample_rate\": %d,\n\t\"length_of_output_pcm_data\": %d,\n\t\"output_pcm_data_sample_rate\": %d\n}\n",
-            mp3_info->length_of_mp3_data,
-            mp3_info->pcm_data_number_of_channels,
-            mp3_info->pcm_data_sample_rate,
-            mp3_info->length_of_output_pcm_data,
-            mp3_info->output_pcm_data_sample_rate
-        );
-        serial_write_string(string_alloc, false, NONE);
-        free(string_alloc);
-    }
-    play_mp3(mp3_info, 0);
-    while (AC97IsPlaying()) {
-        asm volatile("hlt");
-    }
-    free(floppyBuffer);
-    serial_write_string("AC97 Audio Codec test has ended. MP3 buffer freed.\n", false, NONE);
-}
-
-static void procTestOne(read_file load_floppy) {
+static void test_elf_execution(read_file load_floppy) {
     uint8_t* lowmem_elf = (uint8_t*)0x100000;
     disablePaging();
     uint32_t lengthElfBuffer = load_floppy("MAIN.ELF", lowmem_elf);
@@ -198,13 +141,7 @@ static void procTestOne(read_file load_floppy) {
         return;
     }
     memcpy(floppyBuffer, lowmem_elf, lengthElfBuffer);
-
-    // File
-    FILE* file = fopen("/main.elf", "a");
-    fwrite(floppyBuffer, 1, lengthElfBuffer, file);
-    fclose(file);
-
-    void* entry = elf_load_file(floppyBuffer);
+    void* entry = elf_load_file(floppyBuffer, lengthElfBuffer);
     if (entry) {
         serial_write_string("Running MAIN.ELF...\n", false, NONE);
         int rc = elf_run(entry);
@@ -243,7 +180,25 @@ static void procMan() {
     initalizeWindowSystem();
 }
 
-static void tasks() {
+// UDP echo listener for netlab (experemental/netlab/net.py) to test against:
+// send a UDP datagram to this OS's IP on port 7, get the same bytes back.
+// Port 7 matches the classic "echo" service and is also net.py's default
+// auto-echo port for its Simulated LAN hosts, so both sides already agree
+// on the convention.
+static void udpEchoHandler(uint8_t* src_ip, uint16_t src_port, void* data, uint16_t len) {
+    char ip_str[20];
+    InternetProtocol::convertString(ip_str, src_ip);
+    serial_write_string("UDP echo: ", false, NONE);
+    serial_write_string(ip_str, false, NONE);
+    serial_write_string("\n", false, NONE);
+    UserDatagramProtocol::sendPacket(src_ip, 7, src_port, data, len);
+}
+
+static void test_udp_echo() {
+    UserDatagramProtocol::listen(7, udpEchoHandler);
+}
+
+static void test_tasking() {
     /*
     Theory:
         Logging::log does not work because of terminal being deleted.
@@ -298,14 +253,19 @@ extern "C" void kernel_main(read_file load_floppy) {
     Logging::flush();
     write_serial('\n');
     graphics_initalize_stage2();
-    test_load_flp(load_floppy);
-    serial_write_string("Starting test of AC97 Audio Codec...\n");
+    test_vfs_file_io(load_floppy);
+    serial_write_string("Initializing AC97 Audio Codec...\n");
+    initalize();
     copyLua();
-    // waveTest(load_floppy); // disabled; see the function definition above
-    mp3Test(load_floppy);
-    procTestOne(load_floppy);
+    copy_floppy_file_to_ramfs(load_floppy, "TEST.WAV", "test.wav");
+    copy_floppy_file_to_ramfs(load_floppy, "TEST.MP3", "test.mp3");
+    copy_floppy_file_to_ramfs(load_floppy, "MAIN.ELF", "main.elf");
+    // WAV/MP3 playback smoke tests moved to mods/dev/chorus/wav.cpp and
+    // mods/dev/chorus/mp3.cpp as reference comments.
+    // test_elf_execution(load_floppy);
+    test_udp_echo();
     procMan();
-    // tasks();
+    // test_tasking();
 }
 
 /*
