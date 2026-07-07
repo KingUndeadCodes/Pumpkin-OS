@@ -1,14 +1,14 @@
-# docker build buildenv -t env
-# docker run --rm -it -v "$(pwd)":/root/env env
+# docker build docker -t pumpkin-os-buildenv
+# docker run --rm -it -v "$(pwd)":/root/env pumpkin-os-buildenv
 
-FROM randomdude/gcc-cross-i686-elf
+FROM randomdude/gcc-cross-x86_64-elf
 
-RUN apt-get update 
-RUN apt-get upgrade -y
-RUN apt-get install -y nasm
-RUN apt-get install -y xorriso
-RUN apt-get install -y grub-pc-bin
-RUN apt-get install -y grub-common
+RUN apt-get update && apt-get upgrade -y && apt-get install -y \
+    nasm \
+    mtools \
+    dosfstools \
+    qemu-system-x86 \
+    && rm -rf /var/lib/apt/lists/*
 
 VOLUME /root/env
-# WORKDIR .
+WORKDIR /root/env
