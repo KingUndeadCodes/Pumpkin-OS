@@ -6,7 +6,7 @@
 static FileManager* fileManager = nullptr;
 static WindowManager* wm = nullptr;
 static size_t bufferSize = 0;
-// See DOCS.md ("mods/core/wingman/wingman.cpp" section) for outputBuffer/lastButtons.
+// See docs/DOCS.md ("mods/core/wingman/wingman.cpp" section) for outputBuffer/lastButtons.
 static color_t* outputBuffer = nullptr;
 static unsigned char lastButtons = 0;
 
@@ -32,7 +32,7 @@ void mouseFunctionWindowManager(int x, int y, int dx, int dy, unsigned char butt
     const int mouse_x = mouse_get_x();
     const int mouse_y = mouse_get_y();
     bool needsRedraw = false;
-    // See DOCS.md ("mods/core/wingman/wingman.cpp" section) for refocus-on-click.
+    // See docs/DOCS.md ("mods/core/wingman/wingman.cpp" section) for refocus-on-click.
     if (pressedEdge & 1) {
         window_ref_t hitRef = wm->windowAt(mouse_x, mouse_y);
         if (hitRef != WINGMAN_INVALID_WINDOW && wm->get(hitRef) != wm->focusedWindow) {
@@ -40,7 +40,7 @@ void mouseFunctionWindowManager(int x, int y, int dx, int dy, unsigned char butt
             needsRedraw = true;
         }
     }
-    // See DOCS.md ("mods/core/wingman/wingman.cpp" section) for the cursor-id reset.
+    // See docs/DOCS.md ("mods/core/wingman/wingman.cpp" section) for the cursor-id reset.
     set_cursor_id(0);
     const Window* foucsedWindow = wm->focusedWindow;
     if (foucsedWindow != nullptr) {
@@ -59,7 +59,7 @@ void mouseFunctionWindowManager(int x, int y, int dx, int dy, unsigned char butt
             }
         }
     }
-    // See DOCS.md ("mods/core/wingman/wingman.cpp" section) for this split.
+    // See docs/DOCS.md ("mods/core/wingman/wingman.cpp" section) for this split.
     if (needsRedraw) {
         wm->composite();
         // handleMouse() may have just blocked for a while (e.g. elf_run()
@@ -78,7 +78,7 @@ void initalizeWindowSystem(void) {
     wm = new WindowManager();
     fileManager = new FileManager();
     wm->add(fileManager->window);
-    // See DOCS.md ("mods/core/wingman/wingman.cpp" section) for MessageBox wiring here.
+    // See docs/DOCS.md ("mods/core/wingman/wingman.cpp" section) for MessageBox wiring here.
     MessageBox* messageBox = new MessageBox(wm, DialogBoxInformational, "chorus: not initialized; call initalize() first.", 5);
     messageBox->addButton("Initialize", 0xFF605a59, [](void) { 
         serial_write_string("Initializing AC97 Audio Codec...\n");

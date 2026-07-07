@@ -77,7 +77,7 @@ static void ramfs_free_file_blocks(ramfs_node_data_t* d) {
 
 /* --- file read/write --- */
 
-// See DOCS.md ("mods/dev/ramfs/ramfs.cpp" section) for why these guard
+// See docs/DOCS.md ("mods/dev/ramfs/ramfs.cpp" section) for why these guard
 // their whole body, not just the block-list traversal/mutation.
 static size_t ramfs_read(vfs_node_t* node, size_t offset, size_t size, void* buf) {
     if (!node || !buf) return 0;
@@ -170,7 +170,7 @@ static vfs_node_t* ramfs_alloc_node(vfs_node_t* parent, const char* name, int ty
 
 /* --- directory operations --- */
 
-// See DOCS.md ("mods/dev/ramfs/ramfs.cpp" section) for why the duplicate
+// See docs/DOCS.md ("mods/dev/ramfs/ramfs.cpp" section) for why the duplicate
 // check and the splice are one atomic unit here.
 static vfs_node_t* ramfs_create_node(vfs_node_t* parent_node, const char* name, int type, int permissions) {
     if (!parent_node || !name || parent_node->type != VFS_NODE_DIR) return NULL;

@@ -27,7 +27,7 @@ bool WindowManager::keyboard_handler(char key, bool shift, bool meta, unsigned c
     return false;
 };
 
-// See DOCS.md ("mods/core/wingman/headers/manager.h / manager.cpp" section).
+// See docs/DOCS.md ("mods/core/wingman/headers/manager.h / manager.cpp" section).
 static void zOrderRemove(window_ref_t* zOrder, uint32_t* zOrderCount, window_ref_t ref) {
     for (uint32_t i = 0; i < *zOrderCount; i++) {
         if (zOrder[i] == ref) {

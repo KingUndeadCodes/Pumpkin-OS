@@ -38,7 +38,7 @@ static inline bool are_interrupts_enabled() {
     return flags & (1 << 9);
 }
 
-// See DOCS.md ("mods/dev/port.cpp" section) for the nesting behavior.
+// See docs/DOCS.md ("mods/dev/port.cpp" section) for the nesting behavior.
 static inline unsigned long enter_critical(void) {
     unsigned long flags;
     asm volatile ("pushf\n\t" "pop %0" : "=g"(flags));

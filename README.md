@@ -27,7 +27,7 @@ git submodule update --init --recursive
 - **Storage** — a RAM-backed filesystem (RAMFS) behind a small VFS layer, with `fopen`/`fread`/`fwrite`-style stdio on top.
 - **ELF loading and execution** — loads and runs `ET_REL`/relocatable ELF binaries off disk.
 - **Audio playback** — WAV and MP3 (via the vendored `minimp3` submodule) playback through the AC97 codec.
-- **Preemptive multitasking** — a round-robin scheduler exists (`mods/dev/tasking`) but is currently not enabled; see [TODO.md](TODO.md) for what's gating turning it on.
+- **Preemptive multitasking** — a round-robin scheduler exists (`mods/dev/tasking`) but is currently not enabled; see [docs/TODO.md](docs/TODO.md) for what's gating turning it on.
 - **Fault handling** — recoverable vs. fatal exception handling, with register/stack-trace diagnostics over serial and a real panic screen for fatal faults.
 
 ## Building and running

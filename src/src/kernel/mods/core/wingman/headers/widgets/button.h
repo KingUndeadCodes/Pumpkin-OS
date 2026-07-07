@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// See DOCS.md ("mods/core/wingman/headers/widgets/button.h" section).
+// See docs/DOCS.md ("mods/core/wingman/headers/widgets/button.h" section).
 typedef void (*ButtonCallback)(void* userdata);
 
 class Button {

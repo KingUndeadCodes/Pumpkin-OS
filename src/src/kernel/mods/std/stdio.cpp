@@ -16,7 +16,7 @@ typedef struct {
 
 static file_entry_t file_table[MAX_OPEN_FILES];
 
-// See DOCS.md ("mods/std/stdio.cpp" section) for why the claim happens
+// See docs/DOCS.md ("mods/std/stdio.cpp" section) for why the claim happens
 // inside the same critical section as the scan.
 static int alloc_fd() {
     unsigned long flags = enter_critical();

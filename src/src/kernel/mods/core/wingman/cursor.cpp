@@ -21,7 +21,7 @@ void update_mouse_position(int x, int y) {
     mouse_y = y;
 };
 
-// See DOCS.md ("mods/core/wingman/cursor.cpp / headers/cursor.h" section).
+// See docs/DOCS.md ("mods/core/wingman/cursor.cpp / headers/cursor.h" section).
 void draw_cursor_into_buffer(color_t* buffer, int bufferWidth, int bufferHeight) {
     if (buffer == NULL) return;
     constexpr int CURSOR_W = 17;
@@ -40,7 +40,7 @@ void draw_cursor_into_buffer(color_t* buffer, int bufferWidth, int bufferHeight)
     }
 };
 
-// See DOCS.md ("mods/core/wingman/cursor.cpp / headers/cursor.h" section).
+// See docs/DOCS.md ("mods/core/wingman/cursor.cpp / headers/cursor.h" section).
 void redraw_cursor(WindowManager *wm, int x, int y) {
     const color_t* buffer = wm->screen->getBuffer();
     const int screenWidth = wm->screen->getWidth();

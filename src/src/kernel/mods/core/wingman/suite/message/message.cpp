@@ -5,7 +5,7 @@
 #define COLOR_TITLEBAR 0xFF2d2928
 #define COLOR_DIVIDER 0xFF55504f
 
-// See DOCS.md ("mods/core/wingman/suite/message/message.h / message.cpp" section).
+// See docs/DOCS.md ("mods/core/wingman/suite/message/message.h / message.cpp" section).
 static inline uint32_t shade(uint32_t color, int delta) {
     int r = (int)COLOR_R(color) + delta;
     int g = (int)COLOR_G(color) + delta;
@@ -66,7 +66,7 @@ MessageBox::MessageBox(WindowManager* wm, enum MessageBoxType dialogBoxType, con
     this->buttonRowHeight = 40;
     this->buttonRowX = 2 * this->padding;
     this->buttonRowWidth = this->width - 2 * this->buttonRowX;
-    // See DOCS.md ("mods/core/wingman/suite/message/message.h / message.cpp" section).
+    // See docs/DOCS.md ("mods/core/wingman/suite/message/message.h / message.cpp" section).
     this->buttonSectionDividerY = this->height - this->thickness - this->padding - this->buttonRowHeight - (this->padding / 2);
     int sectionTop = this->buttonSectionDividerY + 1;
     int sectionBottom = this->height - this->thickness;
@@ -89,7 +89,7 @@ MessageBox::MessageBox(WindowManager* wm, enum MessageBoxType dialogBoxType, con
     }
 };
 
-// See DOCS.md ("mods/core/wingman/suite/message/message.h / message.cpp" section).
+// See docs/DOCS.md ("mods/core/wingman/suite/message/message.h / message.cpp" section).
 void MessageBox::layoutButtons(void) {
     if (this->buttonCount <= 0) return;
     int gap = this->padding;
@@ -160,7 +160,7 @@ void MessageBox::draw_background(void) {
     for (int y = 0; y < innerH; y++) {
         for (int x = 0; x < innerW; x++) utility_draw_pixel(innerX + x, innerY + y, COLOR_BG);
     }
-    // See DOCS.md ("mods/core/wingman/suite/message/message.h / message.cpp" section).
+    // See docs/DOCS.md ("mods/core/wingman/suite/message/message.h / message.cpp" section).
     int titleBarHeight = 64;
     for (int y = 0; y < titleBarHeight; y++) {
         for (int x = 0; x < innerW; x++) utility_draw_pixel(innerX + x, innerY + y, COLOR_TITLEBAR);
@@ -176,7 +176,7 @@ void MessageBox::draw_title(void) {
         case DialogBoxError: { iconType = 1; strcpy(title, "Error"); break; }
         case DialogBoxWarning: { iconType = 2; strcpy(title, "Warning"); break; }
     };
-    // See DOCS.md ("mods/core/wingman/suite/message/message.h / message.cpp" section).
+    // See docs/DOCS.md ("mods/core/wingman/suite/message/message.h / message.cpp" section).
     if (this->icon >= 0 && this->icon < 12) iconType = this->icon;
     utility_draw_icon(8, 12, iconType, 1.5f);
     const char* titleString = (const char*)title;
@@ -199,7 +199,7 @@ void MessageBox::draw_body(void) {
 
 void MessageBox::draw_buttons(void) {
     constexpr uint32_t scale = 2;
-    // See DOCS.md ("mods/core/wingman/suite/message/message.h / message.cpp" section).
+    // See docs/DOCS.md ("mods/core/wingman/suite/message/message.h / message.cpp" section).
     for (int y = 0; y < this->buttonRowHeight; y++) {
         for (int x = 0; x < this->buttonRowWidth; x++) {
             utility_draw_pixel(this->buttonRowX + x, this->buttonRowY + y, COLOR_BG);
@@ -244,7 +244,7 @@ void MessageBox::draw_buttons(void) {
     }
 };
 
-// See DOCS.md ("mods/core/wingman/suite/message/message.h / message.cpp" section).
+// See docs/DOCS.md ("mods/core/wingman/suite/message/message.h / message.cpp" section).
 void MessageBox::dismiss(void) {
     if (this->wm != NULL && this->ref != WINGMAN_INVALID_WINDOW) {
         this->wm->remove(this->ref);
@@ -280,7 +280,7 @@ bool MessageBox::onMouseEvent(int x, int y, int dx, int dy, unsigned char button
             break;
         }
     }
-    // See DOCS.md ("mods/core/wingman/suite/message/message.h / message.cpp" section).
+    // See docs/DOCS.md ("mods/core/wingman/suite/message/message.h / message.cpp" section).
     set_cursor_id(hovered != NULL ? 2 : 0);
     if (!(pressedEdge & 1) || hovered == NULL) return false;
     if (hovered->onClick != NULL) hovered->onClick(hovered->userdata);

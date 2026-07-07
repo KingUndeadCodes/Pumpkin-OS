@@ -21,7 +21,7 @@ enum MessageBoxType {
     DialogBoxInformational
 };
 
-// See DOCS.md ("mods/core/wingman/suite/message/message.h / message.cpp" section).
+// See docs/DOCS.md ("mods/core/wingman/suite/message/message.h / message.cpp" section).
 #define MESSAGEBOX_MAX_BUTTONS 3
 
 class MessageBox : public KeyboardDelegate, public MouseDelegate {
@@ -32,7 +32,7 @@ class MessageBox : public KeyboardDelegate, public MouseDelegate {
     private:
         WindowManager* wm;
         window_ref_t ref;
-        // See DOCS.md ("mods/core/wingman/suite/message/message.h / message.cpp" section).
+        // See docs/DOCS.md ("mods/core/wingman/suite/message/message.h / message.cpp" section).
         int icon;
         Button** buttons;
         int buttonCount;
@@ -42,7 +42,7 @@ class MessageBox : public KeyboardDelegate, public MouseDelegate {
         int buttonRowY;
         int buttonRowWidth;
         int buttonRowHeight;
-        // See DOCS.md ("mods/core/wingman/suite/message/message.h / message.cpp" section).
+        // See docs/DOCS.md ("mods/core/wingman/suite/message/message.h / message.cpp" section).
         int buttonSectionDividerY;
         void layoutButtons(void);
     public:

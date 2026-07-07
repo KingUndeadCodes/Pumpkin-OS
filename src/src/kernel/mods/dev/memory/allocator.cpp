@@ -73,7 +73,7 @@ void free_phys_page(void* addr) {
     }
 }
 
-// See DOCS.md ("mods/dev/memory/allocator.cpp" section) for why this
+// See docs/DOCS.md ("mods/dev/memory/allocator.cpp" section) for why this
 // takes one critical section for the whole operation.
 uintptr_t alloc_phys_pages(size_t count) {
     unsigned long flags = enter_critical();
@@ -93,7 +93,7 @@ uintptr_t alloc_phys_pages(size_t count) {
         if (i == 0) {
             base = addr;
         } else if (addr != base + i * PAGE_SIZE) {
-            // See DOCS.md ("mods/dev/memory/allocator.cpp" section) for
+            // See docs/DOCS.md ("mods/dev/memory/allocator.cpp" section) for
             // the rollback-address fix here.
             free_phys_page((void*)addr);
             for (size_t j = 0; j < i; j++) {

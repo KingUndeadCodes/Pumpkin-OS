@@ -120,7 +120,7 @@ char* _utoa64_hex(uint64_t val, char* buf) {
 }
 
 namespace FaultHandler {
-    // See DOCS.md ("mods/dev/idt/isr.cpp" section) for why only #DB/#BP recover.
+    // See docs/DOCS.md ("mods/dev/idt/isr.cpp" section) for why only #DB/#BP recover.
     static bool is_recoverable(unsigned int int_no) {
         return int_no == 1 || int_no == 3; // Debug, Breakpoint
     }
@@ -135,7 +135,7 @@ namespace FaultHandler {
         return buf;
     }
 
-    // See DOCS.md ("mods/dev/idt/isr.cpp" section) for the bounded-walk rationale.
+    // See docs/DOCS.md ("mods/dev/idt/isr.cpp" section) for the bounded-walk rationale.
     static void print_stack_trace(unsigned int ebp) {
         char buf[11];
         serial_write_string("Stack trace (return addresses):\n", false, NONE);
@@ -162,7 +162,7 @@ namespace FaultHandler {
         }
     }
 
-    // See DOCS.md ("mods/dev/idt/isr.cpp" section) for why this can't use malloc/Surface/etc.
+    // See docs/DOCS.md ("mods/dev/idt/isr.cpp" section) for why this can't use malloc/Surface/etc.
     static void draw_panic_screen(unsigned int int_no, unsigned int eip, unsigned int cr2, bool has_cr2) {
         fill(0xFF5C1010);
         char buf[11];

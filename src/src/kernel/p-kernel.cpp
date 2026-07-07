@@ -199,7 +199,7 @@ static void test_udp_echo() {
 }
 
 /*
-// See DOCS.md ("p-kernel.cpp — test_fault_handler()" section).
+// See docs/DOCS.md ("p-kernel.cpp — test_fault_handler()" section).
 static void test_fault_handler(void) {
     serial_write_string("=== test_fault_handler: triggering breakpoint (expect: continues) ===\n", false, NONE);
     asm volatile("int3");

@@ -20,6 +20,3 @@ docker
 # Files to ignore
 main.asm
 main.lua
-release.txt
-*.md
-!README.md
