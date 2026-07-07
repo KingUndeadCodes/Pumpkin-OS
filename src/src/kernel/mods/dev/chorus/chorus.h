@@ -32,7 +32,7 @@ extern uint8_t  *pcm_data;       // virtual address (CPU)
 extern uint32_t  pcm_data_phys;  // physical address (DMA)
 
 /* API */
-void initalize(void);
+void chorus_initalize(void);
 void clear_memory(uint32_t memory, uint32_t length);
 
 /**

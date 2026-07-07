@@ -77,10 +77,13 @@ static void ramfs_free_file_blocks(ramfs_node_data_t* d) {
 
 /* --- file read/write --- */
 
+// See DOCS.md ("mods/dev/ramfs/ramfs.cpp" section) for why these guard
+// their whole body, not just the block-list traversal/mutation.
 static size_t ramfs_read(vfs_node_t* node, size_t offset, size_t size, void* buf) {
     if (!node || !buf) return 0;
     ramfs_node_data_t* d = (ramfs_node_data_t*)node->fs_data;
-    if (offset >= node->size) return 0;
+    unsigned long flags = enter_critical();
+    if (offset >= node->size) { exit_critical(flags); return 0; }
     if (offset + size > node->size) size = node->size - offset;
 
     size_t remaining = size;
@@ -97,18 +100,21 @@ static size_t ramfs_read(vfs_node_t* node, size_t offset, size_t size, void* buf
         block_offset = 0;
         blk = blk->next;
     }
-    return size - remaining;
+    size_t result = size - remaining;
+    exit_critical(flags);
+    return result;
 }
 
 static size_t ramfs_write(vfs_node_t* node, size_t offset, size_t size, const void* buf) {
     if (!node || !buf) return 0;
     ramfs_node_data_t* d = (ramfs_node_data_t*)node->fs_data;
 
+    unsigned long flags = enter_critical();
     size_t needed_blocks = (offset + size + RAMFS_BLOCK_SIZE - 1) / RAMFS_BLOCK_SIZE;
     if (ramfs_grow_file(d, needed_blocks) < 0) {
         // Out of memory partway through growth -- clamp to what we actually got.
         size_t available = d->file.block_count * RAMFS_BLOCK_SIZE;
-        if (offset >= available) return 0;
+        if (offset >= available) { exit_critical(flags); return 0; }
         if (offset + size > available) size = available - offset;
     }
 
@@ -129,6 +135,7 @@ static size_t ramfs_write(vfs_node_t* node, size_t offset, size_t size, const vo
 
     size_t written = size - remaining;
     if (offset + written > node->size) node->size = offset + written;
+    exit_critical(flags);
     return written;
 }
 
@@ -163,23 +170,30 @@ static vfs_node_t* ramfs_alloc_node(vfs_node_t* parent, const char* name, int ty
 
 /* --- directory operations --- */
 
+// See DOCS.md ("mods/dev/ramfs/ramfs.cpp" section) for why the duplicate
+// check and the splice are one atomic unit here.
 static vfs_node_t* ramfs_create_node(vfs_node_t* parent_node, const char* name, int type, int permissions) {
     if (!parent_node || !name || parent_node->type != VFS_NODE_DIR) return NULL;
     ramfs_node_data_t* pd = (ramfs_node_data_t*)parent_node->fs_data;
 
+    unsigned long flags = enter_critical();
+
     if (ramfs_finddir(parent_node, name)) {
+        exit_critical(flags);
         serial_write_string("ramfs: create duplicate\n");
         return NULL;
     }
 
     vfs_node_t* node = ramfs_alloc_node(parent_node, name, type, permissions);
     if (!node) {
+        exit_critical(flags);
         serial_write_string("ramfs: out of memory creating node\n");
         return NULL;
     }
 
     ramfs_dirent_t* entry = (ramfs_dirent_t*)malloc(sizeof(ramfs_dirent_t));
     if (!entry) {
+        exit_critical(flags);
         free(node->fs_data);
         free(node);
         return NULL;
@@ -188,29 +202,38 @@ static vfs_node_t* ramfs_create_node(vfs_node_t* parent_node, const char* name, 
     entry->next = pd->dir.children;
     pd->dir.children = entry;
     pd->dir.child_count++;
+    exit_critical(flags);
     return node;
 }
 
 static int ramfs_readdir(vfs_node_t* node, size_t idx, struct dirent* out) {
     if (!node || !out) return -1;
     ramfs_node_data_t* d = (ramfs_node_data_t*)node->fs_data;
+    unsigned long flags = enter_critical();
     size_t i = 0;
     for (ramfs_dirent_t* e = d->dir.children; e; e = e->next, i++) {
         if (i == idx) {
             safe_strncpy(out->d_name, e->node->name, VFS_MAX_NAME);
             out->d_type = e->node->type;
+            exit_critical(flags);
             return 0;
         }
     }
+    exit_critical(flags);
     return -1;
 }
 
 static vfs_node_t* ramfs_finddir(vfs_node_t* node, const char* name) {
     if (!node || !name) return NULL;
     ramfs_node_data_t* d = (ramfs_node_data_t*)node->fs_data;
+    unsigned long flags = enter_critical();
     for (ramfs_dirent_t* e = d->dir.children; e; e = e->next) {
-        if (strcmp(e->node->name, name) == 0) return e->node;
+        if (strcmp(e->node->name, name) == 0) {
+            exit_critical(flags);
+            return e->node;
+        }
     }
+    exit_critical(flags);
     return NULL;
 }
 
@@ -222,17 +245,26 @@ int ramfs_delete_node(vfs_node_t* node) {
     vfs_node_t* parent_node = d->parent;
     if (!parent_node) return -1; // can't delete root
 
-    if (node->type == VFS_NODE_DIR && d->dir.child_count != 0) return -1; // must be empty
+    unsigned long flags = enter_critical();
+
+    if (node->type == VFS_NODE_DIR && d->dir.child_count != 0) {
+        exit_critical(flags);
+        return -1; // must be empty
+    }
 
     ramfs_node_data_t* pd = (ramfs_node_data_t*)parent_node->fs_data;
     ramfs_dirent_t** link = &pd->dir.children;
     while (*link && (*link)->node != node) link = &(*link)->next;
-    if (!*link) return -1;
+    if (!*link) {
+        exit_critical(flags);
+        return -1;
+    }
 
     ramfs_dirent_t* entry = *link;
     *link = entry->next;
     free(entry);
     if (pd->dir.child_count) pd->dir.child_count--;
+    exit_critical(flags);
 
     if (node->type == VFS_NODE_FILE) ramfs_free_file_blocks(d);
     free(d);

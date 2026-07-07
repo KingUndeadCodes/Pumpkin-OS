@@ -69,7 +69,7 @@ void ISRInstall()
 }
 
 
-const char* exception_messages[] = 
+const char* exception_messages[] =
 {
 	"Division By Zero",
 	"Debug",
@@ -106,8 +106,8 @@ const char* exception_messages[] =
 };
 
 #include "../serial/serial.h"
+#include "../vbe/vbe.h"
 #include <string.h>
-
 
 char* _utoa64_hex(uint64_t val, char* buf) {
     const char* hex = "0123456789ABCDEF";
@@ -119,20 +119,107 @@ char* _utoa64_hex(uint64_t val, char* buf) {
     return buf;
 }
 
+namespace FaultHandler {
+    // See DOCS.md ("mods/dev/idt/isr.cpp" section) for why only #DB/#BP recover.
+    static bool is_recoverable(unsigned int int_no) {
+        return int_no == 1 || int_no == 3; // Debug, Breakpoint
+    }
+
+    static char* utoa32_hex(uint32_t val, char* buf) {
+        const char* hex = "0123456789ABCDEF";
+        buf[0] = '0'; buf[1] = 'x';
+        for (int i = 0; i < 8; i++) {
+            buf[9 - i] = hex[(val >> (i * 4)) & 0xF];
+        }
+        buf[10] = '\0';
+        return buf;
+    }
+
+    // See DOCS.md ("mods/dev/idt/isr.cpp" section) for the bounded-walk rationale.
+    static void print_stack_trace(unsigned int ebp) {
+        char buf[11];
+        serial_write_string("Stack trace (return addresses):\n", false, NONE);
+        for (int frame = 0; frame < 8; frame++) {
+            if (ebp < 0x1000 || ebp > 0x08000000) break; // implausible frame pointer
+            unsigned int* frame_ptr = (unsigned int*)ebp;
+            unsigned int return_addr = frame_ptr[1];
+            unsigned int next_ebp = frame_ptr[0];
+            serial_write_string("  #", false, NONE);
+            serial_write_string(itoa(frame, 10), false, NONE);
+            serial_write_string(" ", false, NONE);
+            serial_write_string(utoa32_hex(return_addr, buf), false, NONE);
+            serial_write_string("\n", false, NONE);
+            if (next_ebp <= ebp) break; // not a valid ascending chain (corrupt or cyclic)
+            ebp = next_ebp;
+        }
+    }
+
+    static void panic_draw_string(unsigned x, unsigned y, const char* str, unsigned scale) {
+        unsigned pos = x;
+        for (int i = 0; str[i] != '\0'; i++) {
+            draw_char(pos, y, str[i], 0xFFFFFFFF, scale);
+            pos += 8 * scale;
+        }
+    }
+
+    // See DOCS.md ("mods/dev/idt/isr.cpp" section) for why this can't use malloc/Surface/etc.
+    static void draw_panic_screen(unsigned int int_no, unsigned int eip, unsigned int cr2, bool has_cr2) {
+        fill(0xFF5C1010);
+        char buf[11];
+        panic_draw_string(40, 40, "KERNEL PANIC", 4);
+        panic_draw_string(40, 100, exception_messages[int_no], 3);
+        panic_draw_string(40, 150, "EIP:", 2);
+        panic_draw_string(40 + 5 * 16, 150, utoa32_hex(eip, buf), 2);
+        if (has_cr2) {
+            panic_draw_string(40, 175, "Fault address (CR2):", 2);
+            panic_draw_string(40 + 21 * 16, 175, utoa32_hex(cr2, buf), 2);
+        }
+        panic_draw_string(40, 220, "See serial log for full diagnostics.", 2);
+    }
+
+} // namespace FaultHandler
+
 extern "C" void _fault_handler(struct regs *r)
 {
-    if (r->int_no < 32) {
-        // printf(exception_messages[r->int_no]);
-        // printf(" Exception. System Halted!\n");
-        // Serial output for debugging
+    if (r->int_no >= 32) return; // IRQs route through _irq_handler, not here; defensive only.
+
+    if (FaultHandler::is_recoverable(r->int_no)) {
         serial_write_string("\n", false, NONE);
-        serial_write_string(exception_messages[r->int_no], true, FAIL);
-        serial_write_string(" Exception. System Halted!\n", false, NONE);
-        // eip points at the faulting instruction itself for #UD, so this is
-        // enough to locate it with `objdump -d kernel.bin` / the .map file.
-        printf_serial(false, FAIL, "eip=%u esp=%u int_no=%u err_code=%u eax=%u ebx=%u ecx=%u edx=%u\n",
-            r->eip, r->esp, r->int_no, r->err_code, r->eax, r->ebx, r->ecx, r->edx);
-        // Halt the system
-        for (;;);
+        serial_write_string(exception_messages[r->int_no], true, INFO);
+        serial_write_string(" (continuing)\n", false, NONE);
+        return;
     }
+
+    unsigned int cr2 = 0;
+    bool has_cr2 = (r->int_no == 14);
+    if (has_cr2) {
+        asm volatile("mov %%cr2, %0" : "=r"(cr2));
+    }
+
+    serial_write_string("\n", false, NONE);
+    serial_write_string(exception_messages[r->int_no], true, FAIL);
+    serial_write_string(" Exception. System Halted!\n", false, NONE);
+    // eip points at the faulting instruction itself for #UD, so this is
+    // enough to locate it with `objdump -d kernel.bin` / the .map file.
+    printf_serial(false, FAIL, "eip=%u esp=%u int_no=%u err_code=%u eax=%u ebx=%u ecx=%u edx=%u\n",
+        r->eip, r->esp, r->int_no, r->err_code, r->eax, r->ebx, r->ecx, r->edx);
+
+    if (has_cr2) {
+        char buf[11];
+        serial_write_string("Fault address (CR2): ", false, NONE);
+        serial_write_string(FaultHandler::utoa32_hex(cr2, buf), false, NONE);
+        serial_write_string("  [", false, NONE);
+        serial_write_string((r->err_code & 1) ? "protection violation" : "not present", false, NONE);
+        serial_write_string(", ", false, NONE);
+        serial_write_string((r->err_code & 2) ? "write" : "read", false, NONE);
+        serial_write_string(", ", false, NONE);
+        serial_write_string((r->err_code & 4) ? "user" : "supervisor", false, NONE);
+        serial_write_string("]\n", false, NONE);
+    }
+
+    FaultHandler::print_stack_trace(r->ebp);
+    FaultHandler::draw_panic_screen(r->int_no, r->eip, cr2, has_cr2);
+
+    // Halt the system
+    for (;;);
 }

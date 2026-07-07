@@ -49,12 +49,15 @@ void init_phys_allocator(mem_region_t* regions, size_t count) {
 }
 
 void* alloc_phys_page() {
+    unsigned long flags = enter_critical();
     for (size_t i = 0; i < MAX_PAGES; i++) {
         if (!BIT_TEST(bitmap, i)) {
             BIT_SET(bitmap, i);
+            exit_critical(flags);
             return (void*)(i * PAGE_SIZE);
         }
     }
+    exit_critical(flags);
     return NULL; // out of memory
 }
 
@@ -64,11 +67,16 @@ void free_phys_page(void* addr) {
 
     size_t index = a / PAGE_SIZE;
     if (index < MAX_PAGES) {
+        unsigned long flags = enter_critical();
         BIT_CLEAR(bitmap, index);
+        exit_critical(flags);
     }
 }
 
+// See DOCS.md ("mods/dev/memory/allocator.cpp" section) for why this
+// takes one critical section for the whole operation.
 uintptr_t alloc_phys_pages(size_t count) {
+    unsigned long flags = enter_critical();
     uintptr_t base = 0;
 
     for (size_t i = 0; i < count; i++) {
@@ -78,20 +86,25 @@ uintptr_t alloc_phys_pages(size_t count) {
             for (size_t j = 0; j < i; j++) {
                 free_phys_page((void*)(base + j * PAGE_SIZE));
             }
+            exit_critical(flags);
             return 0;
         }
 
         if (i == 0) {
             base = addr;
         } else if (addr != base + i * PAGE_SIZE) {
-            // Not contiguous, free everything
-            for (size_t j = 0; j <= i; j++) {
+            // See DOCS.md ("mods/dev/memory/allocator.cpp" section) for
+            // the rollback-address fix here.
+            free_phys_page((void*)addr);
+            for (size_t j = 0; j < i; j++) {
                 free_phys_page((void*)(base + j * PAGE_SIZE));
             }
+            exit_critical(flags);
             return 0;
         }
     }
 
+    exit_critical(flags);
     return base;
 }
 

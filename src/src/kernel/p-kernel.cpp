@@ -198,6 +198,19 @@ static void test_udp_echo() {
     UserDatagramProtocol::listen(7, udpEchoHandler);
 }
 
+/*
+// See DOCS.md ("p-kernel.cpp — test_fault_handler()" section).
+static void test_fault_handler(void) {
+    serial_write_string("=== test_fault_handler: triggering breakpoint (expect: continues) ===\n", false, NONE);
+    asm volatile("int3");
+    serial_write_string("=== test_fault_handler: breakpoint recovered, execution continued ===\n", false, NONE);
+    serial_write_string("=== test_fault_handler: triggering page fault (expect: panic screen) ===\n", false, NONE);
+    volatile int* bad_ptr = (volatile int*)0xDEADB000; // well past the 0x0-0x800000 identity-mapped range
+    *bad_ptr = 0xDEADBEEF;
+    serial_write_string("=== test_fault_handler: this line should never be reached ===\n", false, NONE);
+}
+*/
+
 static void test_tasking() {
     /*
     Theory:
@@ -253,9 +266,10 @@ extern "C" void kernel_main(read_file load_floppy) {
     Logging::flush();
     write_serial('\n');
     graphics_initalize_stage2();
+    // test_fault_handler();
     test_vfs_file_io(load_floppy);
-    serial_write_string("Initializing AC97 Audio Codec...\n");
-    initalize();
+    // serial_write_string("Initializing AC97 Audio Codec...\n");
+    // initalize();
     copyLua();
     copy_floppy_file_to_ramfs(load_floppy, "TEST.WAV", "test.wav");
     copy_floppy_file_to_ramfs(load_floppy, "TEST.MP3", "test.mp3");

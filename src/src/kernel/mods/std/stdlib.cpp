@@ -28,12 +28,14 @@ typedef struct _block_t {
 static block_t *free_list = NULL;
 
 size_t get_kmalloc_free_bytes(void) {
+    unsigned long flags = enter_critical();
     size_t total_free = 0;
     block_t *block = free_list;
     while (block != NULL) {
         total_free += block->size;
         block = block->next;
     }
+    exit_critical(flags);
     return total_free;
 }
 
@@ -55,6 +57,8 @@ block_t *split_block(block_t *block, size_t size) {
 }
 
 void *malloc(size_t size) {
+    unsigned long flags = enter_critical();
+
     // Find the first free block that is large enough
     block_t *prev_block = NULL;
     block_t *block = free_list;
@@ -65,6 +69,7 @@ void *malloc(size_t size) {
 
     // If no free block is large enough, return NULL
     if (block == NULL) {
+        exit_critical(flags);
         return NULL;
     }
 
@@ -80,14 +85,17 @@ void *malloc(size_t size) {
         prev_block->next = block->next;
     }
 
+    exit_critical(flags);
     return (void *)((uint8_t *)block + sizeof(block_t));
 }
 
 void free(void *ptr) {
+    unsigned long flags = enter_critical();
     // Add the block to the free list
     block_t *block = (block_t *)((uint8_t *)ptr - sizeof(block_t));
     block->next = free_list;
     free_list = block;
+    exit_critical(flags);
 }
 
 void *calloc(size_t nmemb, size_t size) {

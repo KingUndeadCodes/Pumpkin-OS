@@ -40,6 +40,7 @@ bool Window::handleKeyboard(char key, bool shift, bool meta, unsigned char scanc
     if (keyboardDelegate != nullptr) {
         return keyboardDelegate->onKeyboard(key, shift, meta, scancode);
     }
+    return false;
 }
 
 bool Window::handleMouse(int x, int y, int dx, int dy, unsigned char buttons, unsigned char pressedEdge) {

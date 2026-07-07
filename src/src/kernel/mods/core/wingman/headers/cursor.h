@@ -9,7 +9,10 @@
 
 int get_mouse_x(void);
 int get_mouse_y(void);
+int get_cursor_id(void);
 void set_cursor_id(int cursor);
 
-void redraw_cursor_special(WindowManager *wm);
+// See DOCS.md ("mods/core/wingman/cursor.cpp / headers/cursor.h" section).
+void update_mouse_position(int x, int y);
+void draw_cursor_into_buffer(color_t* buffer, int bufferWidth, int bufferHeight);
 void redraw_cursor(WindowManager *wm, int x, int y);

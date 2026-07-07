@@ -1,7 +1,7 @@
 #include "./mp3.h"
 #include "./chorus.h"
 #include "../serial/serial.h"
-#include "../../core/minimp3/minimp3.h"
+#include "../../ports/minimp3/minimp3.h"
 
 static struct mp3_info_t *actually_played_mp3_info;
 

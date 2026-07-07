@@ -16,9 +16,18 @@ typedef struct {
 
 static file_entry_t file_table[MAX_OPEN_FILES];
 
+// See DOCS.md ("mods/std/stdio.cpp" section) for why the claim happens
+// inside the same critical section as the scan.
 static int alloc_fd() {
-    for (int i = 0; i < MAX_OPEN_FILES; ++i)
-        if (!file_table[i].in_use) return i;
+    unsigned long flags = enter_critical();
+    for (int i = 0; i < MAX_OPEN_FILES; ++i) {
+        if (!file_table[i].in_use) {
+            file_table[i].in_use = 1;
+            exit_critical(flags);
+            return i;
+        }
+    }
+    exit_critical(flags);
     return -1;
 }
 
@@ -42,7 +51,6 @@ FILE* fopen(const char *filename, const char *mode) {
     if (node->open) node->open(node);
     int fd = alloc_fd();
     if (fd < 0) return NULL;
-    file_table[fd].in_use = 1;
     file_table[fd].node = node;
     file_table[fd].position = want_append ? node->size : 0;
     file_table[fd].flags = 0;
@@ -61,8 +69,10 @@ int fclose(FILE *stream) {
     int fd = stream->fd;
     vfs_node_t *node = file_table[fd].node;
     if (node && node->close) node->close(node);
+    unsigned long flags = enter_critical();
     file_table[fd].in_use = 0;
     file_table[fd].node = NULL;
+    exit_critical(flags);
     free(stream);
     return 0;
 }

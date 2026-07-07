@@ -26,7 +26,7 @@ void clear_memory(uint32_t memory, uint32_t length) {
     }
 }
 
-void initalize(void) {
+void chorus_initalize(void) {
     sound_buffer_refilling_info =
         (struct sound_buffer_refilling_info_t *)malloc(sizeof(struct sound_buffer_refilling_info_t));
 

@@ -20,11 +20,25 @@ color_t blend(color_t src, color_t dst) {
     return rgb(outR, outG, outB);
 }
 
-WindowManager::keyboard_handler(char key, bool shift, bool meta, unsigned char scancode) {
+bool WindowManager::keyboard_handler(char key, bool shift, bool meta, unsigned char scancode) {
     if (focusedWindow != nullptr) {
-        focusedWindow->handleKeyboard(key, shift, meta, scancode);
+        return focusedWindow->handleKeyboard(key, shift, meta, scancode);
     }
+    return false;
 };
+
+// See DOCS.md ("mods/core/wingman/headers/manager.h / manager.cpp" section).
+static void zOrderRemove(window_ref_t* zOrder, uint32_t* zOrderCount, window_ref_t ref) {
+    for (uint32_t i = 0; i < *zOrderCount; i++) {
+        if (zOrder[i] == ref) {
+            for (uint32_t j = i; j + 1 < *zOrderCount; j++) {
+                zOrder[j] = zOrder[j + 1];
+            }
+            (*zOrderCount)--;
+            return;
+        }
+    }
+}
 
 WindowManager::WindowManager(/* Constraints constraints, Environment environment */ void) {
     memcpy(&this->constraints, &defaultConstraints, sizeof(defaultConstraints));
@@ -33,10 +47,17 @@ WindowManager::WindowManager(/* Constraints constraints, Environment environment
     this->maxWindowCount = constraints.maxWindowCount;
     this->windowCount = 0;
     this->windows = (Window**)malloc(sizeof(Window*) * this->maxWindowCount);
+    this->zOrder = (window_ref_t*)malloc(sizeof(window_ref_t) * this->maxWindowCount);
+    this->zOrderCount = 0;
     this->focusedWindow = nullptr;
     if (this->windows != nullptr) {
         for (uint32_t i = 0; i < this->maxWindowCount; i++) {
             this->windows[i] = nullptr;
+        }
+    }
+    if (this->zOrder != nullptr) {
+        for (uint32_t i = 0; i < this->maxWindowCount; i++) {
+            this->zOrder[i] = WINGMAN_INVALID_WINDOW;
         }
     }
 };
@@ -52,6 +73,10 @@ WindowManager::~WindowManager() {
         free(this->windows);
         this->windows = NULL;
     }
+    if (this->zOrder != NULL) {
+        free(this->zOrder);
+        this->zOrder = NULL;
+    }
     if (this->screen != NULL) {
         delete this->screen;
         this->screen = NULL;
@@ -60,7 +85,7 @@ WindowManager::~WindowManager() {
 
 window_ref_t WindowManager::add(Window* window) {
     if (window == NULL) return WINGMAN_INVALID_WINDOW;
-    if (this->windows == NULL) return WINGMAN_INVALID_WINDOW;
+    if (this->windows == NULL || this->zOrder == NULL) return WINGMAN_INVALID_WINDOW;
     if (this->windowCount >= this->maxWindowCount) return WINGMAN_INVALID_WINDOW;
     for (uint32_t i = 0; i < this->maxWindowCount; i++) {
         if (this->windows[i] == NULL) {
@@ -69,6 +94,7 @@ window_ref_t WindowManager::add(Window* window) {
             }
             this->windows[i] = window;
             this->windowCount++;
+            this->zOrder[this->zOrderCount++] = (window_ref_t)i;
             return (window_ref_t)i;
         }
     }
@@ -80,10 +106,36 @@ int WindowManager::remove(window_ref_t ref) {
     if ((uint32_t)ref >= this->maxWindowCount) return -1;
     if (this->windows == NULL) return -1;
     if (this->windows[ref] == NULL) return -1;
+    if (this->focusedWindow == this->windows[ref]) this->focusedWindow = nullptr;
+    if (this->zOrder != NULL) zOrderRemove(this->zOrder, &this->zOrderCount, ref);
     delete this->windows[ref];
     this->windows[ref] = NULL;
     if (this->windowCount > 0) this->windowCount--;
     return 0;
+}
+
+void WindowManager::focus(window_ref_t ref) {
+    Window* window = this->get(ref);
+    if (window == nullptr) return;
+    this->focusedWindow = window;
+    if (this->zOrder != NULL) {
+        zOrderRemove(this->zOrder, &this->zOrderCount, ref);
+        this->zOrder[this->zOrderCount++] = ref;
+    }
+}
+
+window_ref_t WindowManager::windowAt(int x, int y) {
+    if (this->windows == NULL || this->zOrder == NULL) return WINGMAN_INVALID_WINDOW;
+    for (int i = (int)this->zOrderCount - 1; i >= 0; i--) {
+        window_ref_t ref = this->zOrder[i];
+        Window* window = this->windows[ref];
+        if (window == NULL) continue;
+        if (x >= window->offsetX && x <= window->offsetX + window->width &&
+            y >= window->offsetY && y <= window->offsetY + window->height) {
+            return ref;
+        }
+    }
+    return WINGMAN_INVALID_WINDOW;
 }
 
 Window* WindowManager::get(window_ref_t ref) {
@@ -127,8 +179,10 @@ void WindowManager::composite() {
 void WindowManager::composite() {
     if (this->screen == NULL) return;
     clearScreen();
-    for (uint32_t i = 0; i < this->maxWindowCount; i++) {
-        Window* window = this->windows[i];
+    if (this->zOrder == NULL) return;
+    for (uint32_t i = 0; i < this->zOrderCount; i++) {
+        window_ref_t ref = this->zOrder[i];
+        Window* window = this->windows[ref];
         if (window == NULL) continue;
         if (window->surface == NULL) continue;
         if (window->surface->pixels == NULL) continue;

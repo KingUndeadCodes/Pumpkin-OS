@@ -96,8 +96,14 @@ int vfs_mount(const char* path_in, vfs_node_t* root) {
     vfs_node_t* dir = vfs_find(path);
     if (!dir || dir->type != VFS_NODE_DIR) return -5;
 
-    // Disallow double-mount on same directory unless you want overlay behavior
-    if (dir->mountpoint) return -6;
+    // See DOCS.md ("mods/dev/vfs/vfs.cpp" section) for why the limit/
+    // double-mount checks are redone here, atomically with the write.
+    unsigned long flags = enter_critical();
+    if (mount_count >= VFS_MAX_MOUNTS || dir->mountpoint) {
+        int rc = dir->mountpoint ? -6 : -2;
+        exit_critical(flags);
+        return rc;
+    }
 
     dir->mountpoint = root;
 
@@ -106,6 +112,7 @@ int vfs_mount(const char* path_in, vfs_node_t* root) {
     mounts[mount_count].mount_path[sizeof(mounts[mount_count].mount_path) - 1] = 0;
     mounts[mount_count].root = root;
     mount_count++;
+    exit_critical(flags);
 
     return 0;
 }
@@ -132,6 +139,7 @@ static vfs_node_t* vfs_find_mount(const char* path_in, const char** rel_path_out
     *rel_path_out = (path[0] == '/') ? path + 1 : path;
 
     // Find the longest mount_path that matches as a full component prefix
+    unsigned long flags = enter_critical();
     for (size_t i = 0; i < mount_count; ++i) {
         if (mounts[i].mount_path[0] == 0 || !mounts[i].root) continue;
 
@@ -145,6 +153,7 @@ static vfs_node_t* vfs_find_mount(const char* path_in, const char** rel_path_out
             }
         }
     }
+    exit_critical(flags);
 
     return best;
 }

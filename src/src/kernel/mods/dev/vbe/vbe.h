@@ -45,9 +45,6 @@
 #define SCREEN_BPP VBE_DISPI_BPP_32
 #define SCREEN_PITCH (SCREEN_X * (SCREEN_BPP / 8))
 
-#define COLOR_R 0x00FF0000
-#define COLOR_G 0x0000FF00
-#define COLOR_B 0x000000FF
 #define COLOR_W 0x00FFFFFF
 
 void draw_pixel(unsigned x, unsigned y, unsigned color);
