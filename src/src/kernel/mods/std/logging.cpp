@@ -31,13 +31,16 @@ void Logging::capture() {
     return;
 }
 
+// See docs/DOCS.md ("mods/std/logging.cpp" section) for the
+// NUL-termination fix shared by flush() and log() below.
 void Logging::flush() {
     if (Logging::capturing) {
         FILE* file = fopen("/kmsglog", "r");
         if (file) {
-            // TODO: free the buffer.
-            char* buffer = (char*)malloc(1024 * 2 * sizeof(char));
-            fread(buffer, 1, 1024 * 2, file);
+            const size_t bufsize = 1024 * 2;
+            char* buffer = (char*)malloc(bufsize + 1);
+            size_t bytes_read = fread(buffer, 1, bufsize, file);
+            buffer[bytes_read] = '\0';
             Logging::log(buffer);
             fclose(file);
             free(buffer);
@@ -51,11 +54,12 @@ void Logging::log(const char* message) {
     if (Logging::capturing == true) {
         FILE* file = fopen("/kmsglog", "a");
         if (file) {
-            // Free the buffer
-            char* buffer = (char*)malloc(1024 * 2 * sizeof(char));
-            fread(buffer, 1, 1024 * 2, file);
+            const size_t bufsize = 1024 * 2;
+            char* buffer = (char*)malloc(bufsize + 1);
+            size_t bytes_read = fread(buffer, 1, bufsize, file);
+            buffer[bytes_read] = '\0';
             // Check if the last character is a newline
-            if (buffer[strlen(buffer) - 1] != '\n') {
+            if (bytes_read > 0 && buffer[bytes_read - 1] != '\n') {
                 fwrite("\n", 1, 1, file);
             }
             fwrite(message, 1, strlen(message), file);

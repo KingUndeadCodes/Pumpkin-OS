@@ -65,18 +65,25 @@ static inline void ac97_reset_stream(uint16_t nabm_base, uint8_t box_base) {
     }
 }
 
+// See docs/DOCS.md ("mods/dev/pci/drivers/ac97.cpp / mods/dev/chorus/chorus.cpp"
+// section) for why sound_buffer_refilling_info needs guarding on both sides.
 static void ac97_refill_fragment(uint8_t index) {
+    unsigned long flags = enter_critical();
     if (!sound_buffer_refilling_info || !sound_buffer_refilling_info->fill_buffer || !pcm_data) {
+        exit_critical(flags);
         return;
     }
 
     uint8_t *target = pcm_data + ((uint32_t)index * ac97_fragment_bytes);
     sound_buffer_refilling_info->fill_buffer(target);
     sound_buffer_refilling_info->last_filled_buffer = index;
+    exit_critical(flags);
 }
 
 static void ac97_complete_descriptor(uint8_t index) {
+    unsigned long flags = enter_critical();
     if (!sound_buffer_refilling_info) {
+        exit_critical(flags);
         return;
     }
 
@@ -86,11 +93,13 @@ static void ac97_complete_descriptor(uint8_t index) {
 
     if (sound_buffer_refilling_info->played_bytes_by_finished_buffers >=
         sound_buffer_refilling_info->size_of_full_pcm_output_in_bytes) {
+        exit_critical(flags);
         AC97StopPlayback();
         return;
     }
 
     ac97_refill_fragment(index);
+    exit_critical(flags);
 
     /*
      * Mark this descriptor valid again. Since the card has moved past it,

@@ -83,6 +83,9 @@ void play_sound_with_refilling_buffer(
     uint32_t fragment_size = chorus_clamp_fragment_size(size_of_buffer);
     uint32_t ring_size = fragment_size * AC97_BDL_ENTRY_COUNT;
 
+    // See docs/DOCS.md ("mods/dev/pci/drivers/ac97.cpp / mods/dev/chorus/chorus.cpp"
+    // section) for why this guards sound_buffer_refilling_info's field writes.
+    unsigned long flags = enter_critical();
     sound_buffer_refilling_info->source_data_pointer  = source_data_pointer;
     sound_buffer_refilling_info->source_data_length   = source_data_length;
     sound_buffer_refilling_info->fill_buffer          = fill_buffer;
@@ -94,6 +97,7 @@ void play_sound_with_refilling_buffer(
     sound_buffer_refilling_info->played_bytes_by_finished_buffers = 0;
     sound_buffer_refilling_info->played_bytes          = 0;
     sound_buffer_refilling_info->size_of_full_pcm_output_in_bytes = size_of_full_pcm_output_in_bytes;
+    exit_critical(flags);
 
     clear_memory((uint32_t)pcm_data, ring_size);
 
@@ -103,7 +107,9 @@ void play_sound_with_refilling_buffer(
         if (fill_buffer) {
             fill_buffer(fragment);
         }
+        flags = enter_critical();
         sound_buffer_refilling_info->last_filled_buffer = (uint8_t)i;
+        exit_critical(flags);
     }
 
     AC97PlayData(sample_rate);

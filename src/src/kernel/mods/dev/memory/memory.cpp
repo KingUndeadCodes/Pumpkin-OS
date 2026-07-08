@@ -4,6 +4,7 @@
 #define MMAP_LOCATION 0x5000
 #define MMAP_ENTRY_COUNT_PTR ((volatile uint16_t*)MMAP_LOCATION)
 #define INFO 0 // or whatever level you're using
+#define MAX_USABLE_REGIONS 32
 
 // Helper: convert uint64_t to hex string
 char* utoa64_hex(uint64_t val, char* buf) {
@@ -27,7 +28,12 @@ void queryMemoryMap(void) {
 
     SMAP_entry_t* memory_map = (SMAP_entry_t*)(MMAP_LOCATION + 4);
     uint16_t entries = *MMAP_ENTRY_COUNT_PTR;
-    int baseCount = 0;
+
+    // See docs/DOCS.md ("mods/dev/memory/memory.cpp" section) for why every
+    // usable region is collected before calling init_phys_allocator() once,
+    // instead of the old one-region-picked-by-counter approach.
+    mem_region_t usable_regions[MAX_USABLE_REGIONS];
+    int usable_count = 0;
 
     for (int i = 0; i < entries; i++) {
         SMAP_entry_t* entry = &memory_map[i];
@@ -37,14 +43,12 @@ void queryMemoryMap(void) {
 
         if (entry->Type == 1) {
             // Usable memory
-            serial_write_string("SMAP Entry: Base: ", INFO);
-            if (baseCount++ == 1) {
-                mem_region_t region;
-                region.base = base;
-                region.length = length;
-                region.type = 1; // Usable RAM
-                // Copy region to targetEntries making sure to reallocate by one
-                init_phys_allocator(&region, 1);
+            serial_write_string("SMAP Entry: Base: ", false, INFO);
+            if (usable_count < MAX_USABLE_REGIONS) {
+                usable_regions[usable_count].base = base;
+                usable_regions[usable_count].length = length;
+                usable_regions[usable_count].type = 1; // Usable RAM
+                usable_count++;
             }
         } else if (entry->Type == 2) {
             // Reserved memory
@@ -61,5 +65,13 @@ void queryMemoryMap(void) {
         serial_write_string(", Length: ", false, NONE);
         serial_write_string(utoa64_hex(length, length_buf), false, NONE);
         serial_write_string("\n", false, NONE);
+    }
+
+    if (usable_count > 0) {
+        uint64_t total_usable_bytes = 0;
+        for (int i = 0; i < usable_count; i++) total_usable_bytes += usable_regions[i].length;
+        printf_serial(false, INFO, "Physical allocator: %u usable region(s), %u KB total\n",
+            (unsigned)usable_count, (unsigned)(total_usable_bytes / 1024));
+        init_phys_allocator(usable_regions, usable_count);
     }
 }

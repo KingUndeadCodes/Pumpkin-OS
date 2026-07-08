@@ -123,8 +123,12 @@ void RTL8139_SEND_PACKET(void* data, uint32_t len) {
     status |= 0 << 13;
     outl(NICDevice.ioaddr + TSD_array[NICDevice.tx_current++], status);
     uint32_t transmit_ok = inl(NICDevice.ioaddr + TSD_array[NICDevice.tx_current - 1]);
-    while (transmit_ok & (1 << 15) == 0) {
-        Logging::log("[RTL8139] Waiting for transmit_ok ...");
+    // See docs/DOCS.md ("mods/dev/pci/drivers/rtl8139.cpp" section) for the
+    // precedence fix here and why the log call moved outside the loop body.
+    if ((transmit_ok & (1 << 15)) == 0) {
+        Logging::log("[RTL8139] Waiting for transmit_ok ...\n");
+    }
+    while ((transmit_ok & (1 << 15)) == 0) {
         transmit_ok = inl(NICDevice.ioaddr + TSD_array[NICDevice.tx_current - 1]);
     }
     if(NICDevice.tx_current > 3) NICDevice.tx_current = 0;

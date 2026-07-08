@@ -247,16 +247,16 @@ extern "C" void kernel_main(read_file load_floppy) {
     vfs_node_t* ramfs_root = ramfs_init();
     vfs_mount("/", ramfs_root);
     Logging::capture();
-    Logging::log("Interupts Enabled!"); // Interupts should be enabled before any Logging takes place, that's why this is here.
-    Logging::log("Paging Enabled!"); // Paging should be enabled before any Logging takes place, that's why this is here.
-    Logging::log("Memory pool initialized!"); // Memory pool is actually initalized before this point, because it's required for the VFS and Logging, but paging is initalized first.
+    Logging::log("Interupts Enabled!\n"); // Interupts should be enabled before any Logging takes place, that's why this is here.
+    Logging::log("Paging Enabled!\n"); // Paging should be enabled before any Logging takes place, that's why this is here.
+    Logging::log("Memory pool initialized!\n"); // Memory pool is actually initalized before this point, because it's required for the VFS and Logging, but paging is initalized first.
     KeyboardInit();
-    Logging::log("Keyboard Enabled!"); // The keyboard does not seem to be working.
+    Logging::log("Keyboard Enabled!\n"); // The keyboard does not seem to be working.
     mouse_install();
-    Logging::log("Mouse Enabled!");
+    Logging::log("Mouse Enabled!\n");
     TimerInit();
-    Logging::log("PIT Enabled!");
-    Logging::log("Checking for PCI devices...");
+    Logging::log("PIT Enabled!\n");
+    Logging::log("Checking for PCI devices...\n");
     checkAllBuses();
     graphics_initalize_stage1();
     LogDevice terminalDevice = { .log = &terminal_write };

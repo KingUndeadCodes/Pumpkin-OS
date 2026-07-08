@@ -235,7 +235,7 @@ void checkFunction(uint8_t bus, uint8_t device, uint8_t function) {
     char* buffer = (char*)malloc(128);
     sprintf(
         buffer, 
-        "Found PCI %s<%d, %d> (%s)", 
+        "Found PCI %s<%d, %d> (%s)\n",
         getSubClassName(getClassId(bus, device, function), getSubClassId(bus, device, function)) == "Other" ? __PCI_classes[getClassId(bus, device, function)] : getSubClassName(getClassId(bus, device, function), getSubClassId(bus, device, function)),
         vendorID,
         deviceID,

@@ -6,6 +6,125 @@ pointing to its section below.
 
 ---
 
+## `mods/dev/pci/drivers/ac97.cpp` / `mods/dev/chorus/chorus.cpp` — playback race guard
+
+`sound_buffer_refilling_info` is touched from two contexts that can
+genuinely interleave: `AC97_IRQ_HANDLER` (via `ac97_refill_fragment()`/
+`ac97_complete_descriptor()`) fires asynchronously via hardware IRQ, and
+`play_sound_with_refilling_buffer()` (mainline, e.g. triggered by
+clicking a WAV/MP3 in the file explorer) writes the same struct's fields
+with interrupts enabled. Starting a new playback while a previous stream
+is still active (`ac97_stream_active == true`, since `AC97StopPlayback()`
+only actually runs deep inside `AC97PlayData()`, called at the very end
+of `play_sound_with_refilling_buffer()` -- after every field on the
+struct has already been rewritten) leaves a real window for an AC97 IRQ
+to land mid-update and read a torn mix of old/new field values, or for
+the IRQ-driven `ac97_refill_fragment()` and the mainline preload loop to
+write into the same `pcm_data` ring concurrently.
+
+Guarded with `enter_critical()`/`exit_critical()` on both sides:
+`ac97_refill_fragment()` and `ac97_complete_descriptor()` wrap their
+whole bodies (matching the project's existing "guard the whole logical
+operation" precedent), and `play_sound_with_refilling_buffer()` wraps
+its struct-field-init block. The fragment-preload loop's
+`last_filled_buffer` write is guarded on its own, separately from the
+`fill_buffer()` callback call itself -- that callback does real decode
+work and can take a while, so it deliberately stays outside any critical
+section rather than holding interrupts off for its whole duration.
+
+Kept intentionally minimal, matching the original TODO note's own
+scoping ("smallest, most self-contained fix... one cli/sti-style guard
+around the shared struct's read-modify-write") -- reordering
+`AC97StopPlayback()` to run before the mainline mutations instead of
+after would shrink the race window further, but that's a bigger,
+separate change than what was asked for here.
+
+---
+
+## `mods/std/logging.cpp` — NUL-termination fix in `flush()`/`log()`
+
+Both functions read into a `malloc`'d buffer via `fread()` and then treat
+it as a NUL-terminated C string (`log()` via `strlen(buffer)`, `flush()`
+by handing it straight to `Logging::log()`, which does the same). Two
+problems: `fread()` doesn't append a NUL, and the buffer was never
+zeroed, so on anything but a full exactly-2048-byte read, the tail of the
+buffer is uninitialized heap garbage -- `strlen()` reads until it happens
+to find a zero byte, which could be past the buffer entirely (no
+guarantee one exists within the allocation, since `malloc()` here doesn't
+zero it). Fixed by allocating one extra byte, capturing `fread()`'s
+actual return value, and explicitly NUL-terminating at exactly that
+offset (`buffer[bytes_read] = '\0'`) instead of relying on `strlen()` to
+discover where the real data ends. `log()`'s "does the file already end
+in a newline" check was rewritten the same way (`buffer[bytes_read - 1]`
+instead of `strlen(buffer) - 1`), which also fixes a latent
+empty-file case: the old `strlen(buffer) - 1` would underflow to
+`SIZE_MAX` on an empty read since `strlen("") == 0`; the new
+`bytes_read > 0` guard skips the newline-prepend correctly for that case
+instead of indexing `buffer[SIZE_MAX]`.
+
+---
+
+## `mods/dev/pci/drivers/rtl8139.cpp` — `RTL8139_SEND_PACKET()` TX-wait fix
+
+`while (transmit_ok & (1 << 15) == 0)` had an operator-precedence bug:
+`==` binds tighter than `&` in C++, so this was actually
+`transmit_ok & ((1 << 15) == 0)` -- `(1 << 15) == 0` is always false
+(`0`), so the whole expression was always `transmit_ok & 0`, i.e. always
+`0`/false. The loop body never ran, not even once -- "wait for TX
+complete" was a no-op that fell through immediately regardless of the
+hardware's actual status.
+
+Fixing the parens alone would have been a landmine: this loop had never
+executed before, and its body called `Logging::log(...)` on every
+iteration. `Logging::capturing` is set `true` at boot
+(`p-kernel.cpp`'s `Logging::capture()` call), so `Logging::log()` isn't
+a no-op -- it's a real `fopen`/`fread`/`malloc`/`fwrite`/`fclose` on
+`/kmsglog`. Since the loop was dormant, this was never actually hit; once
+the condition is fixed, a genuinely slow NIC (or one that never sets the
+TOK bit) would spin doing full VFS file I/O as fast as the CPU could
+issue it. Moved the log call to fire once, only if a wait is actually
+needed, instead of once per poll -- keeps the diagnostic value without
+turning the send path into a filesystem-I/O spin loop.
+
+---
+
+## `mods/dev/memory/memory.cpp` — `queryMemoryMap()` collects every usable region
+
+The old code called `init_phys_allocator()` from inside the SMAP-entry
+loop, gated on `baseCount++ == 1` -- so it only ever fired for the
+*second* `Type==1` (usable) entry, passing that one region alone. The
+first usable region (almost always the largest/lowest) was silently
+skipped, and any usable regions past the second were ignored entirely.
+`init_phys_allocator()` itself already supported an array of regions
+(`mem_region_t* regions, size_t region_count`) -- it just was never
+actually given more than one. Fixed by collecting every usable region
+into a small fixed-size array (`MAX_USABLE_REGIONS`, generous for a
+BIOS/QEMU-generated SMAP) while iterating, then calling
+`init_phys_allocator()` once after the loop with the real count. A stack
+array is used, not `malloc()`, since this function is what determines
+what the heap/physical allocator even has to work with -- it runs before
+either exists.
+
+---
+
+## `mods/dev/tasking/tasking.cpp` — `sched_lock()`/`sched_unlock()`
+
+`g_sched_lock` gates whether `scheduler_on_tick()` (called directly from
+the IRQ0/timer handler) is allowed to switch tasks -- callers like
+`task_exit()` bump it around a state mutation they don't want interrupted
+by a reschedule mid-update. But `g_sched_lock++`/`g_sched_lock--` are each
+a plain read-modify-write, not a single instruction: if IRQ0 fires between
+the read and the write (entirely possible, since ordinary code runs with
+interrupts on), `scheduler_on_tick()` can observe a stale value, or the
+increment/decrement itself can lose an update, which defeats the whole
+point of the lock -- it stops actually excluding the reschedule it was
+meant to block. Guarding the read-modify-write with `enter_critical()`/
+`exit_critical()` makes each bump atomic; `scheduler_on_tick()`'s own read
+of `g_sched_lock` needs no separate guard, since it only ever runs from
+inside the IRQ0 handler itself, where interrupts are already off.
+
+---
+
 ## `mods/dev/vfs/vfs.cpp` — `vfs_mount()` re-checks under the lock
 
 The limit check (`mount_count >= VFS_MAX_MOUNTS`) and the double-mount

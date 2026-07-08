@@ -261,7 +261,7 @@ void graphics_initalize_stage1() {
 
 void graphics_initalize_stage2() {
     terminal->write("\n\n# Welcome to \\(FF5C04)PumpkinOS\\(FFFFFF)!\n");
-    terminal->write("Type \\(C666D8)helpme\\(FFFFFF) if you need assistance.\n");
+    // terminal->write("Type \\(C666D8)helpme\\(FFFFFF) if you need assistance.\n");
     /*
     VBEScreen::draw_char_gradiant(0 * VBEScreen::fontScale, 0, 'H', COLOR_R, COLOR_B, Terminal::defaultBackgroundColor);
     VBEScreen::draw_char_gradiant(8 * VBEScreen::fontScale, 0, 'e', COLOR_G, COLOR_B, Terminal::defaultBackgroundColor);

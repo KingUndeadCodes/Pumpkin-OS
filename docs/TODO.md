@@ -11,17 +11,20 @@ TempleOS), not something any of these notes are trying to walk back.
 Small, self-contained, no dependency on tasking. Ordered by recommended
 sequence.
 
-### 1. Fix the AC97/chorus playback race
+### 1. Fix the AC97/chorus playback race — DONE
 
-`mods/dev/pci/drivers/ac97.cpp`, `mods/dev/chorus/chorus.cpp` — the AC97
-IRQ refill handler updates `sound_buffer_refilling_info` fields with no
-guard against mainline code doing the same thing mid-update. This is a
-real, live correctness bug *today* (garbled/corrupted playback state),
-independent of whether tasking ever lands — it just happens to also be one
-of the Phase 0 hazards tasking would need fixed anyway (see Priority 2).
-Smallest, most self-contained fix on this list: one `cli`/`sti`-style
-guard around the shared struct's read-modify-write in both the IRQ path
-and mainline callers.
+`mods/dev/pci/drivers/ac97.cpp`, `mods/dev/chorus/chorus.cpp` —
+`ac97_refill_fragment()` and `ac97_complete_descriptor()` (IRQ path) now
+guard their whole bodies with `enter_critical()`/`exit_critical()`, and
+`play_sound_with_refilling_buffer()` (mainline) guards its
+`sound_buffer_refilling_info` field-init block plus the fragment-preload
+loop's `last_filled_buffer` write (kept separate from the `fill_buffer()`
+callback itself, which does real decode work and stays unguarded so
+interrupts aren't held off for its whole duration). Kept intentionally
+minimal per this item's own original scoping; a bigger fix would also
+reorder `AC97StopPlayback()` to run before the mainline mutations instead
+of after, shrinking the race window further — noted in DOCS.md, not done
+here.
 
 ### 2. Distinguish recoverable vs. fatal exceptions in the fault handler — DONE
 
@@ -30,6 +33,95 @@ and mainline callers.
 ### 4. Validate ELF header offsets/counts before trusting them — DONE
 
 ### 5. Fix the hardcoded WAV buffer size in the file explorer — DONE
+
+### 6. Fix `init_phys_allocator()` skipping usable memory regions — DONE
+
+`mods/dev/memory/memory.cpp` (`queryMemoryMap`) — was calling
+`init_phys_allocator()` from inside the SMAP-entry loop, gated on
+`baseCount++ == 1`, so only the *second* usable region was ever passed
+in (alone), skipping the first entirely and ignoring any past the
+second. Fixed by collecting every usable region into a fixed-size stack
+array (`MAX_USABLE_REGIONS = 32`, a stack array since this runs before
+either the heap or the physical allocator exists) while iterating, then
+calling `init_phys_allocator()` once after the loop with the real count
+— using the interface it already had, just never was given more than
+one region through. Also fixed a small adjacent bug while in there:
+the "usable memory" log line was passing `INFO` as the `bool time_show`
+positional argument instead of `false, INFO` like the other three
+branches.
+
+### 7. Fix the RTL8139 TX-wait operator-precedence bug — DONE
+
+`mods/dev/pci/drivers/rtl8139.cpp` (`RTL8139_SEND_PACKET`) —
+`while (transmit_ok & (1 << 15) == 0)` had `==` binding tighter than `&`,
+so it always evaluated to `transmit_ok & 0` (always false); the loop
+body never ran, so "wait for TX complete" was a no-op. Fixed to
+`while ((transmit_ok & (1 << 15)) == 0)`. Since the loop had never
+actually executed before, its `Logging::log(...)` call (real
+`fopen`/`fread`/`malloc`/`fwrite`/`fclose` file I/O — `Logging::capturing`
+is `true` from boot onward) had never actually fired either; activating
+the loop without addressing that would've turned a slow/stuck TX into a
+filesystem-I/O spin loop. Moved the log call to fire once, only if a
+wait is actually needed, instead of once per poll iteration.
+
+### 8. Null-check `node` in `fseek()` — DONE
+
+`mods/std/stdio.cpp` `fseek()` — added `if (!node) return -1;` right
+after fetching `file_table[fd].node`, matching the check `fread`/`fwrite`
+already had in the same file. `fseek()` on a bad or already-closed fd now
+fails gracefully instead of null-dereferencing `node->size`.
+
+### 9. Fix `Logging::log()`'s missing NUL-termination — DONE
+
+`mods/std/logging.cpp` — both `Logging::log()` and `Logging::flush()`
+(same bug, one function apart — `flush()` hands its own unterminated
+`fread()` buffer straight to `log()`) read into a `malloc`'d buffer and
+treated it as a NUL-terminated string without `fread()` ever adding a
+NUL and without the buffer being zeroed first. Fixed by allocating one
+extra byte, capturing `fread()`'s actual return value, and
+NUL-terminating at exactly that offset instead of relying on `strlen()`
+to find where the real data ends. Also fixed a latent empty-file
+underflow in `log()`'s "does the file already end in a newline" check
+(`strlen(buffer) - 1` on an empty read wrapped `size_t` to `SIZE_MAX`;
+replaced with a `bytes_read > 0` guard).
+
+### 10. Fix missing newlines in early boot log messages — DONE
+
+Found via a screenshot of the on-screen `Terminal` right before the
+Wingman switch: every early boot message ("Interupts Enabled!", "Paging
+Enabled!", "Memory pool initialized!", "Keyboard Enabled!", "Mouse
+Enabled!", "PIT Enabled!", "Checking for PCI devices...", each "Found
+PCI ..." line) ran together on one line with no separator at all, since
+none of the `Logging::log(...)` calls that produce them
+(`p-kernel.cpp:255-264`, `mods/dev/pci/pci.cpp:238`'s `sprintf` format
+string) included a trailing `\n`. `Terminal::write()` itself handles
+`\n` correctly (confirmed by tracing it and by the "Welcome to
+PumpkinOS" banner, which does include `\n` and rendered on its own
+lines) -- the messages themselves were just missing it. Added `\n` to
+each. Also fixed the same issue in `mods/dev/pci/drivers/rtl8139.cpp`'s
+`Logging::log("[RTL8139] Waiting for transmit_ok ...")` call from item
+7, found while checking for other call sites with the same bug.
+`p-kernel.cpp:227`'s `Logging::log("Tasking Enabled!")` has the same
+issue but is inside a commented-out/disabled block, so left alone.
+
+### 11. Fix the `serialDevice` `LogDevice` function-pointer type mismatch
+
+Found while chasing item 10's Terminal bug, not yet fixed.
+`p-kernel.cpp`'s `LogDevice serialDevice = { .log = &serial_write_string };`
+assigns a 3-parameter function (`const char*, bool, enum Types`) to a
+field typed `void (*log)(const char* message)` — default arguments don't
+change a function's pointer type, so this is a genuine signature
+mismatch. It compiles silently only because of `-fpermissive -w` in the
+build flags. Every `Logging::propagate()` call ends up invoking
+`serial_write_string` through a 1-argument-shaped call site, so the
+function's own body reads its 2nd/3rd parameters (`time_show`, `Type`)
+as whatever garbage happens to be on the stack at those offsets — a real
+ABI violation. `terminalDevice`'s `&terminal_write` is fine (its actual
+signature is `void terminal_write(const char* str)`, matching exactly).
+Fix is presumably a thin `void serial_log_adapter(const char* message) {
+serial_write_string(message); }`-style wrapper for `serialDevice` to
+point at instead, matching the pattern that already works for
+`terminal_write`.
 
 ---
 
@@ -41,7 +133,10 @@ implemented yet** — the plan is approved in concept, but the goal right
 now is to keep expanding the feature/fix backlog first. Don't start on any
 of this without an explicit go-ahead.
 
-First two items below are done; the rest haven't been started yet.
+All Phase 0 hardening items below are done. Tasking (Proposal 1) still
+hasn't been turned on though — see the full proposal further down for
+what Phase 1 onward actually involves; nothing past Phase 0 has been
+started.
 
 - [x] `enter_critical()`/`exit_critical()` primitive — implemented in
       `mods/dev/port.cpp`: saves `EFLAGS.IF` (`pushf`) then `cli`; restore
@@ -77,9 +172,13 @@ First two items below are done; the rest haven't been started yet.
       and unlink sequences, `ramfs_readdir()`/`ramfs_finddir()` guard their
       list walks, and `ramfs_read()`/`ramfs_write()` guard their per-file
       block-list traversal/growth.
-- [ ] Make `sched_lock`/`sched_unlock` actually atomic
-      (`mods/dev/tasking/tasking.cpp`) — currently a plain
-      `g_sched_lock++`/`--`, not itself preemption-safe.
+- [x] Make `sched_lock`/`sched_unlock` actually atomic
+      (`mods/dev/tasking/tasking.cpp`) — both now guard their
+      increment/decrement of `g_sched_lock` with `enter_critical()`/
+      `exit_critical()`, so a timer tick landing mid-update can't see a
+      torn value or lose an update. `scheduler_on_tick()`'s own read of
+      `g_sched_lock` needs no separate guard, since it only ever runs
+      from inside the IRQ0 handler itself.
 - [x] AC97/chorus playback race — promoted to Priority 1 item 1, since
       it's a real bug independent of tasking, not just a prerequisite.
 
@@ -129,6 +228,131 @@ Worth another look once Priority 2's Phase 0 hardening (physical page
 bitmap, VFS/ramfs bookkeeping) is further along, since any real fix here
 likely involves interrupts being safely live during a program's run
 anyway.
+
+### Full-codebase performance/architecture audit (2026-07-07)
+
+A 3-way parallel audit (boot/memory/interrupts, drivers/networking,
+ELF/syscalls/stdlib/explorer) plus a review of the GUI/compositing code
+already worked on this session. The four real bugs it surfaced were
+promoted straight to Priority 1 (items 6-9); everything below is
+performance/architecture follow-up, parked for later.
+
+#### Concurrency gaps beyond Phase 0
+
+Same "shared mutable state touched from both IRQ and mainline, no guard"
+shape as the AC97 race and the already-hardened malloc/allocator/VFS/
+ramfs/scheduler-lock work — just in places that pass didn't cover:
+
+- `mods/std/stdio.cpp` — `fseek()`/`fread()`/`fwrite()` mutate
+  `file_table[fd].position` and `node->size` with no
+  `enter_critical()`/`exit_critical()`, even though `alloc_fd()`/
+  `fclose()` in the same file already got one. Reachable from the
+  syscall path too.
+- `mods/dev/syscall/syscall.cpp` — `syscall_fd_table[]` and the
+  `stdin_buf_*`/`stdin_line_done` globals are touched by
+  `sys_read`/`sys_write`/`sys_open`/`sys_close` *and* by a keyboard-IRQ
+  callback, unguarded.
+- `mods/dev/kb/kb.cpp` / `mods/dev/mouse/mouse.cpp` — the fixed callback
+  arrays are mutated by `kb_add_event`/`kb_remove_event` from mainline
+  while iterated from IRQ context with no guard; `kb_remove_event`
+  clearing `.callback`/`.id` non-atomically mid-iteration is a real race.
+- `mods/dev/pci/drivers/rtl8139.cpp` (`NICDevice` fields) and
+  `mods/dev/net/arp.cpp` (`arp_table`) — mainline TX vs. IRQ-driven
+  RX/ARP-handling race, structurally identical to the AC97 one.
+- `mods/dev/pit/pit.cpp` — `timer_ticks` is a `volatile uint64_t`
+  incremented from IRQ0; on 32-bit x86 that's two 32-bit operations, so a
+  tick landing mid-read/mid-increment can produce a torn 64-bit value.
+- `mods/std/string.cpp` `itoa()` — single `static char buf[32]`, called
+  from both normal logging code and ISR/panic-screen code. A fault
+  interrupting a caller mid-consumption of its result, where the handler
+  itself calls `itoa()`, silently clobbers the buffer.
+- `mods/dev/idt/irq.cpp` — `currentInterrupt` global set from IRQ context
+  with no guard; low risk today since no reader exists yet, but matches
+  the same hazard shape if one gets added later.
+
+Recommendation: treat as "Phase 0, part 2" — same fix
+(`enter_critical()`/`exit_critical()`), fold into Priority 2 whenever
+it's revisited.
+
+#### GUI rendering performance
+
+- `mods/dev/vbe/vbe.cpp` `fill()` — calls `draw_pixel()` per pixel for a
+  full-screen fill instead of one linear fill over the contiguous
+  framebuffer.
+- `vbe.cpp` `draw_char()` — up to 1024 individual `draw_pixel()` calls
+  per glyph at the default scale; this is the primitive behind all
+  on-screen text.
+- `mods/std/graphics.cpp` `Terminal::scroll()` — scrolls via
+  `get_pixel()`/`draw_pixel()` per pixel across the whole 1024x768
+  framebuffer (~780K operations) instead of one `memmove` of the
+  framebuffer region.
+- `mods/core/wingman/manager.cpp` `composite()` — clears and fully
+  re-blends the entire screen on every redraw (no dirty-rect), and reads
+  the destination pixel even when `blend()`'s own fast paths (fully
+  opaque/fully transparent source) would ignore it entirely.
+- `mods/core/wingman/suite/explorer/explorer.cpp` `readDirectory()` —
+  counts entries then fills them in two separate passes, and since
+  `ramfs_readdir()` itself walks the linked list from the head per index,
+  the whole listing is O(n²), doubled, and it re-runs on every
+  navigation.
+- `explorer.cpp` `draw_options()` — an arrow-key press (changing only the
+  selection highlight) redraws every icon and every character of every
+  filename, not just the old and new selected rows.
+
+#### Drivers/networking performance
+
+- `mods/dev/net/ip.cpp` `sendPacket()` — blocking ARP resolution: on a
+  cache miss it retries up to 5x with `timer_wait(200)`, so a single
+  outbound packet to an unresolved host can stall the entire single-core
+  kernel for up to ~1 second.
+- `mods/dev/serial/serial.cpp` — every log call is a per-byte busy-wait
+  chain on the UART, and `serial_write_time()` (prepended by default)
+  does a full CMOS/RTC read plus 6 `itoa()` calls per log line. Used
+  pervasively, including inside IRQ handlers (AC97, RTL8139), so a hot
+  log line inside an IRQ handler blocks that IRQ's own completion.
+- `net/arp.cpp` — the table is append-only with no dedup; repeated
+  traffic from the same host keeps appending duplicate entries instead of
+  updating in place, wasting capacity and lengthening the linear-scan
+  lookup over time.
+- `rtl8139.cpp` / `ip.cpp` / `udp.cpp` — malloc/free churn per packet (a
+  fresh heap alloc for every RX packet, a fresh scratch buffer for every
+  UDP checksum, a fresh buffer for every IP send) instead of reusing
+  preallocated buffers.
+- `ac97.cpp`/`wav.cpp`/`chorus.cpp` — hand-rolled copy/zero loops
+  reinventing `memcpy`/`memset`, plus per-sample-frame byte-at-a-time
+  stores where one word store would do.
+
+#### Boot/memory performance
+
+- `src/boot/loader/floppy.cpp` / `libboot.cpp` — every single 512-byte
+  sector read (FAT table, each cluster) does a full drive
+  reset/recalibrate/motor-on cycle instead of batching contiguous
+  sectors into one multi-sector read.
+- `mods/dev/paging/paging.cpp` — eagerly identity-maps 512 page tables
+  (2GB worth) into a 2MB static BSS array at boot, when the kernel only
+  needs ~8MB mapped per its own comment; also does an unconditional full
+  TLB flush (`mov cr3,cr3`) on every `map_physical_memory()` call
+  regardless of page count, and never uses 4MB large pages for the bulk
+  identity-map.
+- `mods/std/string.cpp` — `strcmp()` does two full extra `strlen()` scans
+  before comparing a single byte (and returns a raw pointer difference on
+  mismatch, not a proper comparison result); `memcpy`/`memset` are
+  byte-at-a-time with no word-sized fast path. Both are extremely hot
+  (VFS lookups, ELF symbol search, every buffer op).
+
+#### Lower priority / informational
+
+- `mods/dev/elf/elf.cpp` `elf_lookup_symbol()` is a stub that always
+  returns `NULL` — not a perf issue, but it's the real blocker for
+  running any ELF that calls an external kernel-exported symbol rather
+  than being fully self-contained.
+- `tasking.cpp`'s O(n) `task_alloc()`/`pick_next()` — fine at
+  `MAX_TASKS=32`, not worth touching now.
+- `math.cpp`'s O(n²) Taylor-series `sin`/`cos` — currently unused
+  anywhere in-tree.
+- `pci.cpp`'s boot-time linear device-name scan and a fragile
+  pointer-identity (not content) string comparison — boot-only, low
+  impact.
 
 ---
 

@@ -81,6 +81,7 @@ int fseek(FILE *stream, long offset, int whence) {
     if (!stream) return -1;
     int fd = stream->fd;
     vfs_node_t *node = file_table[fd].node;
+    if (!node) return -1;
     size_t new_pos = 0;
     if (whence == 0) new_pos = offset;
     else if (whence == 1) new_pos = file_table[fd].position + offset;

@@ -1,4 +1,5 @@
 #include "tasking.h"
+#include "../serial/serial.h"
 
 // ----------------------
 // Globals
@@ -64,9 +65,19 @@ static task_t* pick_next(task_t* cur) {
 // ----------------------
 // Scheduler lock
 // ----------------------
+// See docs/DOCS.md ("mods/dev/tasking/tasking.cpp" section) for why the
+// increment/decrement need their own guard here.
 static int g_sched_lock = 0;
-extern "C" void sched_lock(void)   { g_sched_lock++; }
-extern "C" void sched_unlock(void) { if (g_sched_lock) g_sched_lock--; }
+extern "C" void sched_lock(void) {
+    unsigned long flags = enter_critical();
+    g_sched_lock++;
+    exit_critical(flags);
+}
+extern "C" void sched_unlock(void) {
+    unsigned long flags = enter_critical();
+    if (g_sched_lock) g_sched_lock--;
+    exit_critical(flags);
+}
 
 // ----------------------
 // Init
