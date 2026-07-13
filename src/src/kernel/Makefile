@@ -49,14 +49,17 @@ build:
 	$(CC) $(CFLAGS) mods/dev/elf/elf.cpp -o elf.o
 	$(CC) $(CFLAGS) mods/ports/minimp3/minimp3.cpp -o minimp3.o
 	$(CC) $(CFLAGS) mods/core/wingman/widgets/button.cpp -o button.o
+	$(CC) $(CFLAGS) mods/core/wingman/widgets/textinput.cpp -o textinput.o
+	$(CC) $(CFLAGS) mods/core/wingman/widgets/checkbox.cpp -o checkbox.o
 	$(CC) $(CFLAGS) mods/core/wingman/suite/explorer/explorer.cpp -o explorerWingman.o
 	$(CC) $(CFLAGS) mods/core/wingman/suite/message/message.cpp -o messageWingman.o
+	$(CC) $(CFLAGS) mods/core/wingman/suite/widgetdemo/widgetdemo.cpp -o widgetdemoWingman.o
 	$(CC) $(CFLAGS) mods/core/wingman/window.cpp -o window.o
 	$(CC) $(CFLAGS) mods/core/wingman/surface.cpp -o surface.o
 	$(CC) $(CFLAGS) mods/core/wingman/manager.cpp -o manager.o
 	$(CC) $(CFLAGS) mods/core/wingman/wingman.cpp -o wingman.o
 	$(CC) $(CFLAGS) mods/core/wingman/cursor.cpp -o cursor.o
-	$(LD) $(LDFLAGS) Kernel-Entry.o kernel.o graphics.o idt.o isr.o irq.o kb.o mouse.o ctype.o string.o math.o memory.o allocator.o vfs.o paging.o pat.o stdlib.o timer.o cmos.o pci.o rtl8139.o ac97.o time.o serial.o logging.o tasking.o vbe.o stdio.o syscall.o arp.o ip.o udp.o wav.o chorus.o minimp3.o button.o mp3.o elf.o ramfs.o window.o surface.o manager.o wingman.o cursor.o explorerWingman.o messageWingman.o $(LDFLAGS_TAIL)
+	$(LD) $(LDFLAGS) Kernel-Entry.o kernel.o graphics.o idt.o isr.o irq.o kb.o mouse.o ctype.o string.o math.o memory.o allocator.o vfs.o paging.o pat.o stdlib.o timer.o cmos.o pci.o rtl8139.o ac97.o time.o serial.o logging.o tasking.o vbe.o stdio.o syscall.o arp.o ip.o udp.o wav.o chorus.o minimp3.o button.o textinput.o checkbox.o mp3.o elf.o ramfs.o window.o surface.o manager.o wingman.o cursor.o explorerWingman.o messageWingman.o widgetdemoWingman.o $(LDFLAGS_TAIL)
 # truncate -s 131072 kernel.bin
 # cat kernel.bin empty_end.bin > kernel2.bin
 # mv kernel2.bin kernel.bin
@@ -66,5 +69,5 @@ build:
 # https://forum.osdev.org/viewtopic.php?t=25157
 
 clean:
-	rm chorus.o wav.o minimp3.o button.o mp3.o ip.o arp.o udp.o allocator.o pat.o isr.o kb.o mouse.o vfs.o memory.o logging.o Kernel-Entry.o kernel.o idt.o irq.o ctype.o string.o paging.o serial.o stdlib.o timer.o pci.o rtl8139.o ac97.o cmos.o time.o tasking.o math.o graphics.o vbe.o ramfs.o stdio.o elf.o syscall.o window.o surface.o manager.o cursor.o explorerWingman.o messageWingman.o wingman.o # image.bin
+	rm chorus.o wav.o minimp3.o button.o textinput.o checkbox.o mp3.o ip.o arp.o udp.o allocator.o pat.o isr.o kb.o mouse.o vfs.o memory.o logging.o Kernel-Entry.o kernel.o idt.o irq.o ctype.o string.o paging.o serial.o stdlib.o timer.o pci.o rtl8139.o ac97.o cmos.o time.o tasking.o math.o graphics.o vbe.o ramfs.o stdio.o elf.o syscall.o window.o surface.o manager.o cursor.o explorerWingman.o messageWingman.o widgetdemoWingman.o wingman.o # image.bin
 #  kernel.bin short.bin 

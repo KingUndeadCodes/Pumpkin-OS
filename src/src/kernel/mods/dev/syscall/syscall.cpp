@@ -5,7 +5,7 @@
 #include "../ramfs/ramfs.h"
 #include "../serial/serial.h"
 #include "../kb/kb.h"
-#include "../elf/elf.h"
+#include "../tasking/tasking.h"
 
 #define SYSCALL_COUNT (sizeof(syscall_table) / sizeof(syscall_fn))
 #define MAX_SYSCALL_FDS 16
@@ -46,6 +46,9 @@ static char*    stdin_buf_ptr;
 static uint32_t stdin_buf_size;
 static uint32_t stdin_buf_pos;
 static volatile bool stdin_line_done;
+static volatile bool stdin_reading = false;
+
+bool stdin_is_reading(void) { return stdin_reading; }
 
 static void stdin_kb_callback(char key, bool shift, bool meta, unsigned char scancode) {
     if (!key) return;
@@ -65,6 +68,7 @@ static uint32_t stdin_read_line(char* buf, uint32_t size) {
     stdin_buf_size = size;
     stdin_buf_pos = 0;
     stdin_line_done = false;
+    stdin_reading = true;
 
     int id = kb_add_event(stdin_kb_callback);
     // int 0x80 is an interrupt gate, so the CPU cleared IF on entry; without
@@ -76,6 +80,7 @@ static uint32_t stdin_read_line(char* buf, uint32_t size) {
         asm volatile("hlt");
     }
     kb_remove_event(id);
+    stdin_reading = false;
 
     buf[stdin_buf_pos] = '\0';
     return stdin_buf_pos;
@@ -109,8 +114,9 @@ syscall_t sys_close(uint32_t fd, uint32_t, uint32_t, uint32_t, uint32_t) {
 }
 
 syscall_t sys_exit(uint32_t code, uint32_t, uint32_t, uint32_t, uint32_t) {
-    elf_exit((int)code);
-    return 0; // unreachable if a program is actually running
+    (void)code;
+    task_exit();
+    return 0; // unreachable: task_exit() never returns
 }
 
 const syscall_fn syscall_table[] = {

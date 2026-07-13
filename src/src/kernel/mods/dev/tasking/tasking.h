@@ -3,7 +3,7 @@
 #include <stddef.h>
 
 #define MAX_TASKS   32
-#define KSTACK_SIZE 4096
+#define KSTACK_SIZE (32 * 1024)
 
 typedef enum {
     TASK_READY = 0,

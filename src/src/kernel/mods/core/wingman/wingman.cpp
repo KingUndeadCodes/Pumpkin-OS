@@ -1,6 +1,9 @@
 #include "../../dev/chorus/chorus.h"
+#include "../../dev/syscall/syscall.h"
+#include "../../dev/pit/pit.h"
 #include "./suite/explorer/explorer.h"
 #include "./suite/message/message.h"
+#include "./suite/widgetdemo/widgetdemo.h"
 #include "./headers/wingman.h"
 
 static FileManager* fileManager = nullptr;
@@ -9,6 +12,13 @@ static size_t bufferSize = 0;
 // See docs/DOCS.md ("mods/core/wingman/wingman.cpp" section) for outputBuffer/lastButtons.
 static color_t* outputBuffer = nullptr;
 static unsigned char lastButtons = 0;
+// See docs/DOCS.md ("mods/core/wingman/wingman.cpp — window dragging") section.
+#define WINGMAN_DRAG_HANDLE_HEIGHT 30
+#define WINGMAN_DRAG_REDRAW_INTERVAL_MS 33
+static window_ref_t draggingWindow = WINGMAN_INVALID_WINDOW;
+static int dragOffsetX = 0;
+static int dragOffsetY = 0;
+static uint64_t lastDragRedrawMs = 0;
 
 inline void redraw_screen(void) {
     color_t* buffer = wm->screen->getBuffer();
@@ -18,6 +28,8 @@ inline void redraw_screen(void) {
 };
 
 void keyboardFunctionWindowManager(char key, bool shift, bool meta, unsigned char scancode) {
+    // See docs/DOCS.md ("mods/core/wingman/wingman.cpp — stdin exclusivity").
+    if (stdin_is_reading()) return;
     if (wm != nullptr) {
         if (wm->keyboard_handler(key, shift, meta, scancode)) {
             wm->composite();
@@ -39,22 +51,67 @@ void mouseFunctionWindowManager(int x, int y, int dx, int dy, unsigned char butt
             wm->focus(hitRef);
             needsRedraw = true;
         }
+        // See docs/DOCS.md ("mods/core/wingman/wingman.cpp — window dragging") section.
+        if (hitRef != WINGMAN_INVALID_WINDOW) {
+            Window* hitWindow = wm->get(hitRef);
+            if (hitWindow != nullptr && mouse_y - hitWindow->offsetY < WINGMAN_DRAG_HANDLE_HEIGHT) {
+                draggingWindow = hitRef;
+                dragOffsetX = mouse_x - hitWindow->offsetX;
+                dragOffsetY = mouse_y - hitWindow->offsetY;
+            }
+        }
     }
+    const bool wasDragging = (draggingWindow != WINGMAN_INVALID_WINDOW);
+    if (!(buttons & 1)) draggingWindow = WINGMAN_INVALID_WINDOW;
+    // See docs/DOCS.md ("mods/core/wingman/wingman.cpp — window dragging") for
+    // why a drag ending forces a redraw regardless of the throttle below.
+    if (wasDragging && draggingWindow == WINGMAN_INVALID_WINDOW) needsRedraw = true;
+
     // See docs/DOCS.md ("mods/core/wingman/wingman.cpp" section) for the cursor-id reset.
     set_cursor_id(0);
-    const Window* foucsedWindow = wm->focusedWindow;
-    if (foucsedWindow != nullptr) {
-        const int rectX = foucsedWindow->offsetX;
-        const int rectY = foucsedWindow->offsetY;
-        const int width = foucsedWindow->width;
-        const int height = foucsedWindow->height;
-        if (mouse_x >= rectX && mouse_x <= (rectX + width)) {
-            // Check vertical boundaries (assuming screen coordinates where Y goes down)
-            if (mouse_y >= rectY && mouse_y <= (rectY + height)) {
-                const int _x = mouse_x - rectX;
-                const int _y = mouse_y - rectY;
-                if (foucsedWindow->handleMouse(_x, _y, dx, dy, buttons, pressedEdge)) {
+    if (draggingWindow != WINGMAN_INVALID_WINDOW) {
+        Window* dragged = wm->get(draggingWindow);
+        if (dragged != nullptr) {
+            int newX = mouse_x - dragOffsetX;
+            int newY = mouse_y - dragOffsetY;
+            // See docs/DOCS.md ("mods/core/wingman/wingman.cpp — window
+            // dragging") for why this clamps to keep the whole window rect
+            // on screen, not just the point under the cursor.
+            int maxX = wm->screen->getWidth() - dragged->width;
+            int maxY = wm->screen->getHeight() - dragged->height;
+            if (maxX < 0) maxX = 0;
+            if (maxY < 0) maxY = 0;
+            if (newX < 0) newX = 0;
+            if (newX > maxX) newX = maxX;
+            if (newY < 0) newY = 0;
+            if (newY > maxY) newY = maxY;
+            if (newX != dragged->offsetX || newY != dragged->offsetY) {
+                dragged->offsetX = newX;
+                dragged->offsetY = newY;
+                // See docs/DOCS.md ("mods/core/wingman/wingman.cpp — window
+                // dragging") for why the redraw itself is throttled here.
+                uint64_t now = timer_ticks;
+                if (now - lastDragRedrawMs >= WINGMAN_DRAG_REDRAW_INTERVAL_MS) {
+                    lastDragRedrawMs = now;
                     needsRedraw = true;
+                }
+            }
+        }
+    } else {
+        const Window* foucsedWindow = wm->focusedWindow;
+        if (foucsedWindow != nullptr) {
+            const int rectX = foucsedWindow->offsetX;
+            const int rectY = foucsedWindow->offsetY;
+            const int width = foucsedWindow->width;
+            const int height = foucsedWindow->height;
+            if (mouse_x >= rectX && mouse_x <= (rectX + width)) {
+                // Check vertical boundaries (assuming screen coordinates where Y goes down)
+                if (mouse_y >= rectY && mouse_y <= (rectY + height)) {
+                    const int _x = mouse_x - rectX;
+                    const int _y = mouse_y - rectY;
+                    if (foucsedWindow->handleMouse(_x, _y, dx, dy, buttons, pressedEdge)) {
+                        needsRedraw = true;
+                    }
                 }
             }
         }
@@ -62,8 +119,8 @@ void mouseFunctionWindowManager(int x, int y, int dx, int dy, unsigned char butt
     // See docs/DOCS.md ("mods/core/wingman/wingman.cpp" section) for this split.
     if (needsRedraw) {
         wm->composite();
-        // handleMouse() may have just blocked for a while (e.g. elf_run()
-        // running a program to completion), during which the real mouse
+        // handleMouse() may have just blocked for a while (e.g. the MP3
+        // playback branch in explorer.cpp), during which the real mouse
         // kept moving -- re-read its current position rather than reusing
         // x/y, which are still whatever they were when this event started.
         update_mouse_position(mouse_get_x(), mouse_get_y());
@@ -85,6 +142,7 @@ void initalizeWindowSystem(void) {
         chorus_initalize();
     });
     messageBox->addButton("Ignore", rgb(255, 0, 0));
+    new WidgetDemo(wm);
     kb_add_event(keyboardFunctionWindowManager);
     mouse_add_event(mouseFunctionWindowManager);
     set_cursor_id(0);

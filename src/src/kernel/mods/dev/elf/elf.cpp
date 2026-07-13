@@ -1,7 +1,7 @@
 #include "elf.h"
 #include <stdint.h>
 #include <stdarg.h>
-#include "../context/setjmp.h"
+#include "../tasking/tasking.h"
 #include "../serial/serial.h"
 
 // This needs to be worked on.
@@ -415,42 +415,28 @@ void* elf_load_file(void* b, size_t buffer_size) {
     return NULL;
 };
 
-static jmp_buf elf_exit_env;
-static int elf_exit_code;
-static bool elf_running = false;
+#define ELF_TASK_STACK_SIZE (64 * 1024)
 
-/* Called by sys_exit to terminate the currently running loaded program.
- * There's no separate process context to unwind here (ring 0, shared
- * stack), so we longjmp back to the setjmp captured in elf_run(). This skips
- * syscall_handler's iretd, which is what would normally restore EFLAGS/IF
- * from the int 0x80 interrupt gate clearing it on entry — without an
- * explicit sti here, interrupts would stay disabled system-wide forever. */
-void elf_exit(int code) {
-    if (!elf_running) return;
-    elf_exit_code = code;
-    asm volatile("sti");
-    longjmp(elf_exit_env, 1);
+// See docs/DOCS.md ("mods/dev/elf/elf.cpp — elf_spawn()") for why this
+// doesn't need to call task_exit() itself.
+static void elf_task_trampoline(void* entry_point) {
+    ((void (*)(void))entry_point)();
 }
 
-int elf_run(void *entry_point) {
-    if (!entry_point) return -1;
-    // elf_exit_env is a single shared buffer; a second, re-entrant elf_run()
-    // call (e.g. clicking a .elf again while one is still blocked on stdin)
-    // would clobber the first one's saved jump target and corrupt its
-    // eventual sys_exit longjmp. Refuse to nest.
-    if (elf_running) {
-        printf_serial(false, FAIL, "%s", "ELF: a program is already running.\n");
-        return -1;
+task_t* elf_spawn(void *entry_point) {
+    if (!entry_point) return NULL;
+    void* stack = malloc(ELF_TASK_STACK_SIZE);
+    if (!stack) {
+        printf_serial(false, FAIL, "%s", "ELF: failed to allocate task stack.\n");
+        return NULL;
     }
-
-    elf_running = true;
-    if (setjmp(elf_exit_env) == 0) {
-        ((void (*)(void))entry_point)();
-        elf_exit_code = 0; // fell off the end without an exit syscall
+    task_t* t = task_create(elf_task_trampoline, entry_point, stack);
+    if (!t) {
+        free(stack);
+        printf_serial(false, FAIL, "%s", "ELF: failed to create task.\n");
+        return NULL;
     }
-    elf_running = false;
-
-    return elf_exit_code;
+    return t;
 }
 
 /*

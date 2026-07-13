@@ -283,6 +283,37 @@ bool FileManager::onMouseEvent(int x, int y, int dx, int dy, unsigned char butto
     return false;
 };
 
+// See docs/DOCS.md ("mods/core/wingman/suite/explorer/explorer.cpp —
+// running-ELF tracking") for why this lives here instead of in elf.cpp.
+#define MAX_TRACKED_ELF_TASKS 16
+struct RunningElfEntry {
+    char filename[VFS_MAX_NAME];
+    task_t* task;
+};
+static RunningElfEntry runningElfTasks[MAX_TRACKED_ELF_TASKS] = {};
+
+static bool isElfAlreadyRunning(const char* filename) {
+    for (int i = 0; i < MAX_TRACKED_ELF_TASKS; i++) {
+        if (!runningElfTasks[i].task) continue;
+        if (strcmp(runningElfTasks[i].filename, filename) != 0) continue;
+        if (runningElfTasks[i].task->state != TASK_DEAD) return true;
+        runningElfTasks[i].task = NULL; // stale entry, reclaim the slot
+    }
+    return false;
+}
+
+static void trackElfTask(const char* filename, task_t* task) {
+    for (int i = 0; i < MAX_TRACKED_ELF_TASKS; i++) {
+        if (runningElfTasks[i].task && runningElfTasks[i].task->state != TASK_DEAD) continue;
+        strncpy(runningElfTasks[i].filename, filename, VFS_MAX_NAME - 1);
+        runningElfTasks[i].filename[VFS_MAX_NAME - 1] = '\0';
+        runningElfTasks[i].task = task;
+        return;
+    }
+    // No free slot to track it in -- worst case this specific launch just
+    // won't be guarded against a concurrent re-launch, nothing crashes.
+}
+
 bool FileManager::fileClick(bool* redrawNeeded, uint8_t* redraw_description) {
     const char* selection = files[this->currentSelection].filename;
     if (files[this->currentSelection].type == VFS_NODE_DIR) {
@@ -414,6 +445,10 @@ bool FileManager::fileClick(bool* redrawNeeded, uint8_t* redraw_description) {
         } else if (EndsWith(files[this->currentSelection].filename, ".elf") == 1) {
             openPath:
                 const char* fname = files[this->currentSelection].filename;
+                if (isElfAlreadyRunning(fname)) {
+                    serial_write_string("ELF: already running, ignoring launch request.\n", false, FAIL);
+                    return false;
+                }
                 size_t len = strlen(fname);
                 char* path = (char*)malloc(len + 2);
                 if (!path) {
@@ -436,11 +471,15 @@ bool FileManager::fileClick(bool* redrawNeeded, uint8_t* redraw_description) {
             fclose(file);
             void* entry = elf_load_file(buffer, buffer_len);
             if (entry) {
-                elf_run(entry);
+                // See docs/DOCS.md ("mods/dev/elf/elf.cpp — elf_spawn()")
+                // for why buffer is intentionally NOT freed here on success.
+                task_t* task = elf_spawn(entry);
+                if (task) trackElfTask(fname, task);
+                else free(buffer);
             } else {
                 serial_write_string("Failed to load ELF (no entry point)\n", false, FAIL);
+                free(buffer);
             }
-            free(buffer);
         }
     }
     return true; // success

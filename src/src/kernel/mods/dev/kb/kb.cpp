@@ -9,7 +9,14 @@ bool meta_mode = false;
 static GlobalCallbackEntry global_callbacks[MAX_CALLBACKS] = {0};
 static int next_global_id = 1;
 
+// See docs/DOCS.md ("mods/dev/kb/kb.cpp — kb_add_event() dedup") for why
+// this checks for an existing registration first.
 int kb_add_event(GlobalKbCallback callback) {
+	for (int i = 0; i < MAX_CALLBACKS; i++) {
+		if (global_callbacks[i].callback == callback) {
+			return global_callbacks[i].id;
+		}
+	}
 	for (int i = 0; i < MAX_CALLBACKS; i++) {
 		if (global_callbacks[i].callback == NULL) {
 			global_callbacks[i].callback = callback;

@@ -14,7 +14,6 @@ section .text
 %include "mods/dev/paging/paging.asm"
 %include "mods/dev/tasking/tasking.asm"
 %include "mods/dev/syscall/syscall.asm"
-%include "mods/dev/context/setjmp.asm"
 
 section .data
 section .rodata		    ; read only data

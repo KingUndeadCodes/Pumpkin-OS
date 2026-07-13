@@ -5,17 +5,6 @@
 #define COLOR_TITLEBAR 0xFF2d2928
 #define COLOR_DIVIDER 0xFF55504f
 
-// See docs/DOCS.md ("mods/core/wingman/suite/message/message.h / message.cpp" section).
-static inline uint32_t shade(uint32_t color, int delta) {
-    int r = (int)COLOR_R(color) + delta;
-    int g = (int)COLOR_G(color) + delta;
-    int b = (int)COLOR_B(color) + delta;
-    if (r < 0) r = 0; if (r > 255) r = 255;
-    if (g < 0) g = 0; if (g > 255) g = 255;
-    if (b < 0) b = 0; if (b > 255) b = 255;
-    return rgb((uint8_t)r, (uint8_t)g, (uint8_t)b);
-}
-
 void MessageBox::utility_draw_pixel(unsigned x, unsigned y, unsigned color) {
     this->window->surface->putPixelUnsafe(x, y, color);
 };
@@ -198,7 +187,6 @@ void MessageBox::draw_body(void) {
 };
 
 void MessageBox::draw_buttons(void) {
-    constexpr uint32_t scale = 2;
     // See docs/DOCS.md ("mods/core/wingman/suite/message/message.h / message.cpp" section).
     for (int y = 0; y < this->buttonRowHeight; y++) {
         for (int x = 0; x < this->buttonRowWidth; x++) {
@@ -211,36 +199,7 @@ void MessageBox::draw_buttons(void) {
         utility_draw_pixel(x, dividerY, COLOR_DIVIDER);
     }
     for (int b = 0; b < this->buttonCount; b++) {
-        Button* button = this->buttons[b];
-        int bx = button->x, by = button->y, bw = button->width, bh = button->height;
-        uint32_t highlight = shade(button->color, 35);
-        uint32_t shadow = shade(button->color, -35);
-        // Fill, leaving room for the outer border.
-        for (int y = thickness; y < bh - thickness; y++) {
-            for (int x = thickness; x < bw - thickness; x++) utility_draw_pixel(bx + x, by + y, button->color);
-        }
-        // Outer border, matching the window's own.
-        for (int t = 0; t < thickness; t++) {
-            for (int x = 0; x < bw; x++) utility_draw_pixel(bx + x, by + t, COLOR_W);
-            for (int x = 0; x < bw; x++) utility_draw_pixel(bx + x, by + bh - 1 - t, COLOR_W);
-            for (int y = 0; y < bh; y++) utility_draw_pixel(bx + t, by + y, COLOR_W);
-            for (int y = 0; y < bh; y++) utility_draw_pixel(bx + bw - 1 - t, by + y, COLOR_W);
-        }
-        // Inner bevel (lighter top/left, darker bottom/right) for a raised look.
-        for (int x = thickness; x < bw - thickness; x++) utility_draw_pixel(bx + x, by + thickness, highlight);
-        for (int x = thickness; x < bw - thickness; x++) utility_draw_pixel(bx + x, by + bh - thickness - 1, shadow);
-        for (int y = thickness; y < bh - thickness; y++) utility_draw_pixel(bx + thickness, by + y, highlight);
-        for (int y = thickness; y < bh - thickness; y++) utility_draw_pixel(bx + bw - thickness - 1, by + y, shadow);
-        // Label, centered.
-        int labelLen = strlen(button->message);
-        int charWidth = 8 * scale;
-        int charHeight = 8 * scale;
-        int textWidth = labelLen * charWidth;
-        int textX = bx + (bw - textWidth) / 2;
-        int textY = by + (bh - charHeight) / 2;
-        for (int i = 0; i < labelLen; i++) {
-            utility_draw_char(textX + i * charWidth, textY, button->message[i], COLOR_W, scale);
-        }
+        this->buttons[b]->draw(this->window->surface, this->thickness);
     }
 };
 
@@ -273,10 +232,8 @@ bool MessageBox::onMouseEvent(int x, int y, int dx, int dy, unsigned char button
     (void)buttons;
     Button* hovered = NULL;
     for (int i = 0; i < this->buttonCount; i++) {
-        Button* button = this->buttons[i];
-        if (x >= button->x && x < button->x + button->width &&
-            y >= button->y && y < button->y + button->height) {
-            hovered = button;
+        if (this->buttons[i]->contains(x, y)) {
+            hovered = this->buttons[i];
             break;
         }
     }

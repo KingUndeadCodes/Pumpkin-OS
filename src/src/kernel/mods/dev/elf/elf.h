@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include "../tasking/tasking.h"
 
 #define EI_NIDENT 16
 
@@ -162,7 +163,6 @@ static int elf_do_reloc(Elf32_Ehdr *hdr, Elf32_Rel *rel, Elf32_Shdr *reltab);
 */
 
 void* elf_load_file(void* b, size_t buffer_size);
-int elf_run(void *entry_point);
-void elf_exit(int code);
+task_t* elf_spawn(void *entry_point);
 
 #endif

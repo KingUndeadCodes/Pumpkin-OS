@@ -123,20 +123,28 @@ serial_write_string(message); }`-style wrapper for `serialDevice` to
 point at instead, matching the pattern that already works for
 `terminal_write`.
 
+### 12. Add a way to move windows around the screen — DONE
+
+`mods/core/wingman/wingman.cpp` (`mouseFunctionWindowManager`) — a
+press-edge landing in the top 30px of a window (`WINGMAN_DRAG_HANDLE_HEIGHT`)
+starts a drag; `offsetX`/`offsetY` update every packet while the button
+stays held, and content dispatch (`handleMouse()`) is skipped entirely
+during a drag so it can't also register as a click underneath. Works
+generically for every window type (implemented at the WindowManager
+dispatch level, not per-widget) since neither `MessageBox` nor
+`FileManager` draws anything interactive that high up today.
+
 ---
 
 ## Priority 2 — Before tasking (Proposal 1) can be turned on
 
 Real multitasking is proposed in `agile-napping-stallman.md` (each ELF run
-becomes its own preemptible task) but is deliberately **not being
-implemented yet** — the plan is approved in concept, but the goal right
-now is to keep expanding the feature/fix backlog first. Don't start on any
-of this without an explicit go-ahead.
+becomes its own preemptible task). Given an explicit go-ahead (2026-07-08),
+Phase 1 and Phase 2 are now done — see "Full tasking proposal" further
+down for the whole plan; Phase 3 (blocking syscalls block the task, not
+the CPU) hasn't been started.
 
-All Phase 0 hardening items below are done. Tasking (Proposal 1) still
-hasn't been turned on though — see the full proposal further down for
-what Phase 1 onward actually involves; nothing past Phase 0 has been
-started.
+All Phase 0 hardening items below are done.
 
 - [x] `enter_critical()`/`exit_critical()` primitive — implemented in
       `mods/dev/port.cpp`: saves `EFLAGS.IF` (`pushf`) then `cli`; restore
@@ -190,7 +198,13 @@ started.
   window-manager focus, which doesn't have a solid "this window owns this
   task's console" concept yet (see "Recently completed" → "Finish wiring
   up MessageBox" for the single-focus/z-order work already done — related,
-  but this is the multi-task version of that problem).
+  but this is the multi-task version of that problem). A narrow slice of
+  this got a stopgap fix (see "Recently completed" → "Stop the Wingman
+  GUI from also reacting to keystrokes meant for a blocking stdin read"):
+  the GUI now just stops processing keyboard input entirely while any one
+  program is mid-`sys_read`, rather than real per-task focus routing.
+  Multiple concurrently-stdin-blocked tasks would still have no way to
+  route keys to the right one specifically — that's still this item.
 - Moving mouse/keyboard IRQ work out of interrupt context (the cursor
   tearing problem) — real task-blocking gives us the primitive to do this
   properly later, but it's a separate change.
@@ -200,6 +214,40 @@ started.
 ---
 
 ## Miscellaneous — parked, revisit later
+
+### Characters repeat when typing into a running ELF program
+
+Reported behavior (2026-07-08): run an ELF program (e.g. `main.asm` at
+the project root, which prints a prompt, reads a line via `sys_read`,
+then echoes it back) and typed characters arrive doubled — typing
+"hello" produces something like "hheellllooo" in the echoed output. The
+program's own printed text isn't duplicated, only what was typed.
+
+Investigated at length (interrupt/task-switch mechanics in `idt.asm`,
+`tasking.asm`, `syscall.asm`) without finding a confirmed root cause —
+the nested-interrupt stack unwinding for a blocking syscall preempted by
+the timer looks self-contained/symmetric on inspection. The leading
+suspect, fixed as of this entry: `kb_add_event()` (`mods/dev/kb/kb.cpp`)
+had no deduplication for an already-registered callback function
+pointer (unlike `irq_install_handler()` elsewhere in this codebase,
+which explicitly guards against this). `stdin_read_line()`
+(`mods/dev/syscall/syscall.cpp`) registers `stdin_kb_callback` once per
+blocking read; if that registration were ever duplicated, every keystroke
+would get appended to the shared stdin buffer twice via
+`kb_run_events()` invoking both entries. See `docs/DOCS.md` for the fix.
+
+Also found and fixed while investigating (likely harmless, but a real
+bug): `syscall.asm`'s `syscall_handler` pushes `gs,fs,es,ds` but pops
+them shifted by one position (`pop es; pop fs; pop gs; add esp,4`),
+leaving `ds` never explicitly restored. Stack depth still balances
+correctly (so `iret` lands at the right EIP), and in this ring-0-only
+flat-memory-model kernel all segments are likely `0x10` everywhere
+anyway, so this probably isn't visibly harmful — not fixed in this pass,
+noted for follow-up.
+
+**Not confirmed via boot-testing** — the dedup fix is the most concrete,
+low-risk lead found, not a proven fix. Needs testing: does typing into a
+running ELF program still double characters after this fix?
 
 ### Cursor jumps back to its pre-launch position when an ELF program exits
 
@@ -229,6 +277,33 @@ bitmap, VFS/ramfs bookkeeping) is further along, since any real fix here
 likely involves interrupts being safely live during a program's run
 anyway.
 
+**Update (2026-07-08):** Phase 2 of the tasking proposal replaced
+`elf_run()` with non-blocking `elf_spawn()` — the mouse IRQ handler chain
+that used to call `elf_run()` and block for the program's whole lifetime
+now just spawns a task and returns almost immediately. That was the root
+cause described above, so this bug may simply be gone as a side effect,
+not a targeted fix. Not confirmed — worth re-testing specifically rather
+than assuming it's resolved.
+
+### True font rendering
+
+All on-screen text (Wingman widgets, `Terminal`, the panic screen) goes
+through the same fixed 8x8 bitmap `Font[]` array, scaled up by an integer
+factor (`utility_draw_char`/`drawChar`/`VBEScreen::draw_char`) — blocky,
+no anti-aliasing, no variable glyph widths, no real typography.
+
+Already attempted once this session and reverted: a real `stb_truetype`
+port (`mods/ports/stb_truetype` at the time) was wired into
+`utility_draw_char`, but ran into a page-fault chased down to a real bug
+(unsigned wraparound on negative TTF `xoff`/`yoff`) and then, after that
+fix, still wouldn't boot cleanly in this specific sandbox — determined to
+be a QEMU/bootloader-invocation quirk of the environment, not a kernel
+bug, but not something provable without a real boot outside the sandbox.
+Reverted in full rather than leave a half-verified font pipeline in.
+
+Worth another look with real hardware/QEMU access to verify against
+directly, rather than relying on the sandbox's limited boot-testing.
+
 ### Full-codebase performance/architecture audit (2026-07-07)
 
 A 3-way parallel audit (boot/memory/interrupts, drivers/networking,
@@ -256,6 +331,11 @@ ramfs/scheduler-lock work — just in places that pass didn't cover:
   arrays are mutated by `kb_add_event`/`kb_remove_event` from mainline
   while iterated from IRQ context with no guard; `kb_remove_event`
   clearing `.callback`/`.id` non-atomically mid-iteration is a real race.
+  (`kb_add_event()`'s separate dedup gap — no check for an already-
+  registered callback, unlike `irq_install_handler()` — is now fixed;
+  see Miscellaneous, "Characters repeat when typing into a running ELF
+  program". `mouse_add_event()` still has the identical dedup gap,
+  not yet fixed.)
 - `mods/dev/pci/drivers/rtl8139.cpp` (`NICDevice` fields) and
   `mods/dev/net/arp.cpp` (`arp_table`) — mainline TX vs. IRQ-driven
   RX/ARP-handling race, structurally identical to the AC97 one.
@@ -357,6 +437,69 @@ it's revisited.
 ---
 
 ## Recently completed
+
+### Fix `TextInput` text overflowing its own bounds instead of scrolling
+
+Reported behavior (2026-07-08, confirmed via screenshot in the widget
+demo): typed text ran straight off `TextInput`'s right edge into
+whatever was next to it once it got longer than the field, instead of
+scrolling to keep up with typing like a real text field. Root cause:
+`TextInput::draw()` (`mods/core/wingman/widgets/textinput.cpp`) drew
+every character in `buffer` starting at a fixed `x` with no bound on how
+far right that could go. Fixed by showing a trailing window of the
+buffer instead of the whole thing — `maxVisibleChars` is however many
+characters actually fit in the text area, and once the buffer exceeds
+that, the visible window slides forward to keep the last
+`maxVisibleChars` characters (and the caret, always at the logical end
+per `TextInput`'s existing no-mid-editing simplification) in view. Also
+fixed the caret's position to use the trailing window's length rather
+than the buffer's full length, which would've placed it past the
+widget's edge the moment scrolling kicked in.
+
+### Stop the Wingman GUI from also reacting to keystrokes meant for a blocking stdin read
+
+Reported behavior: pressing Enter to submit typed input to a running ELF
+program (e.g. `main.asm` at the project root) also triggered the file
+explorer to advance its selection and open/play whatever file it landed
+on. Root cause: `kb_run_events()` (`mods/dev/kb/kb.cpp`) broadcasts every
+keystroke to every registered callback unconditionally — `stdin_kb_callback`
+(`mods/dev/syscall/syscall.cpp`, feeding the blocked `sys_read`) and
+`keyboardFunctionWindowManager` (`mods/core/wingman/wingman.cpp`, routing
+into the focused Wingman window, i.e. `FileManager::onKeyboard()`) both
+receive the same keys at the same time, with no concept of exclusive
+focus. `'s'`/`'w'` move the explorer's selection and `'\n'` activates
+whatever's selected — so typing into a program could silently drift the
+explorer's selection and then open something else entirely on Enter.
+
+Fixed narrowly (real per-task focus routing is a bigger, still-open
+design question — see Priority 3's "Keyboard focus routing" item):
+`stdin_read_line()` now sets a `stdin_reading` flag for the duration of
+its blocking wait, exposed via `stdin_is_reading()`.
+`keyboardFunctionWindowManager()` checks it first and returns immediately
+if set, so the whole Wingman GUI stops processing keyboard input while
+any program is mid-read — matching the existing `suppressCharacterOutput`
+pattern already used in the boot terminal for the same class of problem.
+See `docs/DOCS.md` for more.
+
+**Not confirmed via boot-testing.**
+
+### Forbid re-launching an already-running ELF file
+
+`mods/core/wingman/suite/explorer/explorer.cpp` — Phase 2 of the tasking
+proposal retired the kernel-side `elf_running` guard (running multiple
+*different* programs concurrently is now intended), which left nothing
+stopping the same `.elf` file from being launched twice (e.g. a fast
+double-click) while a prior instance was still alive — two instances
+would share global stdin state (`stdin_buf_ptr` etc. in `syscall.cpp`)
+and collide. Fixed at the explorer level, not in the kernel:
+`elf_spawn()` (`mods/dev/elf/elf.cpp`) now returns the `task_t*` handle
+from `task_create()` instead of a bare success/fail `int`, and
+`explorer.cpp` keeps a small fixed-size `{filename, task_t*}` table
+(`runningElfTasks[]`) to check `task->state` before allowing a re-launch
+of the same filename. Relies on task_t slots never being reused while
+referenced here — currently true only because no task reaper exists yet
+(see Phase 2's "known, deliberately deferred" note below); will need
+revisiting once one does.
 
 ### Finish wiring up MessageBox
 
@@ -514,56 +657,75 @@ primitive (e.g. `enter_critical()`/`exit_critical()`) and apply it at the
 handful of call sites above before Phase 1 spawns more than one task that
 does real work (allocates, touches a file, or touches AC97 state).
 
-##### Phase 1 — Turn on the existing scheduler (no ELF changes yet)
+##### Phase 1 — Turn on the existing scheduler (no ELF changes yet) — DONE (2026-07-08)
 
-- Call `tasking_init()` early in `kernel_main`, so the boot context becomes
-  `g_current` (pid 0) from the start.
-- Raise `KSTACK_SIZE` (`tasking.h`) from 4KB to something more comfortable —
-  32KB or so. We've confirmed there's 500KB+ of free, identity-mapped space
-  below the boot stack and nothing else contends for it; 4KB is needlessly
-  tight for anything that calls into `syscall_dispatch`/VFS/keyboard-event
-  chains.
-- Give the kernel a real idle task (`for(;;) hlt;`) instead of letting
-  `kernel_main` fall off the end after `tasks()` — this is the same "the
-  kernel needs an actual idle/main loop" gap that came up in the cursor
-  discussion; multitasking is what finally provides it.
-- Spawn two or three throwaway test tasks (the existing commented-out
-  `task1`/`task2` fibonacci demo is perfect for this) purely to confirm
-  round-robin preemption actually works via interleaved serial output,
-  before wiring anything real into it.
-- ~~Optional: implement `pit_init(hz)`~~ — **done**, via Proposal 2.
-  `pit_init(1000)` is already called in `kernel_main` (`p-kernel.cpp:274`,
-  right before `sti`), so preemption already ticks at 1000Hz (1ms
-  resolution) once tasking is turned on — no further work needed here.
-- Confirmed still accurate as of 2026-07-02: `tasking_init()` is still
-  fully commented out (`p-kernel.cpp:253`, inside the dead `tasks()` block
-  with the stale page-fault comment at line 254); `KSTACK_SIZE` is still
-  4096 (`tasking.h:6`); `task_t` still has no `TASK_BLOCKED` state or
-  `stack_base` field (Phase 2/3 still need to add both). One new fact:
-  `scheduler_on_tick()` is *already* wired to fire on every IRQ0
-  (`irq.cpp:144`) even today — it's a harmless no-op only because
-  `tasking_init()` never runs, so `g_current` never changes. Turning on
-  real tasking is strictly "call `tasking_init()` + spawn tasks," not
-  "wire up the timer," which is already done.
+- [x] `tasking_init()` is called early in `kernel_main` (right after the
+      interrupts-enabled check), so `g_current` becomes pid 0 from the
+      start. Safe specifically because an empty runqueue makes
+      `scheduler_on_tick()` a no-op every tick until real tasks exist —
+      see `docs/DOCS.md` ("p-kernel.cpp — tasking_init() placement") for
+      the full reasoning.
+- [x] `KSTACK_SIZE` (`tasking.h`) raised from 4KB to 32KB.
+- [x] `task0` (idle, `for(;;) hlt;`) is spawned first, so there's always
+      something `TASK_READY` once the fibonacci tasks finish.
+- [x] `task1`/`task2` (the fibonacci demo) uncommented and spawned via
+      `task_create()`, all three at the very end of `kernel_main` (after
+      every other boot step) — spawning any earlier would abandon the
+      rest of boot the moment the first tick switches away, since the
+      bootstrap task_t is never pushed onto the runqueue and has no path
+      back into `pick_next()`'s rotation once execution leaves it.
+- [x] `pit_init(1000)` already existed (Proposal 2) — no further work
+      needed.
+- Not yet found while doing this: `task_t` still has no `TASK_BLOCKED`
+  state or `stack_base` field (Phase 2/3 still need to add both).
+- Not boot-tested end-to-end in this environment (sandbox QEMU
+  limitation, same as the fault-handler work) — verify by booting and
+  checking the serial log for interleaved `[1] fibbanoci(...)` /
+  `[2] fibbanoci(...)` lines. The naive recursive `fibbanoci(39)` is
+  genuinely expensive (hundreds of millions of calls), so this runs for a
+  while rather than finishing instantly — that's fine, the interleaving
+  pattern should be visible well before either task completes.
 
-##### Phase 2 — ELF runs become tasks, not blocking calls
+##### Phase 2 — ELF runs become tasks, not blocking calls — DONE (2026-07-08)
 
-- Replace `elf_run()`'s blocking model with `elf_spawn(void* entry_point)`:
-  `malloc()` a dedicated stack (generous size, e.g. 64KB — real programs may
-  need more headroom than a kernel helper), call
-  `task_create(elf_task_trampoline, entry_point, stack)`, return immediately.
-  The file-explorer click handler (and `procTestOne`) just spawn and move on
-  — no more blocking the caller at all, which is what makes this "seamless"
-  instead of "eventually gets un-frozen."
-- `elf_task_trampoline(void* entry_point)` calls the entry point directly;
-  on return, calls `task_exit()`. **This removes the `setjmp`/`longjmp`
-  machinery in `elf.cpp` entirely** — since each run now has its own real
-  stack, `sys_exit` can just call `task_exit()` directly instead of
-  longjmping across a shared buffer. That also retires the re-entrancy guard
-  I added last turn (`elf_running`) — running two instances concurrently
-  becomes the *intended* behavior, not a hazard to block.
-- `elf_load_file()` (parsing + relocation) stays synchronous in the calling
-  context — it's fast and does no I/O waits, no reason to defer it.
+- [x] `elf_run()` replaced by `elf_spawn(void* entry_point)`: mallocs a
+      64KB task stack, calls `task_create(elf_task_trampoline,
+      entry_point, stack)`, returns immediately. `explorer.cpp`'s `.elf`
+      handler and `p-kernel.cpp`'s `test_elf_execution()` both updated to
+      call it instead of blocking.
+- [x] `elf_task_trampoline(void* entry_point)` just casts and calls the
+      real entry point — it doesn't need to call `task_exit()` itself,
+      since `task_create()`'s ASM trampoline already does that
+      unconditionally whenever the entry function it invoked returns
+      (see `docs/DOCS.md`). `setjmp`/`longjmp` machinery removed from
+      `elf.cpp` entirely, `sys_exit` now calls `task_exit()` directly,
+      and the `elf_running` re-entrancy guard is retired — running two
+      ELF instances concurrently is now the intended behavior. The now
+      fully-unused `mods/dev/context/setjmp.h`/`setjmp.asm` were deleted
+      (confirmed unreferenced elsewhere first), which also meant removing
+      the `%include` for them in `Kernel-Entry.asm`.
+- [x] `elf_load_file()` (parsing + relocation) stays synchronous in the
+      calling context, as planned.
+- **Found and fixed along the way, not in the original plan**: making
+  spawn non-blocking exposed a real use-after-free. `elf_load_file()`
+  relocates sections **in place** inside the caller's file buffer, not
+  into a copy — under the old blocking `elf_run()` that was safe (the
+  caller's `free(buffer)` only ran after the program had already
+  finished executing), but under non-blocking `elf_spawn()` the same
+  `free(buffer)` would run before the task even starts, and the next
+  timer tick would jump into freed memory. Fixed by only freeing the
+  buffer on the failure paths (load/spawn failed); on a successful spawn
+  it's intentionally leaked for now (see `docs/DOCS.md`) — same category
+  as the task-stack/task_t-slot leak below, not yet solved by a reaper.
+- **Known, deliberately deferred**: neither the malloc'd task stack nor
+  the task_t slot (`g_tasks[MAX_TASKS]`, `MAX_TASKS = 32`) is ever
+  reclaimed when a spawned ELF task exits — there's no reaper yet. In
+  the worst case this means only 32 ELF programs can ever be run for the
+  lifetime of one boot before the task table is exhausted, plus a
+  64KB+file-size leak per run. The proposal's own "Files touched" section
+  already flagged a `stack_base` field + reaper as a needed follow-up;
+  this wasn't built now since it's genuinely separate from "make
+  elf_run non-blocking," not a small addition.
 
 ##### Phase 3 — Blocking syscalls block the task, not the CPU
 

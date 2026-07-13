@@ -143,16 +143,14 @@ static void test_elf_execution(read_file load_floppy) {
     memcpy(floppyBuffer, lowmem_elf, lengthElfBuffer);
     void* entry = elf_load_file(floppyBuffer, lengthElfBuffer);
     if (entry) {
-        serial_write_string("Running MAIN.ELF...\n", false, NONE);
-        int rc = elf_run(entry);
-        char* rc_buf = (char*)malloc(64);
-        sprintf(rc_buf, "MAIN.ELF exited with code %d\n", rc);
-        serial_write_string(rc_buf, false, NONE);
-        free(rc_buf);
+        serial_write_string("Spawning MAIN.ELF...\n", false, NONE);
+        // See docs/DOCS.md ("mods/dev/elf/elf.cpp — elf_spawn()") for why
+        // floppyBuffer is intentionally NOT freed here on success.
+        if (!elf_spawn(entry)) free(floppyBuffer);
     } else {
         serial_write_string("Failed to load MAIN.ELF (no entry point)\n", false, FAIL);
+        free(floppyBuffer);
     }
-    free(floppyBuffer);
 }
 
 static void procMan() {
@@ -198,91 +196,9 @@ static void test_udp_echo() {
     UserDatagramProtocol::listen(7, udpEchoHandler);
 }
 
-/*
-// See docs/DOCS.md ("p-kernel.cpp — test_fault_handler()" section).
-static void test_fault_handler(void) {
-    serial_write_string("=== test_fault_handler: triggering breakpoint (expect: continues) ===\n", false, NONE);
-    asm volatile("int3");
-    serial_write_string("=== test_fault_handler: breakpoint recovered, execution continued ===\n", false, NONE);
-    serial_write_string("=== test_fault_handler: triggering page fault (expect: panic screen) ===\n", false, NONE);
-    volatile int* bad_ptr = (volatile int*)0xDEADB000; // well past the 0x0-0x800000 identity-mapped range
-    *bad_ptr = 0xDEADBEEF;
-    serial_write_string("=== test_fault_handler: this line should never be reached ===\n", false, NONE);
-}
-*/
+// Phase 1 (docs/TODO.md's tasking proposal): prove the existing
+// round-robin scheduler actually interleaves, via serial log.
 
-static void test_tasking() {
-    /*
-    Theory:
-        Logging::log does not work because of terminal being deleted.
-        We need to add code that would allow for the deletion of a device.
-    */
-    /*
-    tasking_init();
-    Logging::log("Tasking Enabled!"); // This doesn't work for some reason, it causes a page fault.
-    static uint8_t stack0[KSTACK_SIZE] __attribute__((aligned(16)));
-    static uint8_t stack1[KSTACK_SIZE] __attribute__((aligned(16)));
-    static uint8_t stack2[KSTACK_SIZE] __attribute__((aligned(16)));
-    task_t *t0 = task_create(task0, NULL, stack0);
-    task_t *t1 = task_create(task1, NULL, stack1);
-    task_t *t2 = task_create(task2, NULL, stack2);
-    serial_write_string("Tasks Reached\n");
-    timer_wait(18);
-    serial_write_string("hello\n", false, NONE);
-    */
-    // syscall(0, "loq.txt", 3, 4, 5, 6);
-}
-
-extern "C" void kernel_main(read_file load_floppy) {
-    queryMemoryMap();
-    PagingInstall();
-    IDTInstall();
-    ISRInstall();
-    IRQInstall();
-    pit_init(1000); // 1000Hz: timer_ticks becomes milliseconds since boot
-    asm volatile ("sti");
-    if (!are_interrupts_enabled()) { serial_write_string("interupt setup failed. system halted!\n", FAIL); abort(); }
-    initialize_memory_pool();
-    vfs_init();
-    vfs_node_t* ramfs_root = ramfs_init();
-    vfs_mount("/", ramfs_root);
-    Logging::capture();
-    Logging::log("Interupts Enabled!\n"); // Interupts should be enabled before any Logging takes place, that's why this is here.
-    Logging::log("Paging Enabled!\n"); // Paging should be enabled before any Logging takes place, that's why this is here.
-    Logging::log("Memory pool initialized!\n"); // Memory pool is actually initalized before this point, because it's required for the VFS and Logging, but paging is initalized first.
-    KeyboardInit();
-    Logging::log("Keyboard Enabled!\n"); // The keyboard does not seem to be working.
-    mouse_install();
-    Logging::log("Mouse Enabled!\n");
-    TimerInit();
-    Logging::log("PIT Enabled!\n");
-    Logging::log("Checking for PCI devices...\n");
-    checkAllBuses();
-    graphics_initalize_stage1();
-    LogDevice terminalDevice = { .log = &terminal_write };
-    LogDevice serialDevice = { .log = &serial_write_string };
-    Logging::addLogDevice(&terminalDevice);
-    Logging::addLogDevice(&serialDevice);
-    Logging::flush();
-    write_serial('\n');
-    graphics_initalize_stage2();
-    // test_fault_handler();
-    test_vfs_file_io(load_floppy);
-    // serial_write_string("Initializing AC97 Audio Codec...\n");
-    // initalize();
-    copyLua();
-    copy_floppy_file_to_ramfs(load_floppy, "TEST.WAV", "test.wav");
-    copy_floppy_file_to_ramfs(load_floppy, "TEST.MP3", "test.mp3");
-    copy_floppy_file_to_ramfs(load_floppy, "MAIN.ELF", "main.elf");
-    // WAV/MP3 playback smoke tests moved to mods/dev/chorus/wav.cpp and
-    // mods/dev/chorus/mp3.cpp as reference comments.
-    // test_elf_execution(load_floppy);
-    test_udp_echo();
-    procMan();
-    // test_tasking();
-}
-
-/*
 long fibbanoci(long n) {
     if (n == 0) return 0;
     if (n == 1) return 1;
@@ -321,4 +237,65 @@ void task2(void *arg) {
     free(string);
     return;
 }
-*/
+
+extern "C" void kernel_main(read_file load_floppy) {
+    queryMemoryMap();
+    PagingInstall();
+    IDTInstall();
+    ISRInstall();
+    IRQInstall();
+    pit_init(1000); // 1000Hz: timer_ticks becomes milliseconds since boot
+    asm volatile ("sti");
+    if (!are_interrupts_enabled()) { serial_write_string("interupt setup failed. system halted!\n", FAIL); abort(); }
+    // See docs/DOCS.md ("p-kernel.cpp — tasking_init() placement") for why
+    // calling this early, before any tasks exist, is safe.
+    tasking_init();
+    initialize_memory_pool();
+    vfs_init();
+    vfs_node_t* ramfs_root = ramfs_init();
+    vfs_mount("/", ramfs_root);
+    Logging::capture();
+    Logging::log("Interupts Enabled!\n"); // Interupts should be enabled before any Logging takes place, that's why this is here.
+    Logging::log("Paging Enabled!\n"); // Paging should be enabled before any Logging takes place, that's why this is here.
+    Logging::log("Memory pool initialized!\n"); // Memory pool is actually initalized before this point, because it's required for the VFS and Logging, but paging is initalized first.
+    KeyboardInit();
+    Logging::log("Keyboard Enabled!\n"); // The keyboard does not seem to be working.
+    mouse_install();
+    Logging::log("Mouse Enabled!\n");
+    TimerInit();
+    Logging::log("PIT Enabled!\n");
+    Logging::log("Checking for PCI devices...\n");
+    checkAllBuses();
+    graphics_initalize_stage1();
+    LogDevice terminalDevice = { .log = &terminal_write };
+    LogDevice serialDevice = { .log = &serial_write_string };
+    Logging::addLogDevice(&terminalDevice);
+    Logging::addLogDevice(&serialDevice);
+    Logging::flush();
+    write_serial('\n');
+    graphics_initalize_stage2();
+    // test_fault_handler();
+    test_vfs_file_io(load_floppy);
+    // serial_write_string("Initializing AC97 Audio Codec...\n");
+    // initalize();
+    copyLua();
+    copy_floppy_file_to_ramfs(load_floppy, "TEST.WAV", "test.wav");
+    copy_floppy_file_to_ramfs(load_floppy, "TEST.MP3", "test.mp3");
+    copy_floppy_file_to_ramfs(load_floppy, "MAIN.ELF", "main.elf");
+    // WAV/MP3 playback smoke tests moved to mods/dev/chorus/wav.cpp and
+    // mods/dev/chorus/mp3.cpp as reference comments.
+    // test_elf_execution(load_floppy);
+    test_udp_echo();
+    procMan();
+    // See docs/DOCS.md ("p-kernel.cpp — tasking_init() placement") for why
+    // this is safe to spawn now, at the very end of boot.
+    static uint8_t stack0[KSTACK_SIZE] __attribute__((aligned(16)));
+    task_create(task0, NULL, stack0);
+    // Temporarily disabled while debugging the ELF-stdin character-doubling
+    // bug, to rule out interference from these two CPU-heavy tasks.
+    // static uint8_t stack1[KSTACK_SIZE] __attribute__((aligned(16)));
+    // static uint8_t stack2[KSTACK_SIZE] __attribute__((aligned(16)));
+    // task_create(task1, NULL, stack1);
+    // task_create(task2, NULL, stack2);
+    serial_write_string("Tasking Enabled! Tasks spawned.\n");
+}

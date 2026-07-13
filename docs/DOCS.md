@@ -6,6 +6,441 @@ pointing to its section below.
 
 ---
 
+## `mods/core/wingman/headers/widgets/widget.h` — common `Widget` base class
+
+Extracted once there were three real widgets (`Button`, `TextInput`,
+`Checkbox`) to check the shape against, not before -- see the earlier
+`Button`-only discussion in this file's history for why one
+implementation wasn't enough to design this from.
+
+Comparing all three, `x`/`y`/`width`/`height` and the bounds-check in
+`contains()` were genuinely identical (the same 4-line check, copy-pasted
+three times), so those moved into `Widget` as concrete, non-virtual
+members every subclass inherits -- not reimplements. `draw(Surface*, int)`
+generalizes as a *signature* (all three take the same parameters) but not
+as an *implementation* (each widget's rendering is completely different),
+so it's a pure virtual hook subclasses must provide.
+
+Deliberately left out of `Widget`: anything about *how* a widget reacts
+to input. `Button` expects the caller to hit-test and invoke `onClick`
+itself; `Checkbox::click()` does its own hit-test-and-toggle in one call;
+`TextInput::onKeyboard()` reacts to keystrokes, not clicks, and checks
+its own `focused` flag internally. Three real widgets still don't agree
+on one interaction shape -- forcing one into `Widget` would repeat the
+same mistake as designing from a single example, just with more data
+backing the guess.
+
+`WidgetType` exists because this kernel builds with `-fno-rtti`, so
+`dynamic_cast` isn't available -- a container holding a generic
+`Widget**` array can redraw or hit-test everything uniformly via the
+base class, but still needs `widget->type` (not a cast) to know which
+concrete type it has, if it needs to call a widget-specific method.
+
+---
+
+## `mods/core/wingman/suite/widgetdemo/widgetdemo.cpp` — `WidgetDemo` window
+
+A dedicated window rather than folding this into `MessageBox`, since
+`MessageBox` is semantically an alert (notify, dismiss) and this is a
+persistent showcase -- mixing those changes what `MessageBox` means
+rather than just adding a feature to it. Structured identically to
+`MessageBox`/`FileManager` (owns a `Window`, implements
+`KeyboardDelegate`/`MouseDelegate`, self-registers and focuses with the
+`WindowManager` in its own constructor) so it fits the existing pattern
+rather than inventing a new one.
+
+Holds one of each widget -- `Button`, `TextInput`, and both `Checkbox`
+styles side by side (box and toggle) specifically to show the enum
+distinction, since that's the actual new capability being demonstrated,
+not just "a checkbox exists."
+
+Keyboard/mouse routing is intentionally minimal, matching each widget's
+own current scope:
+
+- `onMouseEvent()` only acts on a press-edge (`pressedEdge & 1`); plain
+  hover has no effect (no hover-cursor feedback, unlike `MessageBox`'s
+  buttons) -- not essential to demonstrating the widgets themselves.
+- Clicking inside `textInput` focuses it; clicking anywhere else in the
+  window (including on the other widgets) unfocuses it. With only one
+  keyboard-consuming widget in this window, this is sufficient -- it
+  doesn't attempt to solve multi-widget focus routing, which is the same
+  open gap already tracked in `docs/TODO.md` (Priority 3).
+- Every click and every consumed keystroke redraws all four widgets
+  (`draw_widgets()`) rather than tracking which one actually changed --
+  same "just redraw the whole affected region" precedent as
+  `MessageBox::draw_buttons()`, and cheap enough at four widgets that
+  finer-grained tracking isn't worth it yet.
+
+Wired into `initalizeWindowSystem()` (`wingman.cpp`) as a second
+always-open window alongside the file explorer and the AC97 `MessageBox`,
+positioned at `(500, 120)` so it doesn't sit on top of either at boot.
+
+---
+
+## `mods/core/wingman/widgets/checkbox.cpp` — `Checkbox` widget (box + toggle styles)
+
+One class, `CheckboxStyle` enum (`CheckboxStyleBox`/`CheckboxStyleToggle`)
+picks the rendering, since a checkbox and a SwiftUI-style toggle switch
+are the same underlying behavior (a persisted boolean, click to flip it)
+with two different looks -- not two different widgets.
+
+`draw()` branches on `style` inline rather than splitting into private
+per-style helper methods; each branch is short enough that the extra
+indirection wouldn't earn its keep.
+
+The toggle style approximates SwiftUI's pill-track-plus-sliding-thumb
+look with sharp corners, not rounded ones -- there's no
+circle/rounded-rect primitive anywhere in this codebase to draw a true
+pill with, and sharp corners keep it visually consistent with
+`Button`/`TextInput`/`MessageBox`, which are all sharp-cornered too. The
+`thickness` parameter (shared with `Button`/`TextInput`'s border
+convention) does double duty here as the thumb's inset from the track
+edges in toggle style, instead of a border width -- toggle style has no
+border, only `CheckboxStyleBox` does.
+
+`click(px, py)` differs from `Button`'s split of `contains()` (hit-test)
++ a separately-called `onClick`: since a checkbox's whole interaction is
+"was I hit -> flip my own state -> tell whoever's listening," it's all
+one self-contained call here, while `contains()` stays exposed separately
+too for a caller that wants its own hover/hit-test logic without
+triggering a toggle.
+
+Now wired into `mods/core/wingman/suite/widgetdemo/widgetdemo.cpp`, and
+retrofitted onto the `Widget` base class (see that section) once it gave
+a third data point to design the shared interface from.
+
+### `CHECKBOX_COLOR_OFF_TRACK` contrast fix
+
+Originally `0xFF3a3a3c`, which is nearly the same brightness as
+`WidgetDemo`'s own window background (`0xFF403a39`) -- the track was
+effectively invisible against it, leaving only the white thumb visible.
+That made the toggle look shorter/less substantial than `CheckboxStyleBox`
+(which has a stark white border clearly outlining its full extent
+instead of relying on fill contrast) and didn't read as a real toggle at
+all, unlike SwiftUI's clearly-visible off-state track. Fixed by using a
+noticeably lighter gray (`0xFF6e6862`) that stays clearly distinct from
+the surrounding window background regardless of what it's embedded in.
+
+---
+
+## `mods/core/wingman/widgets/textinput.cpp` — `TextInput` widget
+
+Built to the same shape as `Button` (`contains()` for hit-test, `draw()`
+for rendering, position/size default to 0 and get set by whoever lays it
+out). At the time this was written only two concrete widgets existed, so
+it predated the formal `Widget` base class (see that section) -- it was
+retrofitted onto `Widget` once `Checkbox` gave a third data point to
+design the shared interface from.
+
+Deliberately scoped down for a first version:
+
+- **Single-line, append/backspace-at-the-end only.** No mid-string
+  cursor movement -- `onKeyboard()` explicitly ignores the negative
+  sentinel values `KeyboardHandler` (`mods/dev/kb/kb.cpp`) reports for
+  arrow keys, along with `\n`/`\t`. Real cursor positioning (arrow-key
+  movement, click-to-position) would need a `caretIndex` distinct from
+  `length` and insert-in-the-middle buffer logic -- not built until
+  something actually needs it.
+- **No focus management of its own.** `focused` is a plain public bool
+  the *owner* sets -- `TextInput` doesn't decide when it's focused, and
+  `onKeyboard()` is a no-op (`return false`) whenever it isn't. This
+  mirrors the still-unresolved "who owns keyboard focus" gap already
+  tracked in `docs/TODO.md` (Priority 3) -- a real multi-widget focus
+  model belongs there, not invented ad hoc inside one widget.
+
+### `draw()` — horizontal scroll
+
+Originally drew the whole buffer starting at a fixed `x`, with no bound
+on how far right that could go -- typing past roughly `(width -
+4*thickness) / charWidth` characters ran text straight off the widget's
+own right edge into whatever was next to it, confirmed visually
+(`docs/TODO.md`'s Miscellaneous section had this tracked before it was
+fixed). Fixed by showing a trailing window of the buffer instead of the
+whole thing: `maxVisibleChars` is however many characters actually fit
+in the text area, and `startIndex` is `0` until the buffer overflows that
+width, at which point it slides forward exactly enough to keep the last
+`maxVisibleChars` characters (and therefore the caret, since the caret is
+always at the logical end per the no-mid-editing simplification above)
+in view. The caret's `x` position uses `visibleLen` (the trailing
+window's length), not `this->length` (the buffer's full length) --
+using the latter would place the caret past the widget's edge the moment
+scrolling kicks in.
+
+---
+
+## `mods/core/wingman/widgets/button.cpp` — `Button` owns its own rendering/hit-test
+
+Previously `Button` was a pure data bag (label, color, callback, rect) --
+all of its actual behavior (hit-testing, hover, drawing) lived in
+`MessageBox::draw_buttons()`/`onMouseEvent()`, reaching into `Button`'s
+fields directly. That's backwards from how a control normally works (it
+should own its own hit-test and rendering; the container's job is layout
+and forwarding events, not deciding whether a click landed on a child or
+how that child looks) and meant nothing else could reuse `Button` without
+duplicating that logic. `contains()` and `draw()` move that logic onto
+`Button` itself; `MessageBox` now only computes layout
+(`layoutButtons()`) and calls into each button rather than rendering it
+inline. `shade()` (the bevel highlight/shadow helper) and the
+`drawChar()` helper moved into `button.cpp` alongside it, since they're
+purely part of a button's own rendering now, not `MessageBox`'s.
+
+`draw()` takes `thickness` as a parameter rather than owning a fixed
+value itself -- `MessageBox` still controls that "house style" (its
+window border uses the same thickness), it's just no longer the one
+doing the actual pixel-level rendering.
+
+### Content-based default size
+
+Reported (2026-07-08, via screenshot): a button's label ("Click Me")
+rendered past its own right edge. Root cause: `draw()` centers the label
+using the button's actual `width`, but `width` defaulted to `0` and
+nothing about `Button` itself prevented a caller from setting it smaller
+than the label needs -- `WidgetDemo` had hardcoded `width = 90` for an
+8-character label that needs 128px at `scale=2`, so the centered text
+overflowed symmetrically on both sides.
+
+Fixed by giving the constructor a sensible content-based default
+(`labelLen * charWidth + 32` wide, matching `Checkbox`'s existing
+precedent of computing a default size instead of leaving one at `0`) --
+safe for `MessageBox`, which unconditionally overwrites `width`/`height`
+in `layoutButtons()` regardless of what the constructor set, so this
+only changes behavior for callers (like `WidgetDemo`) that don't go
+through a layout pass. `WidgetDemo`'s own hardcoded override was removed
+so it actually gets the new default instead of immediately clobbering it
+back to the too-narrow value.
+
+---
+
+## `mods/core/wingman/wingman.cpp` — window dragging
+
+Drag detection lives in `mouseFunctionWindowManager()`, not in any
+individual widget, since it needs to work the same way for every window
+type without each one (`MessageBox`, `FileManager`, future widgets)
+re-implementing it. `WINGMAN_DRAG_HANDLE_HEIGHT` (30px) defines a
+drag-handle band across the top of any window -- chosen because neither
+`MessageBox` nor `FileManager` currently draws anything interactive that
+high up (`MessageBox`'s buttons sit near the bottom, `FileManager`'s
+clickable file list starts well below its title row), so claiming that
+band for dragging doesn't intercept real content clicks.
+
+A press-edge landing in that band starts a drag: `draggingWindow` records
+which window, and `dragOffsetX`/`dragOffsetY` record the offset from the
+window's top-left corner to the mouse position at drag-start, so the
+window doesn't jump to snap its corner to the cursor on the first move.
+While a drag is active, ordinary content dispatch (`handleMouse()`) is
+skipped entirely -- a drag should be exclusive, not also register as a
+click on whatever's under the cursor. The drag ends the moment the button
+is no longer held (checked every packet via `buttons & 1`, not just on a
+release edge, so it can't get stuck active if a release packet is ever
+missed).
+
+### Throttling the redraw during a drag
+
+`composite()` is a full-screen clear + full re-blend of every window
+(see its own section below), which is fine for occasional click-driven
+redraws but was never designed to run on every single mouse packet --
+which is exactly what continuous dragging does, easily hundreds of times
+a second. `dragged->offsetX`/`offsetY` are still updated unconditionally
+every packet (so the logical position never lags behind the mouse), but
+the expensive part -- setting `needsRedraw = true`, which triggers
+`composite()` + `redraw_screen()` -- is capped to once per
+`WINGMAN_DRAG_REDRAW_INTERVAL_MS` (33ms, ~30fps) via `timer_ticks`
+(millisecond-resolution since Proposal 2's `pit_init(1000)`). When a drag
+ends, a redraw is forced unconditionally regardless of the throttle
+window, so the window doesn't visibly end up a throttle-interval behind
+its true final position. This is a targeted fix for the drag path
+specifically, not a change to `composite()` itself -- the underlying
+full-screen-recomposite cost this works around is still there and
+already tracked separately (`docs/TODO.md`'s Miscellaneous audit
+findings, "GUI rendering performance").
+
+### Clamping to the screen
+
+`newX`/`newY` are clamped to `[0, screenWidth - width]` /
+`[0, screenHeight - height]` before being applied -- i.e. the clamp keeps
+the *whole* window rectangle on screen, not just the point under the
+cursor. Clamping only the cursor-tracked corner would still let the rest
+of the window (and, at the extreme, its entire drag handle) end up
+off-screen and undraggable back. `maxX`/`maxY` are floored at 0 so a
+window that's already larger than the screen doesn't compute a negative
+upper bound and get clamped to some position off in the wrong direction.
+
+---
+
+## `mods/dev/syscall/syscall.cpp` — `stdin_is_reading()` / stdin exclusivity
+
+`kb_run_events()` (`mods/dev/kb/kb.cpp`) is a flat, global broadcast --
+every registered callback fires for every keystroke, unconditionally,
+with no concept of exclusive focus. `stdin_kb_callback` (this file) and
+`keyboardFunctionWindowManager` (`mods/core/wingman/wingman.cpp`, which
+routes into whatever Wingman window is currently focused, e.g.
+`FileManager::onKeyboard()`) are both registered through that same
+system. So while an ELF program is blocked in `stdin_read_line()` reading
+a line, every key the user types is *also* being delivered to the file
+explorer at the same time -- `'s'`/`'w'` move its selection, `'\n'`
+activates whatever's currently selected. Reported symptom: pressing Enter
+to submit typed input to a running program could also trigger the
+explorer to open/play whatever file the selection had drifted to.
+
+Fixed narrowly, not by adding real focus routing (that's the Priority 3
+"Keyboard focus routing for multiple tasks blocked on stdin" item in
+`docs/TODO.md`, a bigger design question tied to multi-task console
+ownership): `stdin_read_line()` now sets a `stdin_reading` flag for the
+duration of its blocking wait, exposed via `stdin_is_reading()`.
+`keyboardFunctionWindowManager()` checks it first and returns immediately
+if set, so the Wingman GUI simply stops processing keystrokes at all
+while a program is mid-read -- matching the existing
+`suppressCharacterOutput` pattern already used in
+`mods/std/graphics.cpp`'s boot-terminal keystroke handler for the same
+kind of "someone else owns input right now" situation.
+
+---
+
+## `mods/core/wingman/suite/explorer/explorer.cpp` — running-ELF tracking
+
+Forbids re-launching a `.elf` file that's already running, at the
+explorer/UI level rather than in the kernel -- `elf.cpp` deliberately
+doesn't track this itself anymore (Phase 2 of the tasking proposal
+retired the old kernel-side `elf_running` guard, since running multiple
+*different* programs concurrently is now the intended behavior; only
+re-launching the exact same file while its previous instance is still
+alive is what this blocks).
+
+`elf_spawn()` now returns the `task_t*` handle from `task_create()`
+instead of a plain success/fail `int`, so a caller can check
+`task->state` later to know whether a specific launched instance is
+still alive. `runningElfTasks[]` is a small fixed-size
+{filename, task_t*} table; `isElfAlreadyRunning()` checks it (and opportunistically
+reclaims a slot if the tracked task has since gone `TASK_DEAD`),
+`trackElfTask()` records a new launch, reusing the first empty-or-dead
+slot.
+
+This relies on task_t slots never being reused by a different task while
+still referenced here, which holds today only because there's no
+reaper yet (see the Phase 2 "known, deliberately deferred" note in
+`docs/TODO.md`) -- once one exists, a freed slot could theoretically be
+handed to an unrelated task before this table's stale entry gets
+reclaimed, so this tracking will need revisiting whenever that lands.
+
+---
+
+## `mods/dev/kb/kb.cpp` — `kb_add_event()` dedup
+
+Unlike `irq_install_handler()` elsewhere in this codebase, `kb_add_event()`
+had no "already registered" check -- every call just appended a new entry
+to `global_callbacks[]`, even for a callback function pointer that was
+already registered. `mods/dev/syscall/syscall.cpp`'s `stdin_read_line()`
+registers `stdin_kb_callback` once per blocking stdin read and removes it
+via `kb_remove_event()` once the line is done; if that registration ever
+ends up duplicated (e.g. two overlapping calls into the same registration
+path before the first one's removal runs -- now a real possibility with
+preemptive tasking live, where a blocking syscall can be interleaved with
+other scheduler activity in ways it never was under the old fully
+synchronous `elf_run()` model), every keystroke gets appended to the
+shared `stdin_buf_ptr` buffer twice, since `kb_run_events()` invokes both
+entries. This was the leading suspect for a reported bug (characters
+doubling while typing into a running ELF program, e.g. "hello" arriving
+as "hheellllooo") -- not confirmed via boot-testing, but a direct,
+low-risk fix regardless: return the existing entry's id instead of
+appending a duplicate, matching `irq_install_handler()`'s own established
+pattern for the exact same class of problem. `mods/dev/mouse/mouse.cpp`'s
+`mouse_add_event()` has the identical gap, spotted but not fixed here
+since it wasn't implicated in the reported symptom.
+
+---
+
+## `mods/dev/elf/elf.cpp` — `elf_spawn()`
+
+### Why `elf_task_trampoline()` doesn't call `task_exit()` itself
+
+`task_create()`'s ASM trampoline (`tasking.asm`) already calls
+`task_exit()` unconditionally whenever the entry function it invoked
+returns -- this is the exact same mechanism `task0`/`task1`/`task2` rely
+on (none of them call `task_exit()` themselves either). So
+`elf_task_trampoline()` just needs to correctly cast and call the real
+ELF entry point; when that returns (or when `sys_exit()`'s now-direct
+`task_exit()` call fires mid-execution, in which case this function never
+returns at all), the ASM trampoline handles cleanup generically, no
+ELF-specific exit path needed.
+
+### Why the caller's file buffer isn't freed on a successful spawn
+
+`elf_load_file()`/`elf_load_rel()` relocate sections **in place** inside
+the buffer they're given -- `elf_section_data()` returns `hdr +
+sh_offset` for anything with real file data (`.text`, `.data`, etc.), a
+pointer directly into the caller's buffer, not a copy. Under the old
+blocking `elf_run()`, this was safe: the caller's `free(buffer)` only ran
+after the whole program had already finished executing inside that
+memory. Under `elf_spawn()`, which returns immediately, freeing the
+buffer right after spawning would free memory the task hasn't even
+started running from yet -- the next timer tick would jump into freed
+memory. So callers (`explorer.cpp`'s `.elf` handler, `p-kernel.cpp`'s
+`test_elf_execution()`) now only free the buffer on the failure paths
+(load failed, spawn failed) where nothing will ever execute from it. On
+success, it's intentionally leaked -- same category of known gap as task
+stacks/task_t slots never being reclaimed (see `docs/TODO.md`'s tasking
+proposal, "Files touched" -- `stack_base` + a reaper are still Phase 2/3
+follow-ups, not yet implemented). A real fix would have the loader copy
+relocated sections into their own independently-owned memory instead of
+pointing into the transient file buffer, decoupling the two lifetimes
+entirely -- bigger change, not done here.
+
+### `mods/dev/context/setjmp.h`/`setjmp.asm` deletion
+
+Confirmed nothing else in the tree referenced `setjmp`/`longjmp`/`jmp_buf`
+after removing them from `elf.cpp`, so both files were deleted along with
+the now-empty `mods/dev/context/` directory, per the tasking proposal's
+own note ("the `context/setjmp.*` files can likely be deleted afterward
+if nothing else uses them"). This also surfaced how they were actually
+linked in the first place: `Kernel-Entry.asm` `%include`s
+`mods/dev/context/setjmp.asm` directly (the same pattern used for
+`tasking.asm` and `syscall.asm`) rather than the Makefile building it as
+a separate object -- deleting the file without removing that `%include`
+line broke the nasm build (`unable to open include file`), so the
+`%include` was removed too. Worth noting: this means `setjmp`/`longjmp`
+were only ever linked because of that one `%include` line existing
+already -- if it hadn't, the old `elf_run()` would have had the exact
+same silent-undefined-symbol problem `task_start_trampoline` briefly hit
+during Phase 1 (`x86_64-elf-ld`'s `--oformat binary` output doesn't error
+on undefined symbols the way a normal ELF-format link does).
+
+---
+
+## `p-kernel.cpp` — `tasking_init()` placement
+
+Phase 1 of the tasking proposal (`docs/TODO.md`) calls for `tasking_init()`
+to run early, so the boot context becomes `g_current` (pid 0) from the
+start. That's safe specifically because `scheduler_on_tick()`'s behavior
+on an empty runqueue is a no-op: the very first tick after
+`tasking_init()` just captures the current ESP into `g_current->saved_esp`
+(since it starts `NULL`) and returns immediately (`runqueue_head()` is
+`NULL` -- nothing to switch to). Every tick after that takes the normal
+path, but `pick_next(g_current)` on an empty `g_runqueue` returns `cur`
+unchanged too. So the entire rest of `kernel_main()`'s boot sequence
+executes exactly as it did before, just now "wrapped" as pid 0's task,
+right up until real tasks are actually pushed onto the runqueue.
+
+That happens at the very end of `kernel_main()`, after everything else
+(VFS, Wingman, PCI, AC97, networking) has already been set up -- not
+earlier. The moment `task_create()` pushes a `TASK_READY` task, the next
+timer tick switches away from `g_current` and never comes back to it: the
+bootstrap task_t was built directly via `task_alloc()`, not
+`runqueue_push()`, so it's never actually in the circular runqueue and has
+no path back into `pick_next()`'s rotation once execution leaves it. That's
+fine here specifically because kernel_main has nothing left to do at that
+point anyway (it would otherwise just fall through to `Kernel-Entry.asm`'s
+closing `jmp $` spin) -- but it's why task creation can't happen any
+earlier than the true end of boot without abandoning whatever boot steps
+were still left unexecuted.
+
+`task0` (idle, `for(;;) hlt;`) is spawned before `task1`/`task2` so there's
+always something `TASK_READY` in the rotation once the fibonacci tasks
+finish and `task_exit()` marks them `TASK_DEAD` -- without it, `pick_next()`
+would find nothing runnable and just keep re-selecting whatever task
+happened to finish last, rather than a clean idle state.
+
+---
+
 ## `mods/dev/pci/drivers/ac97.cpp` / `mods/dev/chorus/chorus.cpp` — playback race guard
 
 `sound_buffer_refilling_info` is touched from two contexts that can
