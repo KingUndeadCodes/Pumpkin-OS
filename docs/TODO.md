@@ -134,6 +134,72 @@ generically for every window type (implemented at the WindowManager
 dispatch level, not per-widget) since neither `MessageBox` nor
 `FileManager` draws anything interactive that high up today.
 
+### 13. Implement `elf_lookup_symbol()` — DONE
+
+`mods/dev/elf/elf.cpp` — was stubbed to always `return NULL`.
+Originally filed under "lower priority" in the full-codebase audit below,
+but re-assessed (2026-07-09, after an external peer review of
+`docs/FULL.md`) as more consequential than that framing suggested: the
+real ceiling on what ELF programs can do isn't the syscall count (only 5
+exist: `open`/`read`/`write`/`close`/`exit`), it's that a program can't
+call into *any* kernel-exported function, full stop, regardless of how
+many syscalls exist — every program has to be entirely self-contained.
+Fixing symbol resolution unlocks reuse of whatever's already
+kernel-exported in one pass, rather than needing a new syscall number
+added one at a time for each thing a program might want to call.
+
+Implemented (2026-07-12) as a static `elf_exports[]` table of
+`{name, address}` pairs in `elf.cpp`, linearly scanned via `strcmp`.
+Covers everything actually *implemented* (not just declared) in
+`mods/std/`: the malloc family, the string.h set, the stdio.h set, and
+the 5 syscall wrappers. Deliberately excludes `ftell()`, which is
+declared in `mods/std/include/stdio.h` but has no implementation
+anywhere in the kernel — exporting it would have exposed a dangling
+function pointer, since `--oformat binary` linking doesn't fail on
+undefined symbols. See `docs/DOCS.md` ("`mods/dev/elf/elf.cpp` —
+`elf_lookup_symbol()`") for the full rationale. Build-verified only
+(`make clean && make build`, kernel.bin produced with no errors);
+not yet boot-tested against a real ELF program that references one of
+these exports by name.
+
+### 14. Formalize the bootloader→kernel interface — DONE
+
+New item (2026-07-09), surfaced by an external peer review of
+`docs/FULL.md` — not previously tracked anywhere. `src/boot/loader/main.cpp`'s
+`read_file_frontend` (a closure-like wrapper around the bootloader's own
+FAT12 reader, bound to the already-open boot disk state) gets handed to
+the kernel as its `read_file` function-pointer argument to
+`kernel_main()` — this is how the kernel keeps reading arbitrary files
+off the boot floppy post-boot without needing its own independent FAT12
+implementation.
+
+Traced end to end (2026-07-13) and found a real hazard, not just a
+documentation gap: the pointer used to cross from
+`src/boot/loader/main.cpp` into `src/boot/loader/entry.asm` via a
+hand-computed absolute address (`READ_FUNCTION_ADDRESS`, a `#define`
+chain in the C++ file) that `entry.asm` referenced as a bare, disconnected
+hex literal (`0x3FFBF8`) — two files, two languages, one number, nothing
+tying them together. A future change to `KERNEL_LOCATION` or any buffer
+size ahead of it would silently hand the kernel a garbage pointer with no
+build error. Fixed by replacing the hand-computed address with a real
+linked symbol (`g_read_file_ptr`) referenced by name from both sides —
+the linker now resolves it for real, so the two files can't drift apart
+unnoticed.
+
+The memory-ownership question from the original write-up turned out to
+already be a non-issue, on closer inspection: `init_phys_allocator()`
+already protects both boot-owned memory regions today, as an *incidental*
+side effect of its reservation sweep starting at address `0` rather than
+at the kernel's own load address — not something anyone wrote with
+stage2 in mind, and not documented as a dependency until now. No new
+allocator code was added (nothing is actually broken), but this
+dependency is now written down explicitly. See `docs/DOCS.md`
+("Bootloader → kernel `read_file` handoff") for the full trace, including
+a verification note about a misleading intermediate result hit while
+checking this (an ELF-format test link gave a different, wrong address
+than the real `--oformat binary` build — worth reading if anyone
+re-verifies this by hand later).
+
 ---
 
 ## Priority 2 — Before tasking (Proposal 1) can be turned on
@@ -194,17 +260,12 @@ All Phase 0 hardening items below are done.
 
 ## Priority 3 — Explicitly deferred past tasking (not blockers)
 
-- Keyboard focus routing for multiple tasks blocked on stdin — ties into
-  window-manager focus, which doesn't have a solid "this window owns this
-  task's console" concept yet (see "Recently completed" → "Finish wiring
-  up MessageBox" for the single-focus/z-order work already done — related,
-  but this is the multi-task version of that problem). A narrow slice of
-  this got a stopgap fix (see "Recently completed" → "Stop the Wingman
-  GUI from also reacting to keystrokes meant for a blocking stdin read"):
-  the GUI now just stops processing keyboard input entirely while any one
-  program is mid-`sys_read`, rather than real per-task focus routing.
-  Multiple concurrently-stdin-blocked tasks would still have no way to
-  route keys to the right one specifically — that's still this item.
+- ~~Keyboard focus routing for multiple tasks blocked on stdin~~ — DONE
+  (2026-07-14), see "Recently completed" below. The window-manager-focus
+  version of this (routing based on which *window* is focused) is still
+  genuinely deferred, since ELF programs don't have windows at all today
+  — that's a real, separate, bigger feature (see the "Recently completed"
+  writeup for the scoping discussion).
 - Moving mouse/keyboard IRQ work out of interrupt context (the cursor
   tearing problem) — real task-blocking gives us the primitive to do this
   properly later, but it's a separate change.
@@ -214,6 +275,46 @@ All Phase 0 hardening items below are done.
 ---
 
 ## Miscellaneous — parked, revisit later
+
+### `KERNEL_LOCATION` (`0x400000`) is independently hardcoded in three places
+
+Found (2026-07-13) while working item #14 — same class of hazard as that
+item's `READ_FUNCTION_ADDRESS` bug, but worse blast radius. `0x400000` is
+defined three separate times with no build-time link between the copies:
+
+- `src/boot/loader/main.cpp:5` — `#define KERNEL_LOCATION 0x400000`
+  (where the bootloader writes `KERNEL.BIN` and jumps to start it)
+- `src/boot/loader/entry.asm:5` — `KERNEL_LOCATION equ 0x400000` (second
+  independent copy of the same value)
+- `src/kernel/kernel.ld:6` — `. = 0x400000;` (tells the linker what base
+  address the *compiled kernel itself* assumes for every internal
+  absolute symbol/global/jump)
+
+If these three ever drift apart, the bootloader loads the kernel image
+to one address while the kernel's own code was linked assuming a
+different one — unlike the `read_file` pointer bug (one broken function
+pointer), this would make essentially every symbol reference in the
+entire kernel binary wrong at once. Realistically an instant
+triple-fault or silent garbage execution, not something with a
+debuggable symptom.
+
+Also noticed in passing: `src/boot/stage1.asm:7` defines its own
+`KERNEL_LOCATION equ 0x8000` — same name, unrelated meaning (that one's
+where *stage2* loads, not the kernel). Different value, never
+cross-referenced against the other three, but a landmine for anyone
+reading these files side by side and assuming the name means one thing
+everywhere.
+
+Not fixed yet — genuinely harder than the `read_file` fix was, since
+`kernel.ld` is a linker script, not a compilable/assemblable unit, so
+there's no `extern`/symbol reference that reaches into it the way
+`entry.asm` could reference `main.cpp`'s `g_read_file_ptr`. Real fix
+would mean running `kernel.ld` through the C preprocessor at build time
+(`cpp -P` before `ld -T`) so all three files `#include`/`%include` one
+shared header defining the address once — a legitimate, common technique
+for exactly this problem, but a Makefile change, not just a source edit.
+Cheap fallback (comment-only cross-reference in all three spots) doesn't
+actually prevent the drift, just makes it easier to notice by hand.
 
 ### Characters repeat when typing into a running ELF program
 
@@ -236,18 +337,30 @@ blocking read; if that registration were ever duplicated, every keystroke
 would get appended to the shared stdin buffer twice via
 `kb_run_events()` invoking both entries. See `docs/DOCS.md` for the fix.
 
-Also found and fixed while investigating (likely harmless, but a real
-bug): `syscall.asm`'s `syscall_handler` pushes `gs,fs,es,ds` but pops
+Also found while investigating (likely harmless on its own, but a real
+bug): `syscall.asm`'s `syscall_handler` pushed `gs,fs,es,ds` but popped
 them shifted by one position (`pop es; pop fs; pop gs; add esp,4`),
-leaving `ds` never explicitly restored. Stack depth still balances
-correctly (so `iret` lands at the right EIP), and in this ring-0-only
+leaving `ds` never explicitly restored. Stack depth balanced correctly
+(so `iret` landed at the right EIP), and in this ring-0-only
 flat-memory-model kernel all segments are likely `0x10` everywhere
-anyway, so this probably isn't visibly harmful — not fixed in this pass,
-noted for follow-up.
+anyway, so this probably wasn't visibly harmful on its own — left unfixed
+at the time, noted for follow-up.
 
-**Not confirmed via boot-testing** — the dedup fix is the most concrete,
-low-risk lead found, not a proven fix. Needs testing: does typing into a
-running ELF program still double characters after this fix?
+**Fixed (2026-07-14)**, as a side effect of chasing a *different* bug
+(tasking Phase 3's `task_block()` boot-test failure — see the Full
+tasking proposal section below). Corrected the pop sequence to mirror
+the pushes exactly (`pop ds; pop es; pop fs; pop gs`, no trailing
+`add esp, 4`). Turned out not to be the actual cause of that other bug,
+but it was a real, confirmed mismatch regardless and is now fixed.
+
+**Informally confirmed via boot-testing (2026-07-14)**, though not as a
+dedicated test of this specific issue: while boot-testing tasking Phase 3
+(see below), typed "bob" into `MAIN.ELF`'s blocking `sys_read` prompt via
+QEMU monitor `sendkey` and got back exactly "bob", not a doubled
+"bbooatb"-style result. That's real evidence the dedup fix works for the
+basic single-task case, but it wasn't a targeted test of the original
+concurrent-registration scenario (e.g. two programs racing) — worth a
+dedicated pass if this ever resurfaces.
 
 ### Cursor jumps back to its pre-launch position when an ELF program exits
 
@@ -422,10 +535,6 @@ it's revisited.
 
 #### Lower priority / informational
 
-- `mods/dev/elf/elf.cpp` `elf_lookup_symbol()` is a stub that always
-  returns `NULL` — not a perf issue, but it's the real blocker for
-  running any ELF that calls an external kernel-exported symbol rather
-  than being fully self-contained.
 - `tasking.cpp`'s O(n) `task_alloc()`/`pick_next()` — fine at
   `MAX_TASKS=32`, not worth touching now.
 - `math.cpp`'s O(n²) Taylor-series `sin`/`cos` — currently unused
@@ -437,6 +546,53 @@ it's revisited.
 ---
 
 ## Recently completed
+
+### Keyboard ownership for concurrent stdin readers
+
+Priority 3's "Keyboard focus routing" item, minimal-fix version (2026-07-14,
+explicit go-ahead after scoping out and rejecting the bigger
+window-focus-based version — see below). With tasking Phase 3 landed,
+more than one task can legitimately be mid-`sys_read` on stdin at once,
+but `syscall.cpp` only ever tracked one global `stdin_buf_ptr`/
+`stdin_waiter` — a second concurrent reader would silently clobber the
+first's buffer and waiter.
+
+Fixed with a small fixed-size LIFO stack of `StdinFrame`
+(`{waiter, buf, size, pos}`) in `syscall.cpp`, `MAX_STDIN_DEPTH = 8`.
+Whichever task most recently started reading owns the keyboard
+exclusively — `stdin_kb_callback` always writes into `stdin_stack[depth
+- 1]` (the top frame) and only wakes the top frame's task on `'\n'` —
+the same nesting a stack of modal dialogs would have. Older, still-
+waiting readers are structurally guaranteed to still be on top when they
+eventually *do* wake (nothing pushed after them can complete before they
+do, since only the top frame ever receives input), so popping is always
+safe. `stdin_kb_callback` itself stays a single shared function,
+registered once (via the existing `kb_add_event()` dedup) when the stack
+goes empty→non-empty and unregistered once it goes back to empty —
+registering/unregistering per-call would have broken this, since an
+inner frame completing and unregistering would cut off an outer frame
+still waiting below it. `stdin_is_reading()` (still the only thing
+external code, i.e. `wingman.cpp`, actually reads) now reports "stack
+depth > 0" instead of a single boolean, same external meaning, correctly
+generalized.
+
+**Boot-tested for real (2026-07-14)**: temporarily spawned `MAIN.ELF`
+twice back to back (two independent, concurrently-blocked readers),
+typed "two" for the second (topmost) one — it alone received it,
+completed and popped correctly — then typed "one" for the first, which
+was correctly back on top and received it cleanly, with zero
+cross-contamination between the two. No crash, no hang.
+
+**Scoped down from a bigger version, deliberately**: the original framing
+("tie into window-manager focus") doesn't fit today's reality — ELF
+programs are fully headless (output only via serial, no window of their
+own), so there's no window to click to focus a specific running program.
+Building that would mean a real new UI feature (a console/terminal
+`Window` subclass) — a separate, larger task from "fix the routing bug,"
+not implemented here. This fix only makes ownership *correct and
+identifiable* (a real stack instead of a global that lies about who's
+listening); it doesn't add any new way for a user to *choose* which
+program owns the keyboard beyond "whichever one asked most recently."
 
 ### Fix `TextInput` text overflowing its own bounds instead of scrolling
 
@@ -471,8 +627,9 @@ focus. `'s'`/`'w'` move the explorer's selection and `'\n'` activates
 whatever's selected — so typing into a program could silently drift the
 explorer's selection and then open something else entirely on Enter.
 
-Fixed narrowly (real per-task focus routing is a bigger, still-open
-design question — see Priority 3's "Keyboard focus routing" item):
+Fixed narrowly at the time (real per-task focus routing was a bigger,
+open design question then — see "Recently completed" → "Keyboard
+ownership for concurrent stdin readers" for where that landed later):
 `stdin_read_line()` now sets a `stdin_reading` flag for the duration of
 its blocking wait, exposed via `stdin_is_reading()`.
 `keyboardFunctionWindowManager()` checks it first and returns immediately
@@ -678,13 +835,16 @@ does real work (allocates, touches a file, or touches AC97 state).
       needed.
 - Not yet found while doing this: `task_t` still has no `TASK_BLOCKED`
   state or `stack_base` field (Phase 2/3 still need to add both).
-- Not boot-tested end-to-end in this environment (sandbox QEMU
-  limitation, same as the fault-handler work) — verify by booting and
-  checking the serial log for interleaved `[1] fibbanoci(...)` /
-  `[2] fibbanoci(...)` lines. The naive recursive `fibbanoci(39)` is
-  genuinely expensive (hundreds of millions of calls), so this runs for a
-  while rather than finishing instantly — that's fine, the interleaving
-  pattern should be visible well before either task completes.
+- **Boot-tested for real (2026-07-14)**, the "sandbox can't boot-test"
+  limitation turned out to be wrong — QEMU runs headless in this
+  environment (`-display none`, `-serial file:...`, plus a monitor
+  socket to inject the boot-menu keypress via `sendkey`, since
+  `stage0.asm`'s menu blocks on a real keystroke with no timeout).
+  Confirmed genuinely working: booted with `task1`/`task2` enabled and
+  captured real interleaved output (`[1] fibbanoci(27)` / `[2]
+  fibbanoci(28)` / `[1] fibbanoci(28)` / ...) in the serial log — this is
+  the first time this claim was checked against a real boot rather than
+  code review. Phase 1 is solid.
 
 ##### Phase 2 — ELF runs become tasks, not blocking calls — DONE (2026-07-08)
 
@@ -727,23 +887,93 @@ does real work (allocates, touches a file, or touches AC97 state).
   this wasn't built now since it's genuinely separate from "make
   elf_run non-blocking," not a small addition.
 
-##### Phase 3 — Blocking syscalls block the task, not the CPU
+**Priority note (2026-07-09, informed by an external peer review of
+`docs/FULL.md`)**: when Phase 3 is picked up, do blocking/wakeups (below)
+*before* reaping, not alongside it as equal-weight work. Reaping only
+caps how many programs can ever be launched — a real but narrow limit.
+Missing blocking affects every future subsystem that will ever want to
+wait on something (stdin today, networking/timers/disk I/O later) — it's
+the more foundational gap of the two.
+
+##### Phase 3 — Blocking syscalls block the task, not the CPU — DONE (2026-07-14)
 
 This is the part that makes concurrency actually useful rather than
-cosmetic. Right now `sys_read`'s stdin wait is `while (!done) hlt;` — even
-after the EOI fix, that's "yield to any interrupt," not "let another task
-run." Under real tasking it should be "let another task run":
+cosmetic. `sys_read`'s stdin wait used to be `while (!done) hlt;` — even
+after the EOI fix, that was "yield to any interrupt," not "let another
+task run."
 
-- Add a `TASK_BLOCKED` state (`pick_next()` already skips anything that
-  isn't `TASK_READY`, so this needs no scheduler surgery) plus
-  `task_block()`/`task_wake(task_t*)`.
-- `stdin_read_line()` marks its own task `TASK_BLOCKED` and immediately
-  yields (`int $0x20`, the same trick `task_exit()` already uses) instead of
-  spinning on `hlt`. The keyboard callback calls `task_wake()` once a line
-  is ready.
-- The stdin state (`stdin_buf_ptr`, `stdin_line_done`, etc.) in `syscall.cpp`
-  is currently one global — it has to move to per-task state once more than
-  one task can legitimately be blocked on stdin at the same time.
+- [x] Added a `TASK_BLOCKED` state to `tasking.h` (`pick_next()` already
+      skipped anything that isn't `TASK_READY`, so this needed no
+      scheduler surgery) plus `task_block()`/`task_wake(task_t*)` in
+      `tasking.cpp`, right next to `task_exit()` since it's the same
+      immediate-reschedule-via-`int $0x20` trick.
+- [x] `stdin_read_line()` (`syscall.cpp`) now calls `task_block()` instead
+      of spinning on `hlt`; `stdin_kb_callback` calls
+      `task_wake(stdin_waiter)` once it sees `'\n'`. The old
+      `stdin_line_done` flag is gone — the wake itself is the "line
+      ready" signal now, nothing left to poll.
+- **Scoped down from the original plan, deliberately:** the stdin state
+  (`stdin_buf_ptr`/`stdin_buf_size`/`stdin_buf_pos`) stayed a single
+  global rather than moving to real per-task state. `stdin_waiter`
+  (which task to wake) is also a single global. This means two different
+  tasks both mid-`sys_read` on stdin at the same time would still
+  clobber each other — but that's not a regression Phase 3 introduces,
+  it's the exact same pre-existing gap the "Keyboard focus routing" item
+  below already tracks (it existed the moment Phase 2 made concurrent
+  `sys_read` calls possible at all, `hlt`-spin or not). Doing real
+  per-task stdin state without also fixing keyboard routing would add
+  bookkeeping for a scenario that's still broken for an unrelated reason
+  — not worth doing until focus routing lands. See `docs/DOCS.md`
+  ("`mods/dev/syscall/syscall.cpp` — `stdin_read_line()` real blocking")
+  for the full reasoning.
+- **Boot-tested for real (2026-07-14), found and fixed a genuine bug —
+  not in Phase 3 itself.** The "sandbox can't boot-test" assumption this
+  whole proposal was written under turned out to be wrong (see Phase 1's
+  update above for how). Full sequence of what was found:
+  - **Phase 1/2's underlying scheduler is confirmed solid**: booted with
+    `task1`/`task2` (no ELF, no blocking) and got real interleaved
+    fibonacci output. First actual proof this ever worked at runtime.
+  - **First attempt at `MAIN.ELF` (prompts, then blocks on `sys_read`)
+    failed**: `task_block()` returned almost instantly, before any
+    keystroke arrived, `stdin_buf_pos` still `0`, the idle task's own
+    debug print never fired. Fixed the known, already-flagged
+    `syscall.asm` segment-register push/pop mismatch (see Miscellaneous
+    → "Characters repeat..." below) on the theory that a corrupted nested
+    `int 0x80` frame was preventing `task_block()`'s `int $0x20` from
+    resuming correctly. **Re-tested: identical failure.** That fix was
+    real and worth keeping (segment registers were genuinely getting
+    cross-assigned), but it wasn't the cause of this bug.
+  - **Actual root cause, found via a targeted runqueue dump**:
+    `kernel_main()` spawns the ELF task (via `test_elf_execution()`)
+    *before* it creates `task0` (idle), several lines later. With PIT
+    already running at 1000Hz, a real timer tick can land in that gap —
+    after the ELF task exists but before `task0` does. When it does,
+    `scheduler_on_tick()`'s "first tick" logic permanently abandons the
+    rest of `kernel_main()` (it's a one-time, non-requeueable handoff)
+    and jumps into whatever's in the runqueue so far: just the ELF task,
+    alone, self-looped. `task0` never gets created, "Tasking Enabled!"
+    never prints, and `pick_next()` — correctly, given the actual
+    runqueue state — can't find anything else `TASK_READY` to switch to,
+    so `task_block()`'s reschedule is a genuine no-op, not a bug in the
+    block/wake logic itself.
+  - **Fixed**: wrapped `kernel_main()`'s entire task-creation span (from
+    before the first `task_create()`/`elf_spawn()` call through the last)
+    in `sched_lock()`/`sched_unlock()` — the same primitive that already
+    makes `scheduler_on_tick()` a complete no-op while held, now exported
+    from `tasking.h` so `p-kernel.cpp` can use it directly. No tick can
+    hijack execution until every startup task actually exists.
+  - **Re-tested end to end after the real fix**: booted, confirmed the
+    ELF task's `sys_read` genuinely stays blocked (waited 6+ seconds with
+    no keystrokes, nothing happened), typed "bob" + Enter, and the
+    program correctly woke, captured "bob", and completed normally —
+    real blocking, real wake, real captured input, no crash, no hang.
+  - Test-only instrumentation (debug prints, runqueue dumps, temporarily
+    re-enabling `test_elf_execution` in `p-kernel.cpp`) was fully
+    reverted after testing. What's actually shipped: the `syscall.asm`
+    fix, the `sched_lock()`/`sched_unlock()` fix in `p-kernel.cpp`, and
+    Phase 3's original `task_block()`/`stdin_waiter` logic — no leftover
+    debug code anywhere. See `docs/DOCS.md` ("p-kernel.cpp —
+    kernel_main() task-creation race") for the full writeup.
 
 ##### Explicitly deferred (related, but not part of this proposal)
 

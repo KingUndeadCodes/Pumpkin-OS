@@ -49,5 +49,4 @@ src/src/kernel/   — the kernel
   mods/dev/       — drivers and subsystems (PCI, VBE, IDT/ISR, networking, VFS, tasking, ...)
   mods/std/       — freestanding libc-ish support (stdlib, string, stdio, ...)
   mods/ports/     — vendored third-party code (minimp3, via git submodule)
-experemental/     — exploratory/in-progress code not yet wired into the build
 ```

@@ -112,6 +112,31 @@ extern "C" void task_exit(void) {
 }
 
 // ----------------------
+// Task blocking: mark blocked and force an immediate reschedule via the
+// same software-timer-interrupt trick task_exit() uses above. Unlike a
+// hlt-spin, `int $0x20` doesn't need EFLAGS.IF set first -- it's a
+// software interrupt, not something waiting on a hardware one -- so the
+// caller has no interrupt-enable precondition to get right. This only
+// returns once some other context calls task_wake() on this exact task,
+// since pick_next() already skips anything that isn't TASK_READY, so a
+// still-BLOCKED task can never be rescheduled by accident.
+// ----------------------
+extern "C" void task_block(void) {
+    sched_lock();
+    if (g_current) g_current->state = TASK_BLOCKED;
+    sched_unlock();
+
+    asm volatile("int $0x20");
+}
+
+extern "C" void task_wake(task_t* t) {
+    if (!t) return;
+    unsigned long flags = enter_critical();
+    if (t->state == TASK_BLOCKED) t->state = TASK_READY;
+    exit_critical(flags);
+}
+
+// ----------------------
 // Task creation: build an interrupt frame matching irq_common_stub
 // IMPORTANT: This must match your idt.asm irq_common_stub pop order.
 // ----------------------

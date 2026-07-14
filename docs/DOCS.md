@@ -900,3 +900,347 @@ then #PF against a deliberately unmapped address (fatal -- should print
 CR2/err_code diagnostics, a stack trace, and the panic screen, then halt).
 Only call this manually while testing; it never returns once the #PF
 fires.
+
+## `mods/dev/elf/elf.cpp` — `elf_lookup_symbol()`
+
+Previously a stub that always returned `NULL`, meaning any ET_REL ELF
+program with an undefined external symbol (i.e. any program that wants to
+call a kernel function by name rather than being fully self-contained)
+would fail relocation outright.
+
+Given the single-address-space, ring-0-only design, there's no reason for
+"a program calls into the kernel" to mean "traps through a syscall number."
+The int 0x80 syscall table (`sys_open`/`sys_read`/`sys_write`/`sys_close`/
+`sys_exit`) still exists for programs that want an explicit trap boundary,
+but it isn't the only door in: `elf_lookup_symbol()` now does a linear
+`strcmp` scan over a static `elf_exports[]` table of `{name, address}`
+pairs and hands back the real function pointer, exactly like a minimal
+static/dynamic linker's symbol resolution. A program can link against
+`malloc`, `strcmp`, `fopen`, etc. directly, by name, and the relocator
+patches the call site to jump straight at the kernel's own implementation
+-- no new syscall number needed for each new thing a program wants to do.
+
+The export table intentionally mirrors only functions that are genuinely
+implemented in `mods/std/`, not everything declared in its headers.
+`ftell()` is declared in `mods/std/include/stdio.h` but has no definition
+anywhere in the kernel; exporting it would hand a program a pointer to
+nothing, which `--oformat binary` linking (see build-system section
+above) would not catch at kernel-build time either. Any future export
+added to this table should be checked the same way before being listed.
+
+## Bootloader → kernel `read_file` handoff
+
+Traced end to end (2026-07-13) while working `docs/TODO.md` item #14.
+The kernel receives one function pointer from the bootloader —
+`load_floppy` (typed `read_file` in `p-kernel.cpp`) — that lets it keep
+reading arbitrary files off the boot floppy after boot, without its own
+FAT12 implementation. How that pointer actually crosses from the
+bootloader into the kernel turned out to be more fragile than it looked
+at a glance, and worth writing down precisely.
+
+**The chain, stage by stage:**
+
+1. `src/boot/loader/main.cpp` has its own `kernel_main()` (confusingly
+   named the same as the real kernel's `p-kernel.cpp:kernel_main()` —
+   they are different functions in different binaries that happen to
+   share a name). This one loads `KERNEL.BIN` to `0x400000`, then sets
+   `g_read_file_ptr = &read_file_frontend;` — a plain, normally-linked
+   global — before returning.
+2. `src/boot/loader/entry.asm`'s `_start` is stage2's real entry point
+   (confirmed via `src/Makefile`'s `$(STAGE2)` rule: `entry.o` is listed
+   first in the link line, and stage2 has no other candidate start
+   symbol). It resumes right after that call returns, does
+   `push dword [g_read_file_ptr]`, then `jmp 0x400000` into the
+   just-loaded kernel image.
+3. The kernel's very first instruction, `Kernel-Entry.asm`'s
+   `start_kernel`, does `call kernel_main` (this time the real one, in
+   `p-kernel.cpp`). Because of the push in step 2, cdecl's `[esp+4]`
+   convention hands that pointer to `kernel_main(read_file load_floppy)`
+   as its one argument — there's no actual C-level call from `entry.asm`
+   into `p-kernel.cpp`; it's a `jmp`, with the call argument
+   hand-assembled onto the stack beforehand.
+
+**What used to be here, and why it changed:** steps 1–2 used to pass this
+pointer through a hand-computed absolute address
+(`READ_FUNCTION_ADDRESS`, a `#define` chain off `KERNEL_LOCATION` in
+`main.cpp`) that `entry.asm` referenced as a bare hex literal (`0x3FFBF8`)
+with no connection to the `#define` at all — two files, two languages,
+one number, no shared build step keeping them in sync. Changing
+`KERNEL_LOCATION` or any buffer size ahead of it in `main.cpp` without
+also updating the literal in `entry.asm` would silently hand the kernel
+a garbage pointer, with no compiler or linker error — it would only
+surface the first time something called `load_floppy(...)`. Replaced
+with a real linked symbol (`g_read_file_ptr`, `extern "C"` on the C++
+side, `extern g_read_file_ptr` on the NASM side) specifically to close
+that hazard: the linker resolves it for real, so the two sides can't
+drift apart unnoticed.
+
+**A verification note, in case anyone re-derives this from scratch:**
+`g_read_file_ptr` lands in `.bss`, at whatever address the linker
+happens to place it — checked via `-Map` against the *actual*
+`--oformat binary` link (a separately-formatted ELF link of the same
+inputs gave a different, misleading address, since ld's default section
+layout differs by output format; don't trust an ELF-format re-link as a
+stand-in for the real flat-binary one). That address (`0xa01c` as of this
+writing) falls *past* `stage2.bin`'s `truncate -s 8192` boundary
+(`0xa000`) — `--oformat binary` doesn't write `.bss` content at all, so
+nothing at that address is ever actually loaded from disk. This is safe
+only because `main.cpp`'s `kernel_main()` always writes
+`g_read_file_ptr` before `entry.asm` ever reads it back (the read happens
+strictly after `call kernel_main` returns) — whatever happened to be in
+low physical memory at that address before boot is irrelevant. This is
+not a new risk introduced by the symbol-reference change: `bootSector`
+and `disk_id`, the pre-existing `.bss` globals this same file already
+relied on, sit in the same past-the-boundary region (`.bss` spans
+`[0xa012, 0xa028)` end to end) and depend on the identical
+write-before-read guarantee. Don't add a zero-fill/truncation-boundary
+"fix" here — there's nothing broken to fix, and it would just be
+speculative code for a scenario that doesn't occur.
+
+**Memory ownership — corrected from an earlier, wrong guess:** both
+boot-owned regions (stage2's own code/data footprint at `[0x8000,
+0xA000)`, and this handoff's own storage just past it) are already
+protected from the physical page allocator today — `init_phys_allocator()`
+(`mods/dev/memory/allocator.cpp`) marks every page from address `0`
+through `endkernel` (the linker-defined end of the kernel image, based at
+`0x400000`) as used, and that blanket sweep covers both ranges. That
+protection is *incidental*, though — a side effect of the reservation
+loop starting at `0` rather than at the kernel's own load address, not
+something written with stage2 in mind, and not documented anywhere else
+as a dependency until now. If that loop's start point ever changes (e.g.
+"optimized" to start from `kernel_start` since addresses below that seem
+irrelevant to the kernel), this breaks silently — a task or future
+`load_floppy` call could get handed memory that's still holding live
+stage2 code/data. Deliberately not adding new allocator code to guard
+against that here, since nothing is broken today and this project avoids
+speculative defensive code for scenarios that can't currently happen —
+this paragraph is the mitigation: the invariant is now written down
+somewhere a future change to `init_phys_allocator()` would have to
+actively contradict, rather than silently violate.
+
+**What `load_floppy` guarantees, for any future caller:** synchronous
+(blocks until the read completes or fails), not reentrant (relies on
+`main.cpp`'s static `bootSector`/`disk_id`, not per-call state — a second
+concurrent call would race), and every existing call site
+(`p-kernel.cpp`'s `test_vfs_file_io()`, `copy_floppy_file_to_ramfs()`,
+`test_elf_execution()`) wraps it in `disablePaging()`/`enablePaging()`.
+Whether that's load-bearing (a real dependency on physical==virtual
+addressing somewhere in the FDC driver's DMA setup) or leftover caution
+from an earlier real-mode-era version of this code is still an open
+question — see `docs/TODO.md`'s Proposal 3 sketch, not resolved here.
+
+## `mods/dev/tasking/tasking.cpp` — `task_block()`/`task_wake()`
+
+Tasking proposal Phase 3. Adds one new state (`TASK_BLOCKED`) and two
+functions, `task_block()`/`task_wake(task_t*)`, to `tasking.h`/`tasking.cpp`.
+
+`task_block()` is the same trick `task_exit()` already used: mark the
+current task's state (here, `TASK_BLOCKED` instead of `TASK_DEAD`), then
+force an immediate reschedule with a software `int $0x20` — the same
+vector the hardware timer IRQ uses, so `scheduler_on_tick()` runs exactly
+as it would on a real tick and hands control to another task. No
+scheduler surgery was needed for this: `pick_next()` already only
+selects `TASK_READY` tasks, so `TASK_BLOCKED` gets skipped automatically,
+the same way `TASK_DEAD` already was.
+
+`task_wake(t)` just flips a specific task back to `TASK_READY` if (and
+only if) it's currently `TASK_BLOCKED` — guarded so a stray or duplicate
+wake call on a task that's already running/ready/dead is a harmless
+no-op, not a state-machine bug.
+
+Why `int $0x20` doesn't need `EFLAGS.IF` set first, unlike the `hlt`-spin
+it replaces: `hlt` only resumes when *some* interrupt fires, so the old
+code needed IF=1 or it would never wake up at all. `int N` is a software
+interrupt — the CPU executes it unconditionally when the instruction runs,
+regardless of IF, since IF only gates automatic delivery of *hardware*
+interrupts. So `task_block()` works correctly no matter what IF happens
+to be at the call site. Once control switches to whatever task
+`pick_next()` picks, IF gets re-enabled naturally from *that* task's own
+saved frame — every task built by `task_create()` (including the Phase 1
+idle task, which always exists and is always `TASK_READY`) has `EFLAGS`
+pre-set to `0x202` (IF=1) in its initial stack frame, so switching to any
+other task, even just the idle task's `hlt`-loop, is what lets the
+keyboard IRQ that will eventually call `task_wake()` actually fire.
+
+## `mods/dev/syscall/syscall.cpp` — `stdin_read_line()` real blocking
+
+`stdin_read_line()` used to be `while (!stdin_line_done) { hlt; }` —
+"yield to any interrupt," burning a full task slot's scheduling turn on
+every tick just to check one flag, and (before Phase 3) unable to let a
+*different* task make real progress while waiting, since there was no
+such thing as a task giving up its turn on purpose. Now it calls
+`task_block()` instead, and `stdin_kb_callback` (the keyboard-IRQ-driven
+callback that already appended typed characters to the buffer) calls
+`task_wake(stdin_waiter)` once it sees `'\n'`. The `stdin_line_done` flag
+is gone entirely — the wake itself *is* the "a full line is ready"
+signal, so there's nothing left to poll.
+
+**Deliberately out of scope, matching a pre-existing limit, not a new
+one:** `stdin_waiter` (which task to wake) is a single global, same as
+`stdin_buf_ptr`/`stdin_buf_size`/`stdin_buf_pos` always were. If two
+different tasks both call `sys_read` on stdin at the same time, the
+second call's `stdin_read_line()` overwrites the first's buffer pointers
+and waiter out from under it — a real bug, but not one Phase 3
+introduces: it already existed with the old `hlt`-spin design too, the
+moment Phase 2 made it possible for more than one task to be independently
+mid-`sys_read` at once. `kb_run_events()` still broadcasts every keystroke
+to every registered callback unconditionally regardless of which task
+"should" receive it. Fixing this for real needs actual per-task keyboard
+focus routing (`docs/TODO.md`'s Priority 3 item), which was always
+sequenced to come *after* Phase 3 specifically because it needs
+`task_block()`/`task_wake()` to exist first — this doesn't make that gap
+worse, it's the same gap Phase 3 was always going to leave for that next
+item to close.
+
+**Update (2026-07-14): actually boot-tested, found the real cause, fixed
+it.** The "sandbox can't boot QEMU" assumption behind the paragraph above
+was wrong — QEMU runs headless here (`-display none`, `-serial
+file:...`, plus a monitor socket to `sendkey` past `stage0.asm`'s boot
+menu, which blocks on a real keystroke with no timeout).
+
+Retested Phase 1/2's scheduler in isolation first (`task1`/`task2`, no
+ELF, no blocking) and got real interleaved `[1] fibbanoci(...)` / `[2]
+fibbanoci(...)` serial output — first actual confirmation this ever
+worked at runtime, not just on code review. The scheduler itself was
+never the problem.
+
+Spawning `MAIN.ELF` (prompts, then blocks on `sys_read`) failed though:
+`task_block()` returned almost instantly, before any keystroke arrived,
+`stdin_buf_pos` still `0`. First guess was the already-known, unfixed
+`syscall.asm` segment push/pop mismatch (see `mods/dev/syscall/syscall.asm`
+below) corrupting the nested `int 0x80` frame `task_block()`'s `int
+$0x20` needs to resume into correctly — fixed that bug (it was real), 
+retested, **identical failure**. Not the cause.
+
+Actual cause, found by dumping the live runqueue at the exact failing
+tick: `kernel_main()` calls `test_elf_execution()` (which spawns the ELF
+task) several lines *before* it creates `task0` (idle). PIT is already
+running at 1000Hz by then. A real timer tick landing in that gap —
+after the ELF task exists, before `task0` does — hits
+`scheduler_on_tick()`'s "first ever tick" branch, which is a **one-time,
+non-requeueable handoff**: it permanently abandons whatever's left of
+`kernel_main()` and jumps into the runqueue as it exists *at that exact
+moment*. If that moment falls in the gap, the runqueue contains exactly
+one task (the ELF task), self-looped. `task0` never gets created,
+`kernel_main()`'s "Tasking Enabled!" line never prints, and `pick_next()`
+— correctly, given that actual runqueue — can't find anything else
+`TASK_READY`, so `task_block()`'s reschedule is a genuine no-op. Confirmed
+directly: this run's log was missing "Tasking Enabled!" entirely, and a
+runqueue dump at the failing tick showed a single node whose own `next`
+pointer pointed at itself.
+
+This is a Phase 1 gap, not a Phase 3 bug: `kernel_main()`'s startup tail
+was never written to be safe against preemption partway through. It only
+surfaced now because this specific ordering (spawn a task doing real
+(slow) disk I/O, *then* spawn the fast idle task) had never actually been
+boot-tested before.
+
+**Fixed** by wrapping `kernel_main()`'s entire task-creation span — from
+before the first `task_create()`/`elf_spawn()` call through the last —
+in `sched_lock()`/`sched_unlock()`. That's the exact primitive that
+already makes `scheduler_on_tick()` a complete no-op while held (used
+internally by `task_exit()`/`task_block()` already); it just wasn't
+exported for `kernel_main()` itself to use, so `sched_lock`/`sched_unlock`
+were added to `tasking.h`. `test_udp_echo()`/`procMan()` — which sit
+between the first and last `task_create()` call in the existing boot
+order and don't themselves need the lock — ended up inside the span too,
+rather than reordering unrelated boot steps just to shrink it.
+
+**Re-tested end to end after the real fix**: booted, waited 6+ seconds
+with zero keystrokes sent and confirmed the ELF task's `sys_read`
+genuinely stayed blocked (no premature completion), then typed "bob" +
+Enter via `sendkey` and got a correct wake, correct capture, clean
+program completion, no crash, no hang.
+
+All debug instrumentation used across this investigation (prints, a
+targeted runqueue-walk dump gated behind a one-shot trace flag) was
+reverted afterward. What's actually shipped: the `syscall.asm` fix (real,
+worth keeping, just not the cause of this bug), the `sched_lock()`/
+`sched_unlock()` fix here and in `p-kernel.cpp`, and Phase 3's original
+`task_block()`/`stdin_waiter` logic in `syscall.cpp` — no leftover debug
+code anywhere.
+
+## `p-kernel.cpp` — `kernel_main()` task-creation race
+
+See the update above for the full investigation. Summary: any function
+that creates more than one task (directly via `task_create()`, or
+indirectly via `elf_spawn()`) must hold `sched_lock()` across the entire
+span from its first task-creating call to its last. Once *any* task
+exists in the runqueue, a real timer tick can trigger
+`scheduler_on_tick()`'s one-time "first tick" handoff and permanently
+abandon whatever code was still running — there is no path back into
+that abandoned context, since it was never a member of the scheduler's
+own circular runqueue to begin with. `kernel_main()` is the only place
+this currently applies (it's the only function that creates multiple
+startup tasks in sequence with other code, like disk I/O, running in
+between) — anything spawning exactly one task via `elf_spawn()` (e.g.
+`explorer.cpp`'s `.elf` handler) doesn't have this race, since there's no
+"in between" for a tick to land in.
+
+## `mods/dev/syscall/syscall.cpp` — stdin keyboard ownership
+
+With tasking Phase 3's real blocking, more than one task can legitimately
+be mid-`sys_read` on stdin at the same time — `syscall.cpp` used to
+track exactly one reader (`stdin_buf_ptr`/`stdin_buf_size`/`stdin_buf_pos`/
+`stdin_waiter`, all flat globals), so a second concurrent reader would
+silently overwrite the first's state.
+
+Replaced with a small fixed-size LIFO stack, `stdin_stack[MAX_STDIN_DEPTH]`
+(`MAX_STDIN_DEPTH = 8`), of `StdinFrame { waiter, buf, size, pos }`.
+`stdin_kb_callback` always operates on `stdin_stack[stdin_stack_depth -
+1]` — the top frame — appending characters there and waking only the top
+frame's task on `'\n'`. Whichever task most recently called
+`stdin_read_line()` owns the keyboard exclusively, the same nesting a
+stack of modal dialogs would have: older readers are blocked further,
+not receiving any input at all, until everything pushed after them
+completes.
+
+This is provably safe without extra bookkeeping about "which index am
+I": a frame can only ever be woken while it's on top (only the top frame
+ever sees a `'\n'`), and nothing can be pushed *after* a frame without
+first requiring that frame to still be blocked below it — so by
+construction, whenever `stdin_read_line()` resumes from `task_block()`,
+its own frame is guaranteed to still be exactly at `stdin_stack_depth -
+1`. Popping is always safe.
+
+`stdin_kb_callback` itself stays a single shared function, registered
+once via the existing `kb_add_event()` dedup — but critically, the
+register/unregister calls moved from *per `stdin_read_line()` call* to
+*per stack transition* (empty→non-empty registers, non-empty→empty
+unregisters). Registering/unregistering per-call would have been a real
+bug under nesting: an inner (more-recently-pushed) frame finishing and
+calling `kb_remove_event()` would silently cut off an outer frame still
+waiting below it, which still needs the callback registered until *it*
+finishes too.
+
+`stdin_is_reading()` (the only piece of this any other file reads —
+`wingman.cpp`'s `keyboardFunctionWindowManager()`, to keep suppressing
+GUI keyboard dispatch while stdin has an active reader) now reports
+`stdin_stack_depth > 0` instead of a single boolean. Same external
+contract, correctly generalized to "is anyone at all reading," not "is
+the one reader we know about reading."
+
+**Boot-tested for real (2026-07-14)**: temporarily spawned `MAIN.ELF`
+twice in a row from `kernel_main()` (two independent, concurrently-
+blocked readers, both waiting at their own `sys_read`), then via QEMU
+monitor `sendkey`: typed "two" — only the second (topmost, most
+recently blocked) reader received it, completed, and popped correctly;
+then typed "one" — the first reader, now correctly back on top, received
+it cleanly with zero characters leaked from the other read. No crash, no
+hang. Test instrumentation (the double-spawn) was reverted after
+verification.
+
+**Deliberately not the bigger version**: this doesn't tie ownership to
+window-manager focus, because ELF programs don't have a window at all
+today — they're fully headless, stdout only ever goes to the serial log.
+Building "click a program's console window to give it keyboard focus"
+would mean a real new UI feature (a console/terminal `Window` subclass
+with its own click-to-focus, wired into `WindowManager` the way
+`MessageBox`/`FileManager` already are) — a genuinely separate, larger
+task, not attempted here. What this fix does is narrower but real: make
+"who owns the keyboard" an actual, correct, identifiable fact (a stack)
+instead of a global that silently lied about it the moment a second
+reader existed. There still isn't a way for a user to *choose* which of
+several running programs owns the keyboard beyond "whichever one most
+recently asked" — that choice is exactly what the window-focus version
+would add, whenever it's picked up.

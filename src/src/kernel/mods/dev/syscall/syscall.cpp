@@ -42,48 +42,78 @@ syscall_t sys_open(uint32_t path, uint32_t flags, uint32_t, uint32_t, uint32_t) 
 }
 
 // --- blocking stdin (fd 0) support, driven by the keyboard event system ---
-static char*    stdin_buf_ptr;
-static uint32_t stdin_buf_size;
-static uint32_t stdin_buf_pos;
-static volatile bool stdin_line_done;
-static volatile bool stdin_reading = false;
+// See docs/DOCS.md ("mods/dev/syscall/syscall.cpp — stdin keyboard
+// ownership") for why this is a small LIFO stack of readers rather than
+// one global: with real task blocking (tasking Phase 3), more than one
+// task can legitimately be mid-sys_read on stdin at once. Whichever task
+// most recently started reading owns the keyboard exclusively -- the
+// same nesting a stack of modal dialogs would have -- until it
+// completes, at which point ownership reverts to whichever task (if any)
+// was reading before it.
+#define MAX_STDIN_DEPTH 8
 
-bool stdin_is_reading(void) { return stdin_reading; }
+struct StdinFrame {
+    task_t*  waiter;
+    char*    buf;
+    uint32_t size;
+    uint32_t pos;
+};
+
+static StdinFrame stdin_stack[MAX_STDIN_DEPTH];
+static int stdin_stack_depth = 0;
+static int stdin_kb_event_id = -1;
+
+bool stdin_is_reading(void) { return stdin_stack_depth > 0; }
 
 static void stdin_kb_callback(char key, bool shift, bool meta, unsigned char scancode) {
     if (!key) return;
+    if (stdin_stack_depth == 0) return;
+    StdinFrame* top = &stdin_stack[stdin_stack_depth - 1];
     if (key == '\n') {
-        stdin_line_done = true;
+        if (top->waiter) task_wake(top->waiter);
         return;
     }
-    if (stdin_buf_pos < stdin_buf_size - 1) {
-        stdin_buf_ptr[stdin_buf_pos++] = key;
+    if (top->pos < top->size - 1) {
+        top->buf[top->pos++] = key;
     }
 }
 
 static uint32_t stdin_read_line(char* buf, uint32_t size) {
     if (size == 0) return 0;
+    if (stdin_stack_depth >= MAX_STDIN_DEPTH) return 0;
 
-    stdin_buf_ptr = buf;
-    stdin_buf_size = size;
-    stdin_buf_pos = 0;
-    stdin_line_done = false;
-    stdin_reading = true;
+    StdinFrame* frame = &stdin_stack[stdin_stack_depth];
+    frame->buf = buf;
+    frame->size = size;
+    frame->pos = 0;
+    frame->waiter = g_current;
+    stdin_stack_depth++;
 
-    int id = kb_add_event(stdin_kb_callback);
-    // int 0x80 is an interrupt gate, so the CPU cleared IF on entry; without
-    // re-enabling it here the keyboard IRQ this loop is waiting on can never
-    // fire and hlt would spin forever. iretd restores the caller's original
-    // EFLAGS at the end of the syscall regardless of what we do with IF here.
-    asm volatile("sti");
-    while (!stdin_line_done) {
-        asm volatile("hlt");
+    // Only register once, when the stack goes empty -> non-empty -- every
+    // frame shares the one stdin_kb_callback registration (kb_add_event()
+    // is already idempotent for a repeat callback), so it must stay
+    // registered as long as *any* frame is waiting, not just the top one.
+    if (stdin_stack_depth == 1) {
+        stdin_kb_event_id = kb_add_event(stdin_kb_callback);
     }
-    kb_remove_event(id);
-    stdin_reading = false;
 
-    buf[stdin_buf_pos] = '\0';
-    return stdin_buf_pos;
+    // task_block() yields to another READY task (real concurrency) instead
+    // of hlt-spinning until any interrupt fires, and only returns once
+    // stdin_kb_callback calls task_wake() on us from the keyboard IRQ once
+    // Enter is pressed -- no separate "done" flag to poll anymore. Only
+    // the top frame ever receives '\n', so only the top frame's task can
+    // ever be woken -- we're guaranteed to still be on top when this
+    // returns, since nothing pushed after us could have completed first.
+    task_block();
+
+    stdin_stack_depth--;
+    if (stdin_stack_depth == 0) {
+        kb_remove_event(stdin_kb_event_id);
+        stdin_kb_event_id = -1;
+    }
+
+    buf[frame->pos] = '\0';
+    return frame->pos;
 }
 
 syscall_t sys_read(uint32_t fd, uint32_t buf, uint32_t size, uint32_t, uint32_t) {

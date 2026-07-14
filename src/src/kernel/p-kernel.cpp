@@ -284,6 +284,19 @@ extern "C" void kernel_main(read_file load_floppy) {
     copy_floppy_file_to_ramfs(load_floppy, "MAIN.ELF", "main.elf");
     // WAV/MP3 playback smoke tests moved to mods/dev/chorus/wav.cpp and
     // mods/dev/chorus/mp3.cpp as reference comments.
+    // See docs/DOCS.md ("p-kernel.cpp — kernel_main() task-creation race")
+    // for why every task_create() call in this function (direct, or
+    // indirect via elf_spawn()) has to happen inside one sched_lock()/
+    // sched_unlock() span: a real timer tick landing after the *first*
+    // task exists but before the *last* one is created hijacks execution
+    // into whatever's in the runqueue so far and permanently abandons the
+    // rest of this function -- sched_lock() makes scheduler_on_tick() a
+    // complete no-op until every startup task actually exists. Everything
+    // else in this span (test_udp_echo/procMan) doesn't itself need the
+    // lock, but sits between the first and last task_create() call in the
+    // existing boot order, so it's inside the span too rather than
+    // reordering unrelated boot steps just to shrink it.
+    sched_lock();
     // test_elf_execution(load_floppy);
     test_udp_echo();
     procMan();
@@ -297,5 +310,6 @@ extern "C" void kernel_main(read_file load_floppy) {
     // static uint8_t stack2[KSTACK_SIZE] __attribute__((aligned(16)));
     // task_create(task1, NULL, stack1);
     // task_create(task2, NULL, stack2);
+    sched_unlock();
     serial_write_string("Tasking Enabled! Tasks spawned.\n");
 }

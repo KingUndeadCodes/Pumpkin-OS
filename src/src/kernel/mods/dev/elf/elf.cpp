@@ -3,6 +3,7 @@
 #include <stdarg.h>
 #include "../tasking/tasking.h"
 #include "../serial/serial.h"
+#include "../syscall/syscall.h"
 
 // This needs to be worked on.
 
@@ -43,8 +44,61 @@ static inline void *elf_section_data(Elf32_Ehdr *hdr, Elf32_Shdr *section) {
     return (void *)(uintptr_t)section->sh_addr;
 }
 
+// See docs/DOCS.md ("mods/dev/elf/elf.cpp — elf_lookup_symbol()") for why this
+// table, not a per-syscall approach, is how ELF programs reach the kernel.
+struct elf_export_t {
+    const char *name;
+    void *addr;
+};
+
+static const elf_export_t elf_exports[] = {
+    // mods/std/include/stdlib.h
+    { "malloc",  (void*)malloc },
+    { "free",    (void*)free },
+    { "calloc",  (void*)calloc },
+    { "realloc", (void*)realloc },
+    // mods/std/include/string.h
+    { "sprintf",   (void*)sprintf },
+    { "atoi",      (void*)atoi },
+    { "itoa",      (void*)itoa },
+    { "strtok",    (void*)strtok },
+    { "strtok_r",  (void*)strtok_r },
+    { "strlen",    (void*)strlen },
+    { "strspn",    (void*)strspn },
+    { "strcspn",   (void*)strcspn },
+    { "strcmp",    (void*)strcmp },
+    { "strncmp",   (void*)strncmp },
+    { "strcpy",    (void*)strcpy },
+    { "strncpy",   (void*)strncpy },
+    { "strcat",    (void*)strcat },
+    { "strdup",    (void*)strdup },
+    { "strrchr",   (void*)strrchr },
+    { "memmove",   (void*)memmove },
+    { "memchr",    (void*)memchr },
+    { "memset",    (void*)memset },
+    { "memcpy",    (void*)memcpy },
+    { "memcmp",    (void*)memcmp },
+    // mods/std/include/stdio.h
+    { "fopen",  (void*)fopen },
+    { "fclose", (void*)fclose },
+    { "fread",  (void*)fread },
+    { "fwrite", (void*)fwrite },
+    { "fseek",  (void*)fseek },
+    { "mkdir",  (void*)mkdir },
+    // mods/dev/syscall/syscall.h
+    { "sys_open",  (void*)sys_open },
+    { "sys_read",  (void*)sys_read },
+    { "sys_write", (void*)sys_write },
+    { "sys_close", (void*)sys_close },
+    { "sys_exit",  (void*)sys_exit },
+};
+
 void *elf_lookup_symbol(const char *name) {
-    // TODO : Implement a symbol lookup table
+    if (!name) return NULL;
+    constexpr size_t elf_exports_count = sizeof(elf_exports) / sizeof(elf_exports[0]);
+    for (size_t i = 0; i < elf_exports_count; i++) {
+        if (strcmp(elf_exports[i].name, name) == 0) return elf_exports[i].addr;
+    }
     return NULL;
 }
 

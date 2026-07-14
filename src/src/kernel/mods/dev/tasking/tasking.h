@@ -8,6 +8,7 @@
 typedef enum {
     TASK_READY = 0,
     TASK_RUNNING,
+    TASK_BLOCKED,
     TASK_DEAD
 } task_state_t;
 
@@ -31,3 +32,15 @@ uint32_t* scheduler_on_tick(uint32_t* current_esp);
 
 extern "C" void task_exit(void);
 extern "C" void task_start_trampoline(void);  // in tasking.asm
+
+// See docs/DOCS.md ("mods/dev/tasking/tasking.cpp — task_block()/task_wake()")
+// for why this is the same immediate-reschedule trick task_exit() already
+// uses, not a new mechanism.
+extern "C" void task_block(void);
+extern "C" void task_wake(task_t* t);
+
+// See docs/DOCS.md ("p-kernel.cpp — kernel_main() task-creation race") for
+// why kernel_main() needs to hold this across its own task_create() calls,
+// not just the scheduler's internal use of it.
+extern "C" void sched_lock(void);
+extern "C" void sched_unlock(void);

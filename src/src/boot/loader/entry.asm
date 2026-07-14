@@ -5,11 +5,12 @@ section .text
 KERNEL_LOCATION equ 0x400000
 
 [extern kernel_main]
+[extern g_read_file_ptr]
 
 _start:
     ; Here, you could set up the stack or call main() if needed
     call kernel_main
-    push dword [0x3FFBF8]           ; read_file function pointer
+    push dword [g_read_file_ptr]    ; read_file function pointer, set by main.cpp's kernel_main()
     mov eax, KERNEL_LOCATION        ; kernel entry point
     jmp eax
     jmp $

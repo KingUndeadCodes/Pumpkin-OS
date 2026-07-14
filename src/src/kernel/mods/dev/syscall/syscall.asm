@@ -32,8 +32,8 @@ syscall_handler:
     pop edi
     pop ebp
     ; pop dword -ENOSYS
+    pop ds
     pop es
     pop fs
     pop gs
-    add esp, 4
     iretd

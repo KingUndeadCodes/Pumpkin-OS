@@ -6,7 +6,6 @@
 
 #define BOOT_SECTOR_LOCATION    (KERNEL_LOCATION - 512)
 #define NAME_BUFFER_ADDRESS     (BOOT_SECTOR_LOCATION - 512)
-#define READ_FUNCTION_ADDRESS   (NAME_BUFFER_ADDRESS - 8)
 
 // FAT12 floppy usually has 9 FAT sectors.
 // Reserve 12 sectors just to be safe.
@@ -249,6 +248,12 @@ static uint32_t read_file_frontend(const char* filename, uint8_t* dest) {
     return read_file(disk_id, bootSector, filename, dest);
 }
 
+// See docs/DOCS.md ("Bootloader -> kernel read_file handoff") for why
+// this is a real linked symbol, referenced by name from entry.asm,
+// instead of a hand-computed absolute address shared between the two
+// files as a bare literal.
+extern "C" uint32_t (*g_read_file_ptr)(const char* filename, uint8_t* dest) = NULL;
+
 // ~4500 BYTES REMAINING
 
 extern "C" void kernel_main() {
@@ -272,9 +277,9 @@ extern "C" void kernel_main() {
             */
             list_directories(disk, bootSector);
             read_file(disk, bootSector, "KERNEL.BIN", (uint8_t*)KERNEL_LOCATION);
-            // Save a pointer to the read_file function to the kernel to memory address `READ_FUNCTION_ADDRESS` to be passed to the kernel by `entry.asm`.
-            uint32_t* ptr = (uint32_t*)READ_FUNCTION_ADDRESS;
-            *ptr = &read_file_frontend; // read_file
+            // entry.asm reads this symbol directly (`extern g_read_file_ptr`)
+            // and pushes it as kernel_main()'s read_file argument.
+            g_read_file_ptr = &read_file_frontend;
             // while (true);
         /*
         for (size_t i = 0; i < KERNEL_SECTORS; i++) {
