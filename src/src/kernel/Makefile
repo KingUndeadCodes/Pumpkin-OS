@@ -11,15 +11,18 @@ all: build clean
 
 build:
 	$(AS) Kernel-Entry.asm -f elf -o Kernel-Entry.o
+	$(AS) mods/core/fontman/font_data.asm -f elf -o font_data.o
 	$(CC) $(CFLAGS) p-kernel.cpp -o kernel.o
 	$(CC) $(CFLAGS) mods/std/string.cpp -o string.o
 	$(CC) $(CFLAGS) mods/std/ctype.cpp -o ctype.o
 	$(CC) $(CFLAGS) mods/std/stdlib.cpp -o stdlib.o
 	$(CC) $(CFLAGS) mods/std/time.cpp -o time.o
 	$(CC) $(CFLAGS) mods/std/math.cpp -o math.o
-	$(CC) $(CFLAGS) mods/std/logging.cpp -o logging.o
+	$(CC) $(CFLAGS) mods/dev/logging/logging.cpp -o logging.o
 	$(CC) $(CFLAGS) mods/dev/tasking/tasking.cpp -o tasking.o
-	$(CC) $(CFLAGS) mods/std/graphics.cpp -o graphics.o
+	$(CC) $(CFLAGS) mods/dev/console/console.cpp -o console.o
+	$(CC) $(CFLAGS) mods/core/fontman/fontman.cpp -o fontman.o
+	$(CC) $(CFLAGS) mods/ports/truetype/truetype_impl.cpp -o truetype_impl.o
 	$(CC) $(CFLAGS) mods/std/stdio.cpp -o stdio.o
 	$(CC) $(CFLAGS) mods/dev/idt/idt.cpp -o idt.o
 	$(CC) $(CFLAGS) mods/dev/idt/isr.cpp -o isr.o
@@ -59,7 +62,7 @@ build:
 	$(CC) $(CFLAGS) mods/core/wingman/manager.cpp -o manager.o
 	$(CC) $(CFLAGS) mods/core/wingman/wingman.cpp -o wingman.o
 	$(CC) $(CFLAGS) mods/core/wingman/cursor.cpp -o cursor.o
-	$(LD) $(LDFLAGS) Kernel-Entry.o kernel.o graphics.o idt.o isr.o irq.o kb.o mouse.o ctype.o string.o math.o memory.o allocator.o vfs.o paging.o pat.o stdlib.o timer.o cmos.o pci.o rtl8139.o ac97.o time.o serial.o logging.o tasking.o vbe.o stdio.o syscall.o arp.o ip.o udp.o wav.o chorus.o minimp3.o button.o textinput.o checkbox.o mp3.o elf.o ramfs.o window.o surface.o manager.o wingman.o cursor.o explorerWingman.o messageWingman.o widgetdemoWingman.o $(LDFLAGS_TAIL)
+	$(LD) $(LDFLAGS) Kernel-Entry.o kernel.o console.o idt.o isr.o irq.o kb.o mouse.o ctype.o string.o math.o memory.o allocator.o vfs.o paging.o pat.o stdlib.o timer.o cmos.o pci.o rtl8139.o ac97.o time.o serial.o logging.o tasking.o vbe.o stdio.o syscall.o arp.o ip.o udp.o wav.o chorus.o minimp3.o button.o textinput.o checkbox.o mp3.o elf.o ramfs.o window.o surface.o manager.o wingman.o cursor.o explorerWingman.o messageWingman.o widgetdemoWingman.o font_data.o fontman.o truetype_impl.o $(LDFLAGS_TAIL)
 # truncate -s 131072 kernel.bin
 # cat kernel.bin empty_end.bin > kernel2.bin
 # mv kernel2.bin kernel.bin
@@ -69,5 +72,5 @@ build:
 # https://forum.osdev.org/viewtopic.php?t=25157
 
 clean:
-	rm chorus.o wav.o minimp3.o button.o textinput.o checkbox.o mp3.o ip.o arp.o udp.o allocator.o pat.o isr.o kb.o mouse.o vfs.o memory.o logging.o Kernel-Entry.o kernel.o idt.o irq.o ctype.o string.o paging.o serial.o stdlib.o timer.o pci.o rtl8139.o ac97.o cmos.o time.o tasking.o math.o graphics.o vbe.o ramfs.o stdio.o elf.o syscall.o window.o surface.o manager.o cursor.o explorerWingman.o messageWingman.o widgetdemoWingman.o wingman.o # image.bin
+	rm chorus.o wav.o minimp3.o button.o textinput.o checkbox.o mp3.o ip.o arp.o udp.o allocator.o pat.o isr.o kb.o mouse.o vfs.o memory.o logging.o Kernel-Entry.o kernel.o idt.o irq.o ctype.o string.o paging.o serial.o stdlib.o timer.o pci.o rtl8139.o ac97.o cmos.o time.o tasking.o math.o console.o vbe.o ramfs.o stdio.o elf.o syscall.o window.o surface.o manager.o cursor.o explorerWingman.o messageWingman.o widgetdemoWingman.o wingman.o font_data.o fontman.o truetype_impl.o # image.bin
 #  kernel.bin short.bin 

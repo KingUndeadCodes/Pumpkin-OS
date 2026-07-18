@@ -90,6 +90,15 @@ void *malloc(size_t size) {
 }
 
 void free(void *ptr) {
+    // See docs/DOCS.md ("mods/std/stdlib.cpp — free(NULL)") for how this
+    // was found: free(NULL) is standard-mandated to be a safe no-op (same
+    // as every real libc), but this never null-checked -- it computed
+    // ptr - sizeof(block_t) unconditionally and wrote through the result,
+    // which for ptr==NULL lands at a small, very-likely-unmapped address
+    // and page-faults. Latent until stb_truetype's real, correct usage
+    // (freeing a NULL vertex-list pointer for a glyph with no outline,
+    // e.g. space) finally exercised the path.
+    if (ptr == NULL) return;
     unsigned long flags = enter_critical();
     // Add the block to the free list
     block_t *block = (block_t *)((uint8_t *)ptr - sizeof(block_t));

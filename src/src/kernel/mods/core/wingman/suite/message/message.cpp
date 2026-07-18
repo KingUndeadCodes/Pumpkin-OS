@@ -10,17 +10,26 @@ void MessageBox::utility_draw_pixel(unsigned x, unsigned y, unsigned color) {
 };
 
 void MessageBox::utility_draw_char(unsigned int x, unsigned int y, char c, unsigned int color, unsigned int scale = 4U) {
-    for (unsigned i = 0; i < 8; i++) {
-        for (unsigned j = 0; j < 8; j++) {
-            if (Font[(int)c][i] & (1 << j)) {
-                for (unsigned k = 0; k < scale; k++) {
-                    for (unsigned l = 0; l < scale; l++) {
-                        utility_draw_pixel(x + j * scale + l, y + i * scale + k, color);
+    const FontAtlas* atlas = ttf_font_get_atlas(scale);
+    if (atlas == nullptr) {
+        for (unsigned i = 0; i < 8; i++) {
+            for (unsigned j = 0; j < 8; j++) {
+                if (Font[(int)c][i] & (1 << j)) {
+                    for (unsigned k = 0; k < scale; k++) {
+                        for (unsigned l = 0; l < scale; l++) {
+                            utility_draw_pixel(x + j * scale + l, y + i * scale + k, color);
+                        }
                     }
                 }
             }
         }
+        return;
     }
+    ttf_blit_glyph(atlas, c, (int)x, (int)y, color,
+        [&](int px, int py, uint8_t alpha, uint32_t fg) {
+            color_t under = this->window->surface->getPixel(px, py);
+            utility_draw_pixel((unsigned)px, (unsigned)py, ttf_blend_over(under, fg, alpha));
+        });
 };
 
 void MessageBox::utility_draw_icon(unsigned x, unsigned y, unsigned icon, float scale = 2.0f) {
@@ -169,21 +178,49 @@ void MessageBox::draw_title(void) {
     if (this->icon >= 0 && this->icon < 12) iconType = this->icon;
     utility_draw_icon(8, 12, iconType, 1.5f);
     const char* titleString = (const char*)title;
+    int charAdvance = ttf_font_char_advance(3);
     for (int i = 0; i < strlen(titleString); i++) {
-        unsigned int xPos = 4 + 62 + (24 * i);
+        unsigned int xPos = 4 + 62 + (charAdvance * i);
         char character = titleString[i];
         utility_draw_char(xPos, 24, character, COLOR_W, 3);
     }
     free(title);
 };
 
+// See docs/DOCS.md ("mods/core/wingman/suite/message/message.cpp -- draw_body() word wrap").
 void MessageBox::draw_body(void) {
-    for (int i = 0; i < strlen(message); i++) {
-        const int posX = 20 + (16 * (i % 30));
-        const int posY = 80 + (16 * (int)(i / 30));
-        utility_draw_char(posX, posY, message[i], COLOR_W, 2);
+    int charAdvance = ttf_font_char_advance(2);
+    int margin = 2 * this->padding;
+    int textAreaWidth = this->width - 2 * margin;
+    int charsPerLine = textAreaWidth / charAdvance;
+    if (charsPerLine < 1) charsPerLine = 1;
+
+    int len = strlen(this->message);
+    int row = 0;
+    int lineStart = 0;
+    while (lineStart < len) {
+        int remaining = len - lineStart;
+        int budget = (remaining < charsPerLine) ? remaining : charsPerLine;
+        int lineLen = budget;
+        bool skipBreakChar = false;
+        // A literal newline forces a break wherever it falls, even short of budget.
+        for (int i = 0; i < budget; i++) {
+            if (this->message[lineStart + i] == '\n') { lineLen = i; skipBreakChar = true; break; }
+        }
+        // Otherwise, if the line doesn't fit as-is, back up to the last
+        // space within budget so words don't get split mid-word.
+        if (lineLen == budget && remaining > charsPerLine) {
+            for (int i = budget; i > 0; i--) {
+                if (this->message[lineStart + i - 1] == ' ') { lineLen = i - 1; skipBreakChar = true; break; }
+            }
+        }
+        for (int col = 0; col < lineLen; col++) {
+            utility_draw_char(margin + charAdvance * col, 80 + 16 * row, this->message[lineStart + col], COLOR_W, 2);
+        }
+        lineStart += lineLen;
+        if (skipBreakChar && lineStart < len) lineStart++; // skip the space/newline we broke on
+        row++;
     }
-    return;
 };
 
 void MessageBox::draw_buttons(void) {

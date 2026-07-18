@@ -1,10 +1,10 @@
-// #include "../dev/vbe/vga_table.h"
-#include "../dev/serial/serial.h"
-#include "./include/graphics.h"
-#include "../dev/cmos/cmos.h"
-#include "../dev/vbe/vbe.h"
-#include "../dev/pit/pit.h"
-#include "../dev/kb/kb.h"
+// #include "../vbe/vga_table.h"
+#include "../serial/serial.h"
+#include "console.h"
+#include "../cmos/cmos.h"
+#include "../vbe/vbe.h"
+#include "../pit/pit.h"
+#include "../kb/kb.h"
 
 /*
 /// Set Pixel<x, y> to the color c
@@ -46,12 +46,14 @@ RGBColor calculateGradientColor(RGBColor color1, RGBColor color2, int percentage
 namespace VBEScreen {
     const int fontScale = 2;
 
+    // See docs/DOCS.md ("Font Rendering System" -- "Integration: the 6 non-panic call sites").
     void draw_char(unsigned x, unsigned y, char c, unsigned color, unsigned bg) {
         for (unsigned i = 0; i < 8 * fontScale; i++) {
             for (unsigned j = 0; j < 8 * fontScale; j++) {
                 draw_pixel(x + j, y + i, bg);
             }
         }
+
         for (unsigned i = 0; i < 8; i++) {
             for (unsigned j = 0; j < 8; j++) {
                 if (Font[(int)c][i] & (1 << j)) {
@@ -254,6 +256,13 @@ void terminal_write(const char* str) {
 
 void graphics_initalize_stage1() {
     init();
+    // See docs/DOCS.md ("Font Rendering System") -- must run after
+    // initialize_memory_pool() (already true here, called
+    // from kernel_main() before this function) so malloc is available, and
+    // before Terminal/any Wingman widget exists so every real draw-char
+    // call site always sees a baked (or explicitly-invalid-with-fallback)
+    // atlas.
+    ttf_font_init();
     fill(Terminal::defaultBackgroundColor);
     terminal = new Terminal(1024 * 1024, 0, 0);
     terminal->setTextForegroundColor(COLOR_W);

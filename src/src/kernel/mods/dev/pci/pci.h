@@ -1,7 +1,7 @@
 #ifndef PCI_H
 #define PCI_H
 
-#include <logging.h>
+#include "../logging/logging.h"
 #include <stdbool.h>
 #include <string.h>
 #include <stdlib.h>

@@ -50,7 +50,9 @@ class WindowManager {
         window_ref_t windowAt(int x, int y);
         Window* get(window_ref_t ref);
         void composite();
+        void composite(Rect dirty);
         void clearScreen();
+        void clearScreen(Rect dirty);
         uint32_t count();
         void* operator new(size_t size) { return malloc(size); }
         void operator delete(void* p) { free(p); }

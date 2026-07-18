@@ -14,8 +14,9 @@
 #include "../../../../dev/ramfs/ramfs.h"
 #include "../../../../dev/vbe/vga_table.h"
 #include "../../../../dev/pci/drivers/ac97.h"
-#include "../../../../std/include/graphics/font.h"
-#include "../../../../std/include/graphics/icons.h"
+#include "../../../../dev/vbe/font.h"
+#include "../../../fontman/fontman.h"
+#include "../../headers/icons.h"
 
 struct FileEntity {
     // struct FileEntity* children;

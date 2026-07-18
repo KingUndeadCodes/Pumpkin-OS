@@ -1,5 +1,7 @@
 #include "../headers/widgets/textinput.h"
-#include "../../../std/include/graphics/font.h"
+#include "../headers/shapes.h"
+#include "../../../dev/vbe/font.h"
+#include "../../fontman/fontman.h"
 #include <string.h>
 
 #define TEXTINPUT_COLOR_BG          0xFF1a1615
@@ -30,34 +32,36 @@ TextInput::~TextInput() {
 };
 
 static void drawChar(Surface* surface, unsigned x, unsigned y, char c, unsigned color, unsigned scale) {
-    for (unsigned i = 0; i < 8; i++) {
-        for (unsigned j = 0; j < 8; j++) {
-            if (Font[(int)c][i] & (1 << j)) {
-                for (unsigned k = 0; k < scale; k++) {
-                    for (unsigned l = 0; l < scale; l++) {
-                        surface->putPixelUnsafe(x + j * scale + l, y + i * scale + k, color);
+    const FontAtlas* atlas = ttf_font_get_atlas(scale);
+    if (atlas == nullptr) {
+        for (unsigned i = 0; i < 8; i++) {
+            for (unsigned j = 0; j < 8; j++) {
+                if (Font[(int)c][i] & (1 << j)) {
+                    for (unsigned k = 0; k < scale; k++) {
+                        for (unsigned l = 0; l < scale; l++) {
+                            surface->putPixelUnsafe(x + j * scale + l, y + i * scale + k, color);
+                        }
                     }
                 }
             }
         }
+        return;
     }
+    ttf_blit_glyph(atlas, c, (int)x, (int)y, color,
+        [&](int px, int py, uint8_t alpha, uint32_t fg) {
+            color_t under = surface->getPixel(px, py);
+            surface->putPixelUnsafe(px, py, ttf_blend_over(under, fg, alpha));
+        });
 }
 
 void TextInput::draw(Surface* surface, int thickness) const {
     constexpr uint32_t scale = 2;
     int bx = this->x, by = this->y, bw = this->width, bh = this->height;
+    int radius = bh / 5;
     uint32_t bg = this->focused ? TEXTINPUT_COLOR_BG_FOCUSED : TEXTINPUT_COLOR_BG;
-    // Fill, leaving room for the outer border.
-    for (int y = thickness; y < bh - thickness; y++) {
-        for (int x = thickness; x < bw - thickness; x++) surface->putPixelUnsafe(bx + x, by + y, bg);
-    }
-    // Flat outer border (no bevel) -- reads as "field", not "button".
-    for (int t = 0; t < thickness; t++) {
-        for (int x = 0; x < bw; x++) surface->putPixelUnsafe(bx + x, by + t, TEXTINPUT_COLOR_BORDER);
-        for (int x = 0; x < bw; x++) surface->putPixelUnsafe(bx + x, by + bh - 1 - t, TEXTINPUT_COLOR_BORDER);
-        for (int y = 0; y < bh; y++) surface->putPixelUnsafe(bx + t, by + y, TEXTINPUT_COLOR_BORDER);
-        for (int y = 0; y < bh; y++) surface->putPixelUnsafe(bx + bw - 1 - t, by + y, TEXTINPUT_COLOR_BORDER);
-    }
+    // See docs/DOCS.md ("mods/core/wingman/headers/shapes.h").
+    draw_rounded_rect_fill(surface, bx, by, bw, bh, radius, TEXTINPUT_COLOR_BORDER);
+    draw_rounded_rect_fill(surface, bx + thickness, by + thickness, bw - thickness * 2, bh - thickness * 2, radius - thickness, bg);
     // Text, or placeholder when empty and unfocused, left-aligned and vertically centered.
     const char* shown = this->buffer;
     uint32_t textColor = TEXTINPUT_COLOR_TEXT;
@@ -66,7 +70,7 @@ void TextInput::draw(Surface* surface, int thickness) const {
         shown = this->placeholder;
         textColor = TEXTINPUT_COLOR_PLACEHOLDER;
     }
-    int charWidth = 8 * scale;
+    int charWidth = ttf_font_char_advance(scale);
     int charHeight = 8 * scale;
     int textY = by + (bh - charHeight) / 2;
     int shownLen = strlen(shown);

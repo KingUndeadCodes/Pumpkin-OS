@@ -6,6 +6,59 @@ pointing to its section below.
 
 ---
 
+## `mods/core/wingman/headers/shapes.h` — rounded widget corners
+
+Every widget (`Button`, `TextInput`, `Checkbox`) drew hard 90° rectangles
+via hand-rolled per-widget pixel loops: a `thickness`-inset fill pass, a
+separate border-outline pass. Rounding corners for real (not just
+cropping them square) needed the same non-trivial math in every one of
+those loops, so it's a single shared helper,
+`draw_rounded_rect_fill(surface, x, y, w, h, radius, color)`, rather
+than duplicated per widget.
+
+**Why a plain `Surface*` parameter, not a templated `PlotFn` like
+`ttf_blit_glyph()`:** `ttf_blit_glyph()` needs to serve both a free-function
+framebuffer caller (`console.cpp`) and `Surface`-based Wingman callers, so
+it's templated on the plot callback to do that with no virtual dispatch.
+Rounded corners are scoped to Wingman widgets only -- every current and
+realistically foreseeable caller already has a concrete `Surface*` -- so
+a direct, non-templated function is simpler and avoids generalizing for
+a caller that doesn't exist.
+
+**Cost model:** interior and straight-edge pixels are a single plain
+`putPixelUnsafe()` call, identical cost to the old hard-cornered loops.
+Only pixels inside a `radius`-sized corner box get the extra work: a
+`sqrt()` distance-from-corner-center check, and -- only for the thin ~1px
+ring actually straddling the arc boundary -- a `getPixel()` read plus an
+alpha blend via `ttf_blend_over()` (reused from `fontman.h` rather than
+duplicated, since every caller already depends on `fontman.h` for text).
+Bounded by `radius² × 4` pixels checked per shape at most (e.g. radius=8
+→ at most 256 corner-box pixels, of which only a slim boundary ring
+actually blends), paid once per redraw, the same cost class as TTF glyph
+blending -- not a new performance concern.
+
+**Radius convention:** each widget's own `radius = height / 5`, so
+rounding scales with widget size instead of being a fixed pixel constant
+that would look disproportionate on a very small or very large instance.
+`Checkbox`'s toggle style is the deliberate exception: `radius = height / 2`
+for the track (a full capsule, the conventional switch shape) and
+`radius = thumbSize / 2` for the thumb (a full circle) -- not the general
+`/5` rule, since a toggle switch is expected to read as a pill, not a
+slightly-rounded rectangle.
+
+**Two-call pattern:** each widget calls `draw_rounded_rect_fill()` twice
+-- once for the full rect in the border color, once for a
+`thickness`-inset rect (with a correspondingly smaller radius, so the
+inner curve stays concentric with the outer one) in the fill color --
+reproducing the exact "filled rect with a border ring" look the old
+fill+border loop pairs had, just with rounded corners on both edges.
+`Button`'s inner bevel highlight/shadow lines are a deliberate exception:
+they stayed as straight 1px lines (rounding a 1px line isn't meaningful),
+just clipped to start/end at `radius` instead of `thickness` so they
+don't overhang past the new curve.
+
+---
+
 ## `mods/core/wingman/headers/widgets/widget.h` — common `Widget` base class
 
 Extracted once there were three real widgets (`Button`, `TextInput`,
@@ -57,23 +110,64 @@ not just "a checkbox exists."
 Keyboard/mouse routing is intentionally minimal, matching each widget's
 own current scope:
 
-- `onMouseEvent()` only acts on a press-edge (`pressedEdge & 1`); plain
-  hover has no effect (no hover-cursor feedback, unlike `MessageBox`'s
-  buttons) -- not essential to demonstrating the widgets themselves.
+- `onMouseEvent()` computes hover state (`this->button->contains(x, y) ||
+  ...`) and calls `set_cursor_id()` on *every* event, before the
+  press-edge check -- matching `MessageBox`'s buttons, which do the same.
+  This used to be entirely absent: `pressedEdge & 1` was checked first
+  and everything else (including hover) returned early on a plain mouse
+  move, so hovering the button never changed the cursor. Scoped to
+  `button`/`checkbox`/`toggle` (things a click actually does something
+  to) -- `textInput` doesn't get a distinct hover cursor since there's no
+  text-beam sprite in `cursorArray` (only 3 sprites exist: default arrow,
+  one unused, and the hand used here).
 - Clicking inside `textInput` focuses it; clicking anywhere else in the
   window (including on the other widgets) unfocuses it. With only one
   keyboard-consuming widget in this window, this is sufficient -- it
   doesn't attempt to solve multi-widget focus routing, which is the same
   open gap already tracked in `docs/TODO.md` (Priority 3).
-- Every click and every consumed keystroke redraws all four widgets
-  (`draw_widgets()`) rather than tracking which one actually changed --
-  same "just redraw the whole affected region" precedent as
-  `MessageBox::draw_buttons()`, and cheap enough at four widgets that
-  finer-grained tracking isn't worth it yet.
+- Every consumed keystroke redraws just `textInput` (self-clearing --
+  `TextInput::draw()` fills its own background before drawing text, so
+  repeated redraws don't accumulate anything).
+- Every click used to call `draw_widgets()` alone -- see "click redraw"
+  below for why that was a real bug, not the safe "redraw the whole
+  affected region" precedent it looked like at the time. It now calls
+  `redraw()` (the full border+background+title+widgets repaint), cheap
+  enough at this window's size that finer-grained tracking isn't worth
+  pursuing instead.
 
 Wired into `initalizeWindowSystem()` (`wingman.cpp`) as a second
 always-open window alongside the file explorer and the AC97 `MessageBox`,
 positioned at `(500, 120)` so it doesn't sit on top of either at boot.
+
+### `mods/core/wingman/suite/widgetdemo/widgetdemo.cpp` — click redraw
+
+`onMouseEvent()` used to call `draw_widgets()` alone on every click
+anywhere in the window (not just on the button). `draw_widgets()` draws
+the field labels ("Button:", "Text:", "Checkbox:", "Toggle:") directly
+via `utility_draw_string()`, with no background clear first -- unlike
+`Button::draw()` (fills its own background every call) or `TextInput::draw()`
+(same), those four labels have nothing protecting them from redraw.
+
+With the old solid 1bpp `Font[]` glyphs this was harmless (a full-opacity
+blit just overwrites the previous one outright, same as the
+`explorer.cpp` selection-redraw bug's history). With alpha-blended TTF
+glyphs it isn't: every anti-aliased edge pixel got re-blended on top of
+its own previous value on every click, and since both draws use the
+*same* foreground color here (unlike `explorer.cpp`'s selection, which
+swaps between two different colors), the visible symptom isn't smearing
+between colors -- it's the edge alpha compounding toward full opacity
+with each pass, i.e. the labels visibly got bolder with every single
+click anywhere in the window, not just on the button. Same root cause as
+`mods/core/wingman/suite/explorer/explorer.cpp`'s "selection-highlight
+redraw" (below), different symptom because the color didn't change
+between redraws there.
+
+Fix: call `redraw()` (border + background + title + widgets) instead of
+`draw_widgets()` alone, so the label area is cleared before being
+redrawn. `MessageBox` was checked for the same pattern and is clean --
+`draw_buttons()` clears its own background before redrawing, and
+clicking one of its buttons dismisses the whole window rather than
+looping back through a partial redraw, so it was never exposed to this.
 
 ---
 
@@ -291,7 +385,7 @@ duration of its blocking wait, exposed via `stdin_is_reading()`.
 if set, so the Wingman GUI simply stops processing keystrokes at all
 while a program is mid-read -- matching the existing
 `suppressCharacterOutput` pattern already used in
-`mods/std/graphics.cpp`'s boot-terminal keystroke handler for the same
+`mods/dev/console/console.cpp`'s boot-terminal keystroke handler for the same
 kind of "someone else owns input right now" situation.
 
 ---
@@ -321,6 +415,57 @@ reaper yet (see the Phase 2 "known, deliberately deferred" note in
 `docs/TODO.md`) -- once one exists, a freed slot could theoretically be
 handed to an unrelated task before this table's stale entry gets
 reclaimed, so this tracking will need revisiting whenever that lands.
+
+---
+
+## `mods/core/wingman/suite/explorer/explorer.cpp` — selection-highlight redraw
+
+`FileManager::redraw()` takes a bitmask (`0b00111000` by default: background
++ title + options) so callers can skip repainting parts of the window that
+didn't change, instead of a full repaint on every interaction. Two call
+sites -- `onMouseEvent()`'s "clicked a different row" branch and
+`onKeyboard()`'s `'s'`/`'w'` selection-move handlers -- used to pass
+`0b00001000` (options only), skipping `draw_background()`.
+
+That was fine back when `draw_options()` drew the old 1bpp `Font[]`
+bitmap glyphs (a solid, fully-opaque blit -- redrawing a character in a
+new color just overwrote every pixel of the old one outright). It became
+a real, visible bug once `draw_options()` switched to alpha-blended TTF
+glyphs (`ttf_blit_glyph()`/`ttf_blend_over()`, see "Font Rendering
+System" above): a freshly-selected row's blue text was blitted directly
+on top of the *previous* frame's white text at the same pixel positions,
+with no background clear in between. Fully-opaque glyph pixels (alpha
+255) were unaffected -- `ttf_blend_over()` returns pure `fg` when
+alpha is 255, ignoring `under` entirely -- but every antialiased edge
+pixel (partial alpha) blended the new color against the *old glyph's
+ink* instead of the plain background, reading as soft/fuzzy/washed-out
+text rather than crisp anti-aliasing. Purely a stale-pixel bug, not a
+font, color-blend, or letter-spacing issue.
+
+Fix: both call sites now pass `0b00111000` (the same "full content"
+bitmask the default parameter and `fileClick()`'s directory-navigation
+success path already used), so `draw_background()` clears the row back
+to the plain background color before `draw_options()` redraws it in its
+new color.
+
+### `mods/core/wingman/suite/explorer/explorer.cpp` — selection color
+
+`COLOR_B` (the selected-row text color) was `0xFF0000FF`, pure blue.
+Against this window's `0xFF403a39` background, that read as faint/
+washed-out -- not an anti-aliasing artifact, but a genuine low-contrast
+color choice: perceived luminance weights blue at only ~7% (vs ~72% for
+green, ~21% for red), so pure blue's perceived brightness (~18/255) was
+actually *lower* than the background's (~59/255) despite being fully
+saturated in raw RGB terms.
+
+Changed to `0xFFFF5C04`, the pumpkin-orange accent already used in
+`mods/dev/console/console.cpp`'s `"Welcome to \(FF5C04)PumpkinOS...` boot
+banner -- meaningfully higher perceived luminance (~120/255) against the
+same background, and reuses an existing palette color instead of
+introducing a new one. Also deliberately not `COLOR_R` (0xFFFF0000,
+already used elsewhere for error/danger, e.g. the red "Ignore" button in
+`MessageBox`), to avoid a selection state visually implying an error
+state.
 
 ---
 
@@ -476,7 +621,24 @@ separate change than what was asked for here.
 
 ---
 
-## `mods/std/logging.cpp` — NUL-termination fix in `flush()`/`log()`
+## `mods/dev/logging/logging.cpp` — NUL-termination fix in `flush()`/`log()`
+
+Relocated from `mods/std/logging.cpp` for the same reason `console` and
+`fontman` moved out of `mods/std/` earlier: `Logging` owns real state (a
+static linked list of registered `LogDevice` sinks, `Logging::head`, plus
+a `capturing` flag), wired up at boot in `p-kernel.cpp`
+(`Logging::addLogDevice(&terminalDevice)`/`&serialDevice`) -- not a
+`mods/std/`-style stateless utility. `mods/core/` didn't fit either
+(nothing GUI-facing about it -- consumers include `mods/dev/pci/pci.h`
+and `rtl8139.h`), so it landed in `mods/dev/` alongside the device-level
+sinks it dispatches to. Location/package change only, same as those two
+moves -- `Logging`, `LogDevice`, `addLogDevice()`, `log()`, `capture()`,
+`flush()` all kept their existing names; only the files, directory, and
+every include path reaching them changed. The 3 consumers
+(`p-kernel.cpp`, `mods/dev/pci/pci.h`, `mods/dev/pci/drivers/rtl8139.h`)
+all reached this via angle-bracket `<logging.h>` resolved through `-I
+mods/std/include` -- the same pattern `graphics.h` used before the
+console move -- converted to relative includes here too.
 
 Both functions read into a `malloc`'d buffer via `fread()` and then treat
 it as a NUL-terminated C string (`log()` via `strlen(buffer)`, `flush()`
@@ -734,6 +896,77 @@ clamps against whatever buffer/dimensions it actually draws to).
 
 ---
 
+## `mods/core/wingman/headers/types.h` — `Rect` / dirty-rect compositing
+
+`WindowManager::composite()` used to unconditionally `clearScreen()` the
+entire 1024x768 screen and re-blend every window's entire surface against
+it, on every single keystroke, click, or drag step -- 786,432 pixels'
+worth of clear+blend work regardless of whether a text field gained one
+character or a whole window moved. `wingman.cpp`'s `redraw_screen()` then
+made it worse on top: two full-buffer `memcpy()`s (screen -> `outputBuffer`
+-> the real `0xE0000000` framebuffer) every time, and this project's
+`memcpy` is a byte-at-a-time loop with no word-sized fast path (see
+`docs/TODO.md`'s "Boot/memory performance" audit), so that's ~3MB copied
+twice, byte by byte, per interaction.
+
+Fixed by threading a `Rect` (the minimal bounding box that actually
+changed) through the whole pipeline: `WindowManager::composite(Rect)`
+only clears and re-blends that rect (intersected with each window's own
+bounds), and `wingman.cpp`'s new `redraw_screen_rect(Rect)` only copies
+that rect's rows from the clean `wm->screen` buffer straight to hardware
+-- no `outputBuffer`, no full-screen copy at all for the interactive path.
+The no-arg `composite()`/original `redraw_screen()` still exist,
+unchanged, as thin wrappers over the full-screen rect -- kept for the one
+real full-screen case, the initial draw in `initalizeWindowSystem()`,
+which is a one-time boot cost with no perf pressure on it.
+
+**Deliberately a single bounding rect, not a rect list**: a proper dirty
+region tracker (a list of disjoint rects, with merging/splitting logic to
+maintain that invariant) is real complexity for a marginal extra win over
+"one rect covering everything that changed this event" -- which is
+already a large improvement over the full-screen path it replaced. Two
+far-apart dirty areas in the same event (rare -- e.g. a window dragged a
+long distance in one throttled step) redraw the strip between them
+unnecessarily, but that's still bounded and cheap next to a full-screen
+redraw, and the code stays simple: `rect_union()`/`rect_intersect()` are
+the only primitives needed anywhere in the pipeline.
+
+**`rect_empty()`** (`w <= 0 || h <= 0`) is the required check after any
+`rect_intersect()` before touching its result's `x`/`y`/`w`/`h` --
+intersecting two non-overlapping rects produces exactly that (negative or
+zero width/height at some arbitrary position), not a crash and not a
+sentinel value, so skipping the check silently processes a bogus rect
+instead of failing loudly. `rect_union()` has no such caveat (a union of
+any two real rects is always itself a real rect); it exists specifically
+for combining a moved window's before/after position into one dirty rect
+covering both the vacated spot and the new one.
+
+**Computing the right rect per event** (`mouseFunctionWindowManager()`
+in `wingman.cpp`):
+
+| Event | Dirty rect |
+|---|---|
+| Focus change (click raises a background window) | that window's own rect -- nothing outside it can change from a pure z-order reorder |
+| Window drag, each throttled step | union of the window's rect *at the last actual redraw* and its current rect -- not just its current rect, since throttling means several position updates can happen between redraws, and the true dirty span covers all of them |
+| Drag released | same union, forced through regardless of the throttle, using the window reference captured *before* `draggingWindow` is cleared (needed to still reach it) |
+| Widget interaction (`handleMouse()` returns true, not dragging) | the focused window's own rect -- individual widgets don't report sub-rects, so the window is the finest granularity available |
+| Keyboard (`keyboard_handler()` returns true) | the focused window's own rect -- `keyboard_handler()` can only return true via `focusedWindow->handleKeyboard()`, so `focusedWindow` is guaranteed non-null here |
+
+A single event can trigger more than one of these (e.g. a click that both
+refocuses a background window *and* lands on one of its buttons), so
+`mouseFunctionWindowManager()` accumulates via a local `markDirty()`
+lambda that unions into a running rect rather than assuming only one
+branch fires per event.
+
+**Cursor handling in `redraw_screen_rect()`**: the cursor sprite is only
+redrawn if its own rect overlaps the rect that was just patched (it could
+have been overwritten by the content underneath it). If not, the
+framebuffer's cursor is already correct -- `redraw_cursor()` (unchanged)
+keeps it in sync incrementally on pure mouse-move events that don't touch
+window content at all.
+
+---
+
 ## `mods/core/wingman/headers/manager.h` / `manager.cpp`
 
 ### `WindowManager::zOrder`
@@ -793,10 +1026,13 @@ button), but if the mouse isn't over anything that cares (or leaves a
 window that did), there's no separate "mouse left" event to undo a stuck
 custom shape otherwise.
 
-When something changed, content is already getting a full recomposite +
-blit, so the cursor is folded into that same blit instead of a separate
-poke right after it. Otherwise (nothing changed), only the cursor moves,
-touching just its small fixed-size footprint instead of the whole screen.
+When something changed, content is already getting recomposited and
+blitted for its dirty rect (see "Rect / dirty-rect compositing" above),
+so the cursor is folded into that same patch instead of a separate poke
+right after it -- only if the dirty rect actually overlaps the cursor's
+own position. Otherwise (nothing changed, or the dirty rect missed the
+cursor), only the cursor moves, touching just its small fixed-size
+footprint instead of the whole screen.
 
 ### `initalizeWindowSystem()`
 
@@ -833,7 +1069,7 @@ dismisses the box after running that button's callback, if any.
 ### `icon` (field + constructor param)
 
 -1 means "use dialogBoxType's default icon"; otherwise an index into
-`Icons[]` (see `graphics/icons.h`), overriding that default.
+`Icons[]` (see `mods/core/wingman/headers/icons.h`), overriding that default.
 
 ### `buttonSectionDividerY`
 
@@ -861,7 +1097,7 @@ gaps between them, so `draw_buttons()` and the mouse hit-test in
 
 ### `draw_title()` — icon bounds check
 
-`Icons[]` (`graphics/icons.h`) currently holds 12 icons -- an
+`Icons[]` (`mods/core/wingman/headers/icons.h`) currently holds 12 icons -- an
 out-of-range override falls back to `dialogBoxType`'s default rather than
 reading past the array.
 
@@ -869,6 +1105,28 @@ reading past the array.
 
 Title bar band + divider, so the icon/title read as a distinct header
 instead of blending into the body.
+
+### `draw_body()` — word wrap
+
+Used to wrap at a hardcoded `i % 30` (every 30 characters, fixed 16px row
+height) -- tuned for the old fixed 8px-bitmap-grid character stride
+(`8 * scale` = 16px at scale 2), where 30 chars × 16px ≈ 480px happened
+to roughly fill the 500px-wide box. Once `ttf_font_char_advance()`
+started returning the font's real (narrower) advance width instead of
+that grid assumption, the same "30" wrapped at only ~240px -- roughly
+half the box's actual text width -- and silently stayed wrong, since
+nothing tied the wrap count to the box's real dimensions or the font's
+real metrics.
+
+Rewritten to compute `charsPerLine` from the box's actual text-area
+width (`this->width - 2 * (2 * padding)`) divided by the real
+`charAdvance`, so it can't drift out of sync with either again. Also now
+breaks at the last space within budget (scanning backward from the width
+limit) instead of a raw character cut, so words don't get split
+mid-word -- falls back to a hard break only if a single "word" is wider
+than the whole line (no space found in budget). A literal `\n` in the
+message forces a break wherever it falls, even short of the width
+budget, in case a caller ever wants an explicit line break.
 
 ### `draw_buttons()`
 
@@ -1244,3 +1502,525 @@ reader existed. There still isn't a way for a user to *choose* which of
 several running programs owns the keyboard beyond "whichever one most
 recently asked" — that choice is exactly what the window-focus version
 would add, whenever it's picked up.
+
+## Font Rendering System — full reference (TrueType via stb_truetype)
+
+This is the complete, top-to-bottom reference for how text gets from a
+`.ttf` file on disk to anti-aliased pixels on screen, covering every
+component involved: the vendored font asset, the `incbin` embedding
+mechanism, the vendored `stb_truetype` library, the boot-time atlas
+bake, the shared glyph-blit core, all 6 integration points, the one
+deliberate exclusion (the panic screen), the two real bugs found while
+building it, and how it was verified.
+
+Replaces the blocky, integer-scaled 8x8 bitmap `Font[]`
+(`mods/dev/vbe/font.h`) with real anti-aliased TrueType
+rendering, for every draw-char call site *except* the kernel panic
+screen. This had been attempted once before this session and reverted
+in full with no git trace — it hit a real bug (unsigned wraparound on
+negative TTF offsets, now understood and explicitly avoided below) and
+then appeared not to boot, but that conclusion was never actually
+verified: at the time, the sandbox's ability to boot-test via QEMU was
+wrongly believed broken. This session proved that assumption false (see
+the tasking Phase 3 sections above), making this a genuine,
+properly-verified retry — including a real visual screenshot of the
+final result, not just a clean boot log.
+
+### Data flow, end to end
+
+```
+Cousine-Regular.ttf (disk, build time)
+  -> incbin (font_data.asm)                    embeds raw bytes into .rodata
+  -> _binary_font_ttf_start/_end symbols        C++ reads the embedded bytes
+  -> ttf_font_init() at boot                     (graphics_initalize_stage1)
+       -> stbtt_PackBegin/PackFontRange/PackEnd  once per size tier (2/3/4)
+       -> FontAtlas { bitmap, chardata[], ... }  3 of these, baked once
+  -> ttf_font_get_atlas(scale)                   looked up by every draw-char call
+  -> ttf_blit_glyph()                            alpha-blend blit from atlas
+  -> draw_pixel() / Surface::putPixelUnsafe()    same primitives as before
+```
+
+Nothing in this pipeline touches the rasterizer after boot — every draw
+call from then on is a cheap lookup-and-blit against pre-baked coverage
+bitmaps.
+
+### Package layout: `mods/core/fontman/`
+
+Originally landed under `mods/std/` (font rendering felt adjacent to
+`mods/std/graphics.cpp`, as it was called at the time), then deliberately
+relocated to `mods/core/fontman/` — a new component, a peer of
+`mods/core/wingman/` rather than nested inside or beneath it, following
+the same naming convention (`wingman` for the window-manager suite,
+`fontman` for the font-manager subsystem). This is a better fit for what
+the system actually is: it owns real boot-time state (3 baked atlases),
+has its own init entry point (`ttf_font_init()`), and is consumed by
+*both* `mods/dev/console/console.cpp` (the raw-framebuffer `Terminal`)
+and every `mods/core/wingman/` widget — it was never really a
+`mods/std/`-style stateless utility to begin with. (At the time fontman
+moved, the console module was still `mods/std/graphics.cpp`; that same
+"owns real boot-time state, not a stateless utility" reasoning is what
+later motivated relocating it too, first to `mods/core/console/` and
+then to its current home — see "Package layout: `mods/dev/console/`"
+below.)
+
+Current layout:
+```
+mods/core/fontman/
+  fontman.cpp     -- atlas baking (was mods/std/ttf_font.cpp)
+  fontman.h       -- FontAtlas, ttf_blit_glyph, ttf_blend_over (was mods/std/include/graphics/ttf_font.h)
+  font_data.asm   -- incbin embedding (was mods/std/font_data.asm)
+```
+Internal symbol names (`ttf_font_init`, `ttf_font_get_atlas`,
+`FontAtlas`, `ttf_blit_glyph`, `ttf_blend_over`, `TTF_FIRST_CHAR`,
+`TTF_NUM_CHARS`) were deliberately left unrenamed in this move — this
+was a location/package change, not an API rename, and renaming the
+public surface would have meant touching every call site's function
+calls in addition to every include path, for no functional benefit.
+
+### Package layout: `mods/dev/console/`
+
+`mods/std/graphics.cpp`/`mods/std/include/graphics.h` first relocated to
+`mods/core/console/console.cpp`/`console.h`, for the same reason
+`fontman` moved: this module owns real boot-time state (the `Terminal`
+singleton, its keyboard-event registration, cursor/scroll position) and
+has an explicit two-stage init lifecycle
+(`graphics_initalize_stage1()`/`graphics_initalize_stage2()`) — not a
+`mods/std/`-style stateless utility.
+
+It didn't stay there. `mods/core/` had, by that point, been described as
+"the stateful, GUI-facing components" (`fontman`, `wingman`), but
+`console`/`Terminal` isn't GUI-facing at all -- it's the opposite: a
+*pre-GUI* boot console. It doesn't integrate with Wingman (no `Window`,
+never composited by `manager.cpp`), and its lifecycle is guaranteed to
+end before Wingman's ever begins: `procMan()` in `p-kernel.cpp` calls
+`terminal_delete()` immediately before `initalizeWindowSystem()`, so the
+two literally never coexist on screen. While it's alive (early boot,
+before Wingman starts) it does two real jobs: it's the `LogDevice` that
+mirrors every kernel `INFO`/`FAIL` log line onto the screen, and it
+renders the boot banner and PCI enumeration output -- the only on-screen
+feedback before Wingman is up. That's boot-phase device infrastructure,
+the same category as `vbe`/`pit`/`kb`, not a GUI subsystem -- so it moved
+again, to `mods/dev/console/`, a sibling of those rather than of
+`fontman`/`wingman`.
+
+As with the fontman move, both of these were location/package changes
+only -- `VBEScreen`, `Terminal`, `terminal_write()`, `terminal_delete()`,
+`graphics_initalize_stage1()`, and `graphics_initalize_stage2()` all
+kept their existing names throughout; only the files, their directory,
+and every include path reaching them changed. `mods/std/include/graphics/`
+(the `font.h`/`icons.h`/`cursor.h` bitmap-data subfolder used by
+`console.h` for the pre-TTF fallback path) deliberately stayed in
+`mods/std/` through both of *these* moves, since splitting it up too
+would have widened this reorg's blast radius for no benefit at the time.
+It didn't stay there permanently, though -- see "Package layout:
+`mods/dev/vbe/font.h` / `mods/core/wingman/headers/icons.h` /
+`cursor.h`" below for why each of those three ended up split across
+three different, more specific homes instead of all three staying
+together as one `graphics/` bundle.
+
+### Package layout: `mods/dev/vbe/font.h` / `mods/core/wingman/headers/icons.h` / `cursor.h`
+
+`mods/std/include/graphics/` held three unrelated bitmap-data files —
+`font.h` (`Font[]`, the 8x8 fallback glyph grid), `icons.h` (`Icons[]`,
+file/dialog icon bitmaps), and `cursor.h` (`cursorArray`, the 3 mouse
+cursor sprites) — bundled together only because they were all "graphics
+data," not because anything actually used them as a set. Splitting them
+to each file's real primary consumer, rather than keeping the bundle
+intact indefinitely, was the natural next step once `mods/std/` had
+already been mostly emptied of stateful/GUI-adjacent content by the
+`console`/`fontman`/`logging` moves:
+
+- **`font.h` -> `mods/dev/vbe/font.h`.** `Font[]`'s one safety-critical
+  consumer is the free-function `draw_char()` in `vbe.cpp` — the kernel
+  panic screen's *only* text-rendering path, which must stay free of any
+  dependency on Wingman/fontman infrastructure (a fault handler is the
+  wrong place to add a new failure surface; see "Deliberate, permanent
+  exclusion: the kernel panic screen" below). Living beside `vbe.cpp`
+  (its own directory, not a shared `headers/`) reflects that primary
+  ownership, even though several Wingman widgets also fall back to it
+  when a TTF atlas isn't baked.
+- **`icons.h` -> `mods/core/wingman/headers/icons.h`.** `Icons[]`'s
+  primary consumers are squarely Wingman-suite GUI code (`explorer.cpp`'s
+  file-type icons, `message.cpp`'s dialog icons) — `headers/` already
+  holds shared, Wingman-wide (not single-widget-owned) data like
+  `types.h`, `shapes.h`, and now `cursor.h`'s array, so this fits the
+  same shelf. `vbe.cpp`'s free `draw_icon()` and `console.h` also reach
+  into it (the same "a lower layer reaching up into a higher one for a
+  shared data asset" shape already accepted for `fontman`), which is
+  fine — it's still fundamentally a GUI-presentation asset, not
+  boot-critical the way `font.h`'s panic-screen usage is.
+- **`cursor.h`'s array merged directly into `mods/core/wingman/headers/cursor.h`**,
+  not relocated to its own file anywhere. It had exactly one consumer in
+  the entire codebase (that same header), so a standalone shared file was
+  pure indirection with no actual sharing behind it — merging it in
+  removes a file and a needless include.
+
+Location-only changes again throughout: no symbol was renamed (`Font[]`,
+`Icons[]`, `cursorArray` all kept their exact names), only include paths.
+
+### Component: the font asset
+
+`src/bin/Cousine-Regular.ttf` (~297KB) plus `OFL.txt` (SIL Open Font
+License 1.1 text, for attribution), from `googlefonts/cousine`. Lives
+alongside this project's other shipped binary assets
+(`test.mp3`/`main.elf`/`test.wav`/etc.) rather than under `mods/`, since
+it's data, not kernel source — even though, unlike those other
+`src/bin/` files, it's never `mcopy`'d onto the floppy image as its own
+file; it's embedded directly into the kernel binary at build time via
+`incbin` (below) instead.
+
+Chosen specifically for being a *metrically* monospace face, not just
+visually one — this matters because every layout call site in this
+codebase (`Button`'s content-based auto-size, `TextInput`'s
+scroll-window math, `FileManager`'s list positions, `WidgetDemo`'s
+label layout) hard-codes a fixed `8*scale` pixel advance per character
+with zero awareness of real font metrics, inherited from the old 8-wide
+bitmap grid. Switching to genuinely proportional spacing would mean
+re-deriving all of that pixel math across every widget — explicitly out
+of scope here. This project is "replace how a glyph is drawn," not
+"replace how strings are laid out." `fontman.cpp`'s `bake_tier()`
+verifies the monospace assumption explicitly at boot (below), rather
+than trusting it silently.
+
+The visible consequence of this scope choice: letter-spacing reads as
+generous/loose in practice (confirmed via screenshot), since Cousine's
+natural glyph advance at these pixel sizes is somewhat narrower than the
+fixed cell stride inherited from the old grid. Not a bug — a direct,
+accepted tradeoff.
+
+### Component: `incbin` embedding
+
+`mods/core/fontman/font_data.asm`:
+```nasm
+[bits 32]
+section .rodata
+global _binary_font_ttf_start
+global _binary_font_ttf_end
+_binary_font_ttf_start:
+    incbin "../../bin/Cousine-Regular.ttf"
+_binary_font_ttf_end:
+```
+
+Chosen over generating a giant C byte-array source file (the pattern
+`mods/core/wingman/headers/icons.h` already uses, at 78KB for a much
+smaller asset than a ~300KB font). Two things were confirmed
+empirically *before* writing any real code, not assumed:
+- NASM resolves `incbin` paths relative to the assembler's CWD, not the
+  including `.asm` file's own directory — matching exactly how the
+  Makefile already invokes `nasm` from `src/src/kernel/` for every other
+  `.asm` file, so the path above resolves correctly relative to
+  `src/src/kernel/` (two levels up to `src/`, then into `bin/`)
+  regardless of where `font_data.asm` itself physically lives. Reverified
+  after `font_data.asm` moved from `mods/std/` to `mods/core/fontman/`
+  (below) and the font asset itself moved from a since-removed
+  `mods/assets/fonts/` to `src/bin/` — the path is CWD-relative, so
+  neither move required touching this directive's resolution logic,
+  only the literal string.
+- `kernel.ld`'s `.rodata : { *(.rodata) }` merges the `.rodata`
+  contribution from every input object file regardless of link order —
+  so this "just works" the same way every other `.rodata` content in
+  this flat-binary (`--oformat binary`) kernel already does.
+
+C++ side (`mods/core/fontman/fontman.cpp`):
+```cpp
+extern "C" const uint8_t _binary_font_ttf_start[];
+extern "C" const uint8_t _binary_font_ttf_end[];
+```
+Size is read via pointer subtraction (`_binary_font_ttf_end -
+_binary_font_ttf_start`), deliberately *not* via an extra
+`incbin`-adjacent size label (a common tutorial pattern) — a size
+label's *address* holds the value as raw bytes, and a caller that reads
+the symbol directly instead of taking its address silently gets
+garbage. `ttf_font_init()` checks this computed size is non-zero before
+baking anything, specifically to catch a broken `incbin` (e.g. an empty
+file) with a clear log line instead of a confusing downstream parse
+failure.
+
+### Component: vendored `stb_truetype`
+
+`mods/ports/truetype/vendor/stb_truetype.h` — vendored directly (not
+a submodule, unlike `minimp3` — this is a genuine single-file library;
+pulling in the whole `nothings/stb` monorepo for one header would be
+needless). Originally `mods/ports/stb_truetype/`; the directory (and the
+wrapper `.cpp` below) were later renamed to drop the `stb_` prefix, since
+it's redundant once the directory already lives under `mods/ports/` and
+is the only "truetype" thing there -- the vendored header itself keeps
+its real upstream filename (`stb_truetype.h`), unrenamed, since it's a
+verbatim copy of what `nothings/stb` actually ships.
+
+`mods/ports/truetype/truetype_impl.cpp` (was `stb_truetype_impl.cpp`) --
+the one translation unit that defines `STB_TRUETYPE_IMPLEMENTATION`,
+mirroring `mods/ports/minimp3/minimp3.cpp`'s existing wrapper pattern
+exactly. Its `STBTT_*` macro overrides were decided by actually grepping
+the vendored header before writing them, not by assumption:
+
+| Macro | Routed to | Why |
+|---|---|---|
+| `STBTT_ifloor`/`STBTT_iceil` | real implementations in the wrapper | `mods/std/math.cpp`'s `complexFloor()` returns 0 for every `x <= 1` including all negatives — not usable. Confirmed genuinely reachable from `stbtt_PackFontRange`'s rasterizer path (bezier flattening). |
+| `STBTT_fmod` | real implementation in the wrapper | `fmod` doesn't exist anywhere else in this codebase. Confirmed reachable from `stbtt__compute_crossings_x` (scan-conversion), part of the main rasterizer. |
+| `STBTT_sqrt`/`STBTT_fabs`/`STBTT_cos`/`STBTT_pow` | existing `sqrt`/`fabs`/`cos`/`pow` in `math.cpp` | Already correct and present; `sqrt` confirmed reachable from bezier curve-length calculations in the main path. |
+| `STBTT_acos` | stubbed, `return 0.0` | Traced every call site in the vendored header: only reachable from `stbtt_GetGlyphSDF`/`stbtt__solve_cubic` (the signed-distance-field API), which this kernel never calls (only `stbtt_PackFontRange` is used). Without an override, the header's own default (`acos(x)`) would reference a symbol that doesn't exist — `acos` is commented out, unimplemented, in `mods/std/include/math.h` — and fail to link. |
+| `STBTT_malloc`/`STBTT_free` | the kernel's own `malloc`/`free` | Ignoring the `alloc_context` parameter entirely (never dereferenced). |
+| `STBTT_assert` | no-op | No `assert.h` in this freestanding environment. |
+
+`mods/core/fontman/fontman.h` includes the vendor header for
+*declarations only* (no `STB_TRUETYPE_IMPLEMENTATION`) — exactly
+mirroring how `mods/dev/chorus/mp3.cpp` includes `minimp3.h` without
+redefining `MINIMP3_IMPLEMENTATION`.
+
+### Component: boot-time atlas baking (`mods/core/fontman/fontman.cpp`)
+
+Bakes fixed-size glyph atlases once, at boot, and never rasterizes
+live. `ttf_font_init()` calls `stbtt_PackBegin`/`stbtt_PackFontRange`/
+`stbtt_PackEnd` for 3 size tiers, matching the 3 scale factors already
+used across every draw-char call site in the codebase:
+
+| Tier | Scale | Cell size (`8*scale`) | Atlas dims |
+|---|---|---|---|
+| 0 | 2 | 16px | 256×128 |
+| 1 | 3 | 24px | 256×128 |
+| 2 | 4 | 32px | 256×256 |
+
+Called from the top of `graphics_initalize_stage1()`
+(`mods/dev/console/console.cpp`) — after `initialize_memory_pool()` has already
+run in `kernel_main()` (so `malloc` is available) and before `Terminal`
+or any Wingman widget exists (so every real caller always sees a baked,
+or explicitly-invalid-with-fallback, atlas).
+
+Baking once at boot instead of rasterizing per-draw is deliberate, not
+incidental: this build has no optimization flag at all (`-O0` by
+default) and floating point goes through the x87 FPU exclusively
+(`-mno-sse -mno-sse2 -mno-mmx -mfpmath=387` — SSE is disabled entirely),
+which makes `stb_truetype`'s rasterizer (bezier flattening,
+scan-conversion, coverage accumulation) real, non-trivial CPU cost —
+worth paying exactly once per tier at boot, never per glyph per redraw.
+
+Each `bake_tier(int tier, const uint8_t* fontData)` call:
+1. `malloc`s a `atlasW * atlasH` single-channel (8bpp coverage) bitmap.
+2. `stbtt_PackBegin` initializes stb's internal rectangle packer against
+   that bitmap.
+3. `stbtt_PackFontRange` rasterizes all 95 printable-ASCII codepoints
+   (`TTF_FIRST_CHAR=32` through `126`) at this tier's pixel size in one
+   call, filling `atlas.chardata[]` (an array of `stbtt_packedchar` —
+   each entry holds `x0,y0,x1,y1` bounding box in the atlas bitmap, plus
+   signed `xoff`/`yoff`/`xadvance` offsets).
+4. `stbtt_PackEnd` releases stb's internal packing state (the atlas
+   bitmap itself is kept).
+5. A fixed `baselineRow` is computed once from the font's own vertical
+   metrics (`stbtt_GetFontVMetrics`'s `ascent`, scaled via
+   `stbtt_ScaleForPixelHeight`) — so every glyph in the tier sits on the
+   same baseline row within its cell; ink position varies per glyph via
+   `xoff`/`yoff`, the cell origin itself never does (the whole point of
+   a monospace grid).
+6. The metrically-monospace check (see "the font asset" above): calls
+   `stbtt_GetCodepointHMetrics` for all 95 glyphs and confirms every
+   `advanceWidth` is identical, logging (not failing) a warning if not.
+7. On any failure at steps 1-3, the tier is left with `valid = false`
+   and the function returns `false` — `ttf_font_init()` logs a
+   `tier %d bake failed, falling back to bitmap Font[]` line but keeps
+   booting; a partial or total bake failure degrades gracefully to the
+   old renderer rather than blocking boot or leaving garbled text.
+
+`ttf_font_get_atlas(unsigned scale)` maps `scale` (2/3/4) to a tier
+index and returns that tier's `FontAtlas*`, or `nullptr` if that tier
+never baked successfully — every call site checks this and falls back
+to `Font[]` when null.
+
+### Component: the shared glyph-blit core (`ttf_font.h`)
+
+`ttf_blend_over(under, fg, alpha)` — a plain alpha-over compositing
+formula (`result = fg*alpha + under*(1-alpha)`, per channel, integer
+math) with no dependency on Wingman's `types.h` — `mods/std` stays below
+`mods/core/wingman` in this codebase's layering, same as everything else
+in this file's neighborhood.
+
+`ttf_blit_glyph(atlas, c, cellOriginX, cellOriginY, fg, plot)` — the
+shared "alpha-blend one glyph from a baked atlas" core. Templated on the
+plot callback (`plot(px, py, alpha, fg)`, called once per covered
+destination pixel) so it works uniformly for both a free-function
+framebuffer write (`vbe.cpp`'s `draw_pixel`) and a `Surface` member call
+(every Wingman widget), with no virtual dispatch — this project builds
+`-fno-rtti`, so there's no `dynamic_cast`/polymorphic-interface option
+here even if one were wanted.
+
+**The signed-int discipline, and why it exists**: `stbtt_packedchar`'s
+`xoff`/`yoff` fields are signed floats, frequently negative (left
+overhang, accents, etc). Every intermediate value derived from them in
+`ttf_blit_glyph` — `originX`, `originY`, `dstRow`, `dstCol` — is declared
+`int`, never `unsigned`, all the way through, and gets clipped to
+`[0, cellSize)` *before* the caller's (usually `unsigned`)
+`cellOriginX`/`cellOriginY` is ever added in. This is the direct,
+explicit fix for the exact bug class that killed the prior attempt at
+this feature: an unsigned wraparound on a negative offset causing a page
+fault. By construction, the only place an `unsigned` value participates
+is the final `cellOriginX + dstCol` / `cellOriginY + dstRow`, where
+`dstCol`/`dstRow` are already proven non-negative and bounded — so that
+addition can't itself introduce a new wraparound.
+
+### Integration: the 6 non-panic call sites
+
+Each of these kept its original `Font[]`-loop body as a fallback (gated
+on `ttf_font_get_atlas()` returning non-null) and gained a new branch
+that looks up the glyph in the right tier's atlas and blits it through
+the *same* pixel-plot primitive the file already used. Signatures and
+every call site elsewhere in the codebase are completely unchanged —
+`draw_string`/`utility_draw_string` and all width-dependent layout math
+keep calling the same functions the same way, unaware anything about the
+rendering changed underneath them.
+
+**`VBEScreen::draw_char` is the one exception, and no longer fits this
+table's own premise.** It originally gained the same TTF branch as the
+other 5, but was later deliberately reverted to *always* use the
+`Font[]` bitmap path unconditionally, with the TTF branch removed
+entirely — a direct response to a request to make the boot `Terminal`
+keep the plain, blocky bitmap look, matching the kernel panic screen's
+own permanently-bitmap-only rendering (see "Deliberate, permanent
+exclusion: the kernel panic screen" above). It's the only one of the 6
+that fills an opaque `bg` rect before drawing, unrelated to the TTF
+question — it composites onto a raw framebuffer region (the boot
+`Terminal`) rather than a Wingman `Surface` that already tracks a known
+background, so it can't just blend against whatever pixel happens to be
+there already the way the other 5 do.
+
+| Call site | File | Plot primitive | Background handling |
+|---|---|---|---|
+| `VBEScreen::draw_char` | `mods/dev/console/console.cpp` | `draw_pixel` | Fills an opaque `bg` rect first, then draws the `Font[]` bitmap glyph directly (no TTF atlas lookup at all — see above). |
+| `MessageBox::utility_draw_char` | `mods/core/wingman/suite/message/message.cpp` | `utility_draw_pixel` → `Surface::putPixelUnsafe` | Transparent — reads the existing pixel via `Surface::getPixel` first, blends, writes back. |
+| `FileManager::utility_draw_char` | `mods/core/wingman/suite/explorer/explorer.cpp` | same | same |
+| `WidgetDemo::utility_draw_char` | `mods/core/wingman/suite/widgetdemo/widgetdemo.cpp` | same | same |
+| `Button`'s file-local `drawChar` | `mods/core/wingman/widgets/button.cpp` | `Surface::putPixelUnsafe` directly | same |
+| `TextInput`'s file-local `drawChar` | `mods/core/wingman/widgets/textinput.cpp` | `Surface::putPixelUnsafe` directly | same |
+
+Each of the 5 transparent-compositing sites follows the identical shape
+(shown once, `Button`'s version):
+```cpp
+static void drawChar(Surface* surface, unsigned x, unsigned y, char c, unsigned color, unsigned scale) {
+    const FontAtlas* atlas = ttf_font_get_atlas(scale);
+    if (atlas == nullptr) {
+        /* ...original Font[]-loop fallback, unchanged... */
+        return;
+    }
+    ttf_blit_glyph(atlas, c, (int)x, (int)y, color,
+        [&](int px, int py, uint8_t alpha, uint32_t fg) {
+            color_t under = surface->getPixel(px, py);
+            surface->putPixelUnsafe(px, py, ttf_blend_over(under, fg, alpha));
+        });
+}
+```
+
+Each corresponding header (`message.h`, `explorer.h`, `widgetdemo.h`, and
+the two widget `.cpp` files directly) gained one new
+`#include ".../graphics/ttf_font.h"` line alongside its existing
+`font.h` include — the fallback path still needs `Font[]`, so that
+include was never removed.
+
+### Deliberate, permanent exclusion: the kernel panic screen
+
+`Font[]` (`mods/dev/vbe/font.h`) and the free `draw_char()`
+(`mods/dev/vbe/vbe.cpp`) got **zero code changes** — confirmed via
+`git diff` showing no modifications to either file, or to
+`mods/dev/idt/isr.cpp` (`FaultHandler::panic_draw_string()`/
+`draw_panic_screen()`), not merely assumed safe by having avoided them
+on purpose.
+
+This isn't a temporary gap to close later. A fault handler is
+deliberately the wrong place to depend on a new subsystem: atlas lookups
+require boot-init to have already succeeded, and `malloc`/`Surface`
+availability is exactly the kind of thing a fault handler must never
+assume, given heap or GUI-state corruption could be what caused the
+fault in the first place. After this change, `draw_char()` in `vbe.cpp`
+has exactly one caller left in the whole codebase — the panic path —
+and that's correct, not something to "clean up" by finding it a second
+caller.
+
+### Two real bugs found while building this
+
+**Bug 1 — the actual crash, `free(NULL)` (`mods/std/stdlib.cpp`)**:
+`free(void *ptr)` never checked for `ptr == NULL`. It unconditionally
+computed `block_t *block = (block_t*)((uint8_t*)ptr - sizeof(block_t));`
+and wrote through it (`block->next = free_list;`). `block_t` is
+`{ size_t size; block_t* next; }` — 8 bytes on this 32-bit build, no
+padding. For `ptr == NULL`: `block = (block_t*)(0 - 8) = 0xFFFFFFF8`.
+`next` is the struct's *second* field, offset `+4` — so the write lands
+at exactly `0xFFFFFFFC`. First boot attempt page-faulted at precisely
+that address (`CR2=0xFFFFFFFC`, write, supervisor), deep inside
+`stbtt_MakeGlyphBitmapSubpixel`.
+
+Every real libc defines `free(NULL)` as a safe no-op; this kernel's
+never did, and nothing had ever called it that way before `stb_truetype`
+came along. `stbtt_MakeGlyphBitmapSubpixel` legitimately calls
+`STBTT_free(vertices, ...)` unconditionally at the end, for *every*
+glyph — and for a glyph with zero contours (the space character has no
+outline), `stbtt_GetGlyphShape` never allocates `vertices` in the first
+place, leaving it `NULL`. Completely standard, correct behavior on
+stb_truetype's part; this codebase's `free()` just had never been asked
+to handle it.
+
+Bisected via the same headless-QEMU boot-testing technique used for the
+tasking bugs earlier this session, by varying how many glyphs
+`stbtt_PackFontRange` was asked to bake in a scratch build: 1 glyph
+(`'A'`) baked fine; 2 glyphs starting from space crashed; 1 glyph = space
+*alone* crashed. That narrowed it straight to the space glyph's cleanup
+path before a single line of `stdlib.cpp` had been read. Fixed with a
+one-line guard, `if (ptr == NULL) return;`, at the top of `free()`. Not
+a bug in the font integration at all — a real, previously-latent bug in
+the kernel's own allocator, found by genuinely correct third-party code
+finally exercising a path this codebase had never tested.
+
+**Bug 2 — a real but not-the-actual-cause bug, `syscall.asm`'s segment
+push/pop mismatch**: found and fixed *before* bug 1, on the (reasonable
+but ultimately wrong) theory that it was corrupting a nested interrupt
+frame relevant to font baking. It wasn't related to this feature at
+all — see "`mods/dev/syscall/syscall.asm`" further up in this document
+for the actual story (it was the real cause of a *different* bug, the
+tasking Phase 3 boot-test failure). Left here as a cross-reference since
+it was genuinely investigated as a font-baking suspect first, and ruling
+it out (re-testing after fixing it, seeing the identical crash) is part
+of how bug 1 actually got found.
+
+### Verification
+
+Boot-tested headless via QEMU (`-display none`, `-serial file:...`, a
+monitor socket to `sendkey` past the boot menu) — the same technique
+proven earlier this session for the tasking bugs. Confirmed via serial
+log: all 3 tiers report `tier %d baked ok`, no monospace-mismatch
+warning (Cousine's advance widths are genuinely uniform), boot completes
+through `Tasking Enabled! Tasks spawned.` with no fault-handler output.
+
+**New technique this session, specifically for this visual feature**:
+QEMU's monitor `screendump <path>.ppm` command captures the guest's
+actual framebuffer even under `-display none` (the display backend still
+tracks VRAM state regardless of whether a window is shown) — confirmed
+working on the first try. Converted PPM→PNG via macOS
+`sips -s format png`, then actually looked at the result: real
+anti-aliased TrueType glyphs, smooth curves on letterforms like
+`a`/`f`/`o`/`m`, confirmed at both the scale-2 body-text tier and the
+larger title tier. Subsequently confirmed again by the user's own boot,
+on their own screen — matching. This is a materially better
+verification method than anything available earlier in this project's
+history for *visual* changes, and worth reusing for any future UI work
+in this sandbox instead of relying only on the user's own screenshots
+after the fact.
+
+### Known limitations / not attempted here
+
+- **ASCII only** (`TTF_FIRST_CHAR=32` through `126`, 95 codepoints) — no
+  Unicode, no extended Latin, matching `Font[]`'s own prior 0x00-0x7F
+  range. Extending this means widening `TTF_NUM_CHARS` and probably
+  moving off a flat `stbtt_packedchar[95]` array to something sparser if
+  the range grows much beyond ASCII.
+- **Fixed monospace-grid layout, not real proportional text** — see "the
+  font asset" above. `xadvance` in `stbtt_packedchar` (the font's real
+  per-glyph advance width) is baked but currently unused by any caller;
+  every draw-string loop still advances by a fixed `8*scale`.
+- **No kerning, no ligatures, no hinting beyond whatever
+  `stbtt_PackFontRange`'s default rasterization applies** — this is the
+  "bake a plain atlas" API, not `stbtt_PackFontRangesGatherRects`-style
+  advanced layout.
+- **Regular weight only** — no bold/italic variants embedded or wired
+  up; every call site's `color` parameter is the only per-call styling
+  knob that exists today.
+- **Only 3 fixed pixel sizes** (16/24/32px) — adding a new scale factor
+  anywhere in the codebase means adding a 4th tier to `ttf_font.cpp`'s
+  `kCellSizes[]`/`tier_for_scale()`, not something that falls out
+  automatically.

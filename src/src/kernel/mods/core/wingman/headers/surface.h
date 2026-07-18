@@ -16,6 +16,7 @@ class Surface {
         int getWidth();
         int getHeight();
         void clear(color_t color);
+        void clear(int x, int y, int w, int h, color_t color);
         void putPixel(int x, int y, color_t color);
         color_t getPixel(int x, int y);
         color_t* getBuffer();

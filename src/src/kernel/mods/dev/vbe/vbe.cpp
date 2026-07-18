@@ -2,8 +2,8 @@
 #include "../pci/pci.h"
 #include "../serial/serial.h"
 #include "../paging/paging.h"
-#include "../../std/include/graphics/icons.h"
-#include "../../std/include/graphics/font.h"
+#include "../../core/wingman/headers/icons.h"
+#include "font.h"
 #include "./vga_table.h"
 // #include "vga_table.h"
 

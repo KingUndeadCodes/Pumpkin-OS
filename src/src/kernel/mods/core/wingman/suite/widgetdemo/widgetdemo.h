@@ -10,8 +10,10 @@
 #include "../../headers/widgets/button.h"
 #include "../../headers/widgets/textinput.h"
 #include "../../headers/widgets/checkbox.h"
+#include "../../headers/cursor.h"
 #include "../../../../dev/serial/serial.h"
-#include "../../../../std/include/graphics/font.h"
+#include "../../../../dev/vbe/font.h"
+#include "../../../fontman/fontman.h"
 
 // See docs/DOCS.md ("mods/core/wingman/suite/widgetdemo/widgetdemo.cpp" section).
 class WidgetDemo : public KeyboardDelegate, public MouseDelegate {

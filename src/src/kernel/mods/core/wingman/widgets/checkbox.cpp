@@ -1,4 +1,5 @@
 #include "../headers/widgets/checkbox.h"
+#include "../headers/shapes.h"
 
 #define CHECKBOX_COLOR_BORDER    0xFFFFFFFF
 #define CHECKBOX_COLOR_BG        0xFF1a1615
@@ -30,31 +31,19 @@ bool Checkbox::click(int px, int py) {
 void Checkbox::draw(Surface* surface, int thickness) const {
     int bx = this->x, by = this->y, bw = this->width, bh = this->height;
     if (this->style == CheckboxStyleToggle) {
-        // Track: full widget rect, color signals state -- no border, matching
-        // SwiftUI's borderless pill track.
+        // See docs/DOCS.md ("mods/core/wingman/headers/shapes.h") for why the toggle style uses bh/2, not the /5 rule.
         uint32_t trackColor = this->checked ? CHECKBOX_COLOR_ON : CHECKBOX_COLOR_OFF_TRACK;
-        for (int y = 0; y < bh; y++) {
-            for (int x = 0; x < bw; x++) surface->putPixelUnsafe(bx + x, by + y, trackColor);
-        }
-        // Thumb: inset by `thickness`, slid to whichever side matches `checked`.
+        draw_rounded_rect_fill(surface, bx, by, bw, bh, bh / 2, trackColor);
         int thumbSize = bh - thickness * 2;
         if (thumbSize < 1) thumbSize = 1;
         int thumbY = by + thickness;
         int thumbX = this->checked ? (bx + bw - thickness - thumbSize) : (bx + thickness);
-        for (int y = 0; y < thumbSize; y++) {
-            for (int x = 0; x < thumbSize; x++) surface->putPixelUnsafe(thumbX + x, thumbY + y, CHECKBOX_COLOR_THUMB);
-        }
+        draw_rounded_rect_fill(surface, thumbX, thumbY, thumbSize, thumbSize, thumbSize / 2, CHECKBOX_COLOR_THUMB);
     } else {
-        // Fill signals state; outer border matches Button/TextInput's look.
+        // See docs/DOCS.md ("mods/core/wingman/headers/shapes.h").
+        int radius = bh / 5;
         uint32_t fillColor = this->checked ? CHECKBOX_COLOR_ON : CHECKBOX_COLOR_BG;
-        for (int y = thickness; y < bh - thickness; y++) {
-            for (int x = thickness; x < bw - thickness; x++) surface->putPixelUnsafe(bx + x, by + y, fillColor);
-        }
-        for (int t = 0; t < thickness; t++) {
-            for (int x = 0; x < bw; x++) surface->putPixelUnsafe(bx + x, by + t, CHECKBOX_COLOR_BORDER);
-            for (int x = 0; x < bw; x++) surface->putPixelUnsafe(bx + x, by + bh - 1 - t, CHECKBOX_COLOR_BORDER);
-            for (int y = 0; y < bh; y++) surface->putPixelUnsafe(bx + t, by + y, CHECKBOX_COLOR_BORDER);
-            for (int y = 0; y < bh; y++) surface->putPixelUnsafe(bx + bw - 1 - t, by + y, CHECKBOX_COLOR_BORDER);
-        }
+        draw_rounded_rect_fill(surface, bx, by, bw, bh, radius, CHECKBOX_COLOR_BORDER);
+        draw_rounded_rect_fill(surface, bx + thickness, by + thickness, bw - thickness * 2, bh - thickness * 2, radius - thickness, fillColor);
     }
 }

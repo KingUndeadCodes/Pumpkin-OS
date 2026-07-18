@@ -152,34 +152,20 @@ void WindowManager::clearScreen(void) {
     this->screen->clear(this->environment.backgroundColor);
 }
 
-/*
-void WindowManager::composite() {
+void WindowManager::clearScreen(Rect dirty) {
     if (this->screen == NULL) return;
-    clearScreen();
-    for (uint32_t i = 0; i < this->maxWindowCount; i++) {
-        Window* window = this->windows[i];
-        if (window == NULL) continue;
-        if (window->surface == NULL) continue;
-        Surface* surface = window->surface;
-        const int height = surface->getHeight();
-        const int width = surface->getWidth();
-        for (int y = 0; y < height; y++) {
-            for (int x = 0; x < width; x++) {
-                int screenX = window->offsetX + x;
-                int screenY = window->offsetY + y;
-                color_t src = surface->getPixel(x, y);
-                color_t dst = this->screen->getPixel(screenX, screenY);
-                this->screen->putPixel(screenX, screenY, blend(src, dst));
-            }
-        }
-    }
+    this->screen->clear(dirty.x, dirty.y, dirty.w, dirty.h, this->environment.backgroundColor);
 }
-*/
 
-void WindowManager::composite() {
+// See docs/DOCS.md ("mods/core/wingman/headers/types.h -- Rect / dirty-rect compositing").
+void WindowManager::composite(Rect dirty) {
     if (this->screen == NULL) return;
-    clearScreen();
+    Rect screenRect = { 0, 0, (int)this->constraints.screenXSizePx, (int)this->constraints.screenYSizePx };
+    dirty = rect_intersect(dirty, screenRect);
+    if (rect_empty(dirty)) return;
+    clearScreen(dirty);
     if (this->zOrder == NULL) return;
+    const int screenWidth = this->screen->width;
     for (uint32_t i = 0; i < this->zOrderCount; i++) {
         window_ref_t ref = this->zOrder[i];
         Window* window = this->windows[ref];
@@ -187,18 +173,23 @@ void WindowManager::composite() {
         if (window->surface == NULL) continue;
         if (window->surface->pixels == NULL) continue;
         Surface* surface = window->surface;
-        const int screenWidth = this->screen->width;
-        const int height = surface->getHeight();
-        const int width = surface->getWidth();
-        for (int y = 0; y < height; y++) {
-            int screenY = window->offsetY + y;
-            for (int x = 0; x < width; x++) {
-                int screenX = window->offsetX + x;
-                color_t src = surface->getPixel(x, y);
-                color_t dst = this->screen->getPixel(screenX, screenY);
-                this->screen->pixels[screenY * screenWidth + screenX] = blend(src, dst);
-                // this->screen->putPixel(screenX, screenY, blend(src, dst));
+        Rect windowRect = { window->offsetX, window->offsetY, surface->getWidth(), surface->getHeight() };
+        Rect region = rect_intersect(windowRect, dirty);
+        if (rect_empty(region)) continue;
+        for (int screenY = region.y; screenY < region.y + region.h; screenY++) {
+            int localY = screenY - window->offsetY;
+            int rowBase = screenY * screenWidth;
+            for (int screenX = region.x; screenX < region.x + region.w; screenX++) {
+                int localX = screenX - window->offsetX;
+                color_t src = surface->getPixel(localX, localY);
+                color_t dst = this->screen->pixels[rowBase + screenX];
+                this->screen->pixels[rowBase + screenX] = blend(src, dst);
             }
         }
     }
+}
+
+void WindowManager::composite() {
+    Rect full = { 0, 0, (int)this->constraints.screenXSizePx, (int)this->constraints.screenYSizePx };
+    composite(full);
 }

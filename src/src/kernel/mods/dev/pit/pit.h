@@ -4,7 +4,7 @@
 #include "../tasking/tasking.h"
 #include "../idt/irq.h"
 #include "../idt/idt.h"
-#include <graphics.h>
+#include "../console/console.h"
 #include <stdint.h>
 
 #define PIT_BASE_FREQUENCY 1193182u

@@ -1,5 +1,7 @@
 #include "../headers/widgets/button.h"
-#include "../../../std/include/graphics/font.h"
+#include "../headers/shapes.h"
+#include "../../../dev/vbe/font.h"
+#include "../../fontman/fontman.h"
 #include <string.h>
 
 #define BUTTON_COLOR_W 0xFFFFFFFF
@@ -39,43 +41,47 @@ static inline uint32_t shade(uint32_t color, int delta) {
 }
 
 static void drawChar(Surface* surface, unsigned x, unsigned y, char c, unsigned color, unsigned scale) {
-    for (unsigned i = 0; i < 8; i++) {
-        for (unsigned j = 0; j < 8; j++) {
-            if (Font[(int)c][i] & (1 << j)) {
-                for (unsigned k = 0; k < scale; k++) {
-                    for (unsigned l = 0; l < scale; l++) {
-                        surface->putPixelUnsafe(x + j * scale + l, y + i * scale + k, color);
+    const FontAtlas* atlas = ttf_font_get_atlas(scale);
+    if (atlas == nullptr) {
+        for (unsigned i = 0; i < 8; i++) {
+            for (unsigned j = 0; j < 8; j++) {
+                if (Font[(int)c][i] & (1 << j)) {
+                    for (unsigned k = 0; k < scale; k++) {
+                        for (unsigned l = 0; l < scale; l++) {
+                            surface->putPixelUnsafe(x + j * scale + l, y + i * scale + k, color);
+                        }
                     }
                 }
             }
         }
+        return;
     }
+    ttf_blit_glyph(atlas, c, (int)x, (int)y, color,
+        [&](int px, int py, uint8_t alpha, uint32_t fg) {
+            color_t under = surface->getPixel(px, py);
+            surface->putPixelUnsafe(px, py, ttf_blend_over(under, fg, alpha));
+        });
 }
 
 void Button::draw(Surface* surface, int thickness) const {
     constexpr uint32_t scale = 2;
     int bx = this->x, by = this->y, bw = this->width, bh = this->height;
+    // See docs/DOCS.md ("mods/core/wingman/headers/shapes.h") for the
+    // radius-as-fraction-of-height rule shared across widgets.
+    int radius = bh / 5;
     uint32_t highlight = shade(this->color, 35);
     uint32_t shadow = shade(this->color, -35);
-    // Fill, leaving room for the outer border.
-    for (int y = thickness; y < bh - thickness; y++) {
-        for (int x = thickness; x < bw - thickness; x++) surface->putPixelUnsafe(bx + x, by + y, this->color);
-    }
-    // Outer border.
-    for (int t = 0; t < thickness; t++) {
-        for (int x = 0; x < bw; x++) surface->putPixelUnsafe(bx + x, by + t, BUTTON_COLOR_W);
-        for (int x = 0; x < bw; x++) surface->putPixelUnsafe(bx + x, by + bh - 1 - t, BUTTON_COLOR_W);
-        for (int y = 0; y < bh; y++) surface->putPixelUnsafe(bx + t, by + y, BUTTON_COLOR_W);
-        for (int y = 0; y < bh; y++) surface->putPixelUnsafe(bx + bw - 1 - t, by + y, BUTTON_COLOR_W);
-    }
-    // Inner bevel (lighter top/left, darker bottom/right) for a raised look.
-    for (int x = thickness; x < bw - thickness; x++) surface->putPixelUnsafe(bx + x, by + thickness, highlight);
-    for (int x = thickness; x < bw - thickness; x++) surface->putPixelUnsafe(bx + x, by + bh - thickness - 1, shadow);
-    for (int y = thickness; y < bh - thickness; y++) surface->putPixelUnsafe(bx + thickness, by + y, highlight);
-    for (int y = thickness; y < bh - thickness; y++) surface->putPixelUnsafe(bx + bw - thickness - 1, by + y, shadow);
+    // See docs/DOCS.md ("mods/core/wingman/headers/shapes.h") for the two-call pattern and the bevel-clip rationale below.
+    draw_rounded_rect_fill(surface, bx, by, bw, bh, radius, BUTTON_COLOR_W);
+    draw_rounded_rect_fill(surface, bx + thickness, by + thickness, bw - thickness * 2, bh - thickness * 2, radius - thickness, this->color);
+    int bevelInset = radius > thickness ? radius : thickness;
+    for (int x = bevelInset; x < bw - bevelInset; x++) surface->putPixelUnsafe(bx + x, by + thickness, highlight);
+    for (int x = bevelInset; x < bw - bevelInset; x++) surface->putPixelUnsafe(bx + x, by + bh - thickness - 1, shadow);
+    for (int y = bevelInset; y < bh - bevelInset; y++) surface->putPixelUnsafe(bx + thickness, by + y, highlight);
+    for (int y = bevelInset; y < bh - bevelInset; y++) surface->putPixelUnsafe(bx + bw - thickness - 1, by + y, shadow);
     // Label, centered.
     int labelLen = strlen(this->message);
-    int charWidth = 8 * scale;
+    int charWidth = ttf_font_char_advance(scale);
     int charHeight = 8 * scale;
     int textWidth = labelLen * charWidth;
     int textX = bx + (bw - textWidth) / 2;

@@ -2,7 +2,8 @@
 
 #define COLOR_R 0xFFFF0000
 #define COLOR_G 0xFF00FF00
-#define COLOR_B 0xFF0000FF
+// See docs/DOCS.md ("mods/core/wingman/suite/explorer/explorer.cpp -- selection color").
+#define COLOR_B 0xFFFF5C04
 #define COLOR_W 0xFFFFFFFF
 
 /*
@@ -16,17 +17,26 @@ void FileManager::utility_draw_pixel(unsigned x, unsigned y, unsigned color) {
 };
 
 void FileManager::utility_draw_char(unsigned int x, unsigned int y, char c, unsigned int color, unsigned int scale = 4U) {
-    for (unsigned i = 0; i < 8; i++) {
-        for (unsigned j = 0; j < 8; j++) {
-            if (Font[(int)c][i] & (1 << j)) {
-                for (unsigned k = 0; k < scale; k++) {
-                    for (unsigned l = 0; l < scale; l++) {
-                        utility_draw_pixel(x + j * scale + l, y + i * scale + k, color);
+    const FontAtlas* atlas = ttf_font_get_atlas(scale);
+    if (atlas == nullptr) {
+        for (unsigned i = 0; i < 8; i++) {
+            for (unsigned j = 0; j < 8; j++) {
+                if (Font[(int)c][i] & (1 << j)) {
+                    for (unsigned k = 0; k < scale; k++) {
+                        for (unsigned l = 0; l < scale; l++) {
+                            utility_draw_pixel(x + j * scale + l, y + i * scale + k, color);
+                        }
                     }
                 }
             }
         }
+        return;
     }
+    ttf_blit_glyph(atlas, c, (int)x, (int)y, color,
+        [&](int px, int py, uint8_t alpha, uint32_t fg) {
+            color_t under = this->window->surface->getPixel(px, py);
+            utility_draw_pixel((unsigned)px, (unsigned)py, ttf_blend_over(under, fg, alpha));
+        });
 };
 
 void FileManager::utility_draw_icon(unsigned x, unsigned y, unsigned icon, unsigned scale = 2) {
@@ -193,17 +203,19 @@ void FileManager::draw_background(void) {
 void FileManager::draw_title(void) {
     utility_draw_icon(padding * frames + 4, padding * frames + 4, 0);
     const char* titleString = "Select File";
+    int charAdvance = ttf_font_char_advance(4);
     for (int i = 0; i < strlen(titleString); i++) utility_draw_char(
-        padding * frames + 4 + 78 + (32 * i),
+        padding * frames + 4 + 78 + (charAdvance * i),
         padding * frames + 24,
-        titleString[i], 
+        titleString[i],
         COLOR_W
-    );   
+    );
 };
 
 // FIXME: The Directory is listed every time the FileManager is instanciated. It should only have to be listed once.
 void FileManager::draw_options(void) {
     if (!files) return;
+    int charAdvance = ttf_font_char_advance(2);
     int i = 0;
     while (files[i].filename != nullptr) {
         const char* optionString = files[i].filename;
@@ -241,7 +253,7 @@ void FileManager::draw_options(void) {
             utility_draw_icon(padding * frames + 78 - 49, padding * frames + 106 + (35 * i), 7, 1);
         }
         for (size_t j = 0; j < len; j++) {
-            utility_draw_char(padding * frames + 4 + 78 + (16 * j), padding * frames + 106 + (35 * i) + 8, optionString[j], (i == currentSelection ? COLOR_B : COLOR_W), 2);
+            utility_draw_char(padding * frames + 4 + 78 + (charAdvance * j), padding * frames + 106 + (35 * i) + 8, optionString[j], (i == currentSelection ? COLOR_B : COLOR_W), 2);
         }
         i++;
     }
@@ -252,7 +264,8 @@ bool FileManager::onMouseEvent(int x, int y, int dx, int dy, unsigned char butto
     (void)dy;
     (void)buttons;
     if (pressedEdge & 1) {
-        uint8_t redraw_description = 0b00001000;
+        // See docs/DOCS.md ("mods/core/wingman/suite/explorer/explorer.cpp -- selection-highlight redraw").
+        uint8_t redraw_description = 0b00111000;
         int listStartX = padding * frames + 78 - 49;
         int listStartY = padding * frames + 106;
         int rowHeight = 35;
@@ -491,13 +504,14 @@ bool FileManager::onKeyboard(char key, bool shift, bool meta, unsigned char scan
     if (key == 's') {
         if (this->currentSelection + 1 < this->fileCount) {
             this->currentSelection++;
-            redraw_description |= 0b00001000;
+            // See docs/DOCS.md ("mods/core/wingman/suite/explorer/explorer.cpp -- selection-highlight redraw").
+            redraw_description |= 0b00111000;
             redrawNeeded = true;
         }
     } else if (key == 'w') {
         if (this->currentSelection > 0) {
             this->currentSelection--;
-            redraw_description |= 0b00001000;
+            redraw_description |= 0b00111000;
             redrawNeeded = true;
         }
     } else if (key == '\n') {

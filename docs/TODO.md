@@ -73,7 +73,8 @@ fails gracefully instead of null-dereferencing `node->size`.
 
 ### 9. Fix `Logging::log()`'s missing NUL-termination — DONE
 
-`mods/std/logging.cpp` — both `Logging::log()` and `Logging::flush()`
+`mods/dev/logging/logging.cpp` (was `mods/std/logging.cpp` at the time —
+see `docs/DOCS.md` for the later relocation) — both `Logging::log()` and `Logging::flush()`
 (same bug, one function apart — `flush()` hands its own unterminated
 `fread()` buffer straight to `log()`) read into a `malloc`'d buffer and
 treated it as a NUL-terminated string without `fread()` ever adding a
@@ -398,25 +399,6 @@ cause described above, so this bug may simply be gone as a side effect,
 not a targeted fix. Not confirmed — worth re-testing specifically rather
 than assuming it's resolved.
 
-### True font rendering
-
-All on-screen text (Wingman widgets, `Terminal`, the panic screen) goes
-through the same fixed 8x8 bitmap `Font[]` array, scaled up by an integer
-factor (`utility_draw_char`/`drawChar`/`VBEScreen::draw_char`) — blocky,
-no anti-aliasing, no variable glyph widths, no real typography.
-
-Already attempted once this session and reverted: a real `stb_truetype`
-port (`mods/ports/stb_truetype` at the time) was wired into
-`utility_draw_char`, but ran into a page-fault chased down to a real bug
-(unsigned wraparound on negative TTF `xoff`/`yoff`) and then, after that
-fix, still wouldn't boot cleanly in this specific sandbox — determined to
-be a QEMU/bootloader-invocation quirk of the environment, not a kernel
-bug, but not something provable without a real boot outside the sandbox.
-Reverted in full rather than leave a half-verified font pipeline in.
-
-Worth another look with real hardware/QEMU access to verify against
-directly, rather than relying on the sandbox's limited boot-testing.
-
 ### Full-codebase performance/architecture audit (2026-07-07)
 
 A 3-way parallel audit (boot/memory/interrupts, drivers/networking,
@@ -475,14 +457,16 @@ it's revisited.
 - `vbe.cpp` `draw_char()` — up to 1024 individual `draw_pixel()` calls
   per glyph at the default scale; this is the primitive behind all
   on-screen text.
-- `mods/std/graphics.cpp` `Terminal::scroll()` — scrolls via
+- `mods/dev/console/console.cpp` `Terminal::scroll()` — scrolls via
   `get_pixel()`/`draw_pixel()` per pixel across the whole 1024x768
   framebuffer (~780K operations) instead of one `memmove` of the
   framebuffer region.
-- `mods/core/wingman/manager.cpp` `composite()` — clears and fully
-  re-blends the entire screen on every redraw (no dirty-rect), and reads
-  the destination pixel even when `blend()`'s own fast paths (fully
-  opaque/fully transparent source) would ignore it entirely.
+- `mods/core/wingman/manager.cpp` `composite()` — still reads the
+  destination pixel unconditionally before calling `blend()`, even when
+  `blend()`'s own fast paths (fully opaque/fully transparent source)
+  would ignore it entirely. Minor next to the dirty-rect fix below, not
+  yet done. (The "clears and fully re-blends the entire screen on every
+  redraw" half of this item is DONE — see "Recently completed".)
 - `mods/core/wingman/suite/explorer/explorer.cpp` `readDirectory()` —
   counts entries then fills them in two separate passes, and since
   `ramfs_readdir()` itself walks the linked list from the head per index,
@@ -546,6 +530,127 @@ it's revisited.
 ---
 
 ## Recently completed
+
+### Dirty-rect compositing — DONE (2026-07-16)
+
+`WindowManager::composite()` cleared and re-blended the entire 1024x768
+screen, and `wingman.cpp`'s `redraw_screen()` did two full-buffer
+`memcpy()`s (through this project's byte-at-a-time `memcpy`), on every
+single keystroke, click, or drag step — regardless of how much actually
+changed. Added a `Rect` type (`mods/core/wingman/headers/types.h`) and
+threaded it through the pipeline: `WindowManager::composite(Rect)` only
+touches the dirty rect (intersected per-window), and a new
+`redraw_screen_rect(Rect)` in `wingman.cpp` copies just that rect's rows
+straight from the clean `wm->screen` buffer to hardware, no `outputBuffer`
+involved. `mouseFunctionWindowManager()` now computes/accumulates the
+right rect per event (focus change, drag — unioning the window's
+last-drawn position with its current one to cover throttled-over steps,
+widget interaction, keyboard). The original no-arg full-screen
+`composite()`/`redraw_screen()` still exist, unchanged, for the one real
+full-screen case (initial boot draw). See `docs/DOCS.md` ("mods/core/
+wingman/headers/types.h — Rect / dirty-rect compositing") for the full
+design writeup, including the per-event rect table.
+
+### Rounded widget corners — DONE (2026-07-16)
+
+`Button`, `TextInput`, and `Checkbox` (both styles) all drew hard 90°
+rectangles. Added a shared `draw_rounded_rect_fill()` helper
+(`mods/core/wingman/headers/shapes.h`) and switched all three widgets to
+it — anti-aliased rounded corners, radius scaled to each widget's own
+height (`height / 5`), with `Checkbox`'s toggle style upgraded to a real
+capsule track + circular thumb (`height / 2`, the conventional switch
+shape, not the general rule). See `docs/DOCS.md` ("mods/core/wingman/
+headers/shapes.h") for the full design writeup. `MessageBox`'s buttons
+picked up rounded corners for free, since they're the same shared
+`Button` class — no changes needed there.
+
+### True font rendering (real TrueType via stb_truetype) — DONE (2026-07-14)
+
+All on-screen text used to go through the same fixed 8x8 bitmap `Font[]`
+array, integer-scaled — blocky, no anti-aliasing. This had already been
+attempted once before this session and reverted in full (no git trace),
+after hitting a real bug (unsigned wraparound on negative TTF
+`xoff`/`yoff`) and then appearing not to boot cleanly — but that "doesn't
+boot" conclusion was never actually verified, because at the time the
+sandbox's ability to boot-test via QEMU was wrongly believed to be
+broken. This session proved that assumption false (see Phase 3 tasking
+above), so this was a genuine retry with real verification, not a blind
+repeat.
+
+- **Font asset**: `Cousine-Regular.ttf` (SIL OFL 1.1, Google Fonts),
+  shipped at `src/bin/` alongside this project's other binary assets,
+  confirmed metrically monospace at bake time (every printable-ASCII
+  glyph's `advanceWidth` checked equal) — required, since every layout
+  call site (`Button` auto-size, `TextInput` scroll math, `FileManager`
+  list layout) hard-codes a fixed `8*scale` pixel advance; switching to
+  proportional spacing was explicitly out of scope.
+- **Embedding**: NASM `incbin` (`mods/core/fontman/font_data.asm`), not a
+  generated C byte array — confirmed empirically that `incbin` paths
+  resolve relative to the assembler's CWD (matching how the Makefile
+  already invokes `nasm`), and confirmed via direct read of `kernel.ld`
+  that `.rodata` merges cleanly from every input object regardless of
+  link order.
+- **Package layout**: the font code (baking, blitting) lives at
+  `mods/core/fontman/`, not `mods/std/` — a peer component of
+  `mods/core/wingman/`, named to match (`wingman`/`fontman`), reflecting
+  that it owns real boot-time state and is consumed by both the raw
+  `Terminal` and every Wingman widget, not a stateless `mods/std/`-style
+  utility. Moved there after initially landing in `mods/std/`; internal
+  function/type names were left unrenamed since this was a location
+  change, not an API rename.
+- **`stb_truetype.h`** vendored directly (not a submodule, unlike
+  `minimp3` — genuine single-file library) at
+  `mods/ports/truetype/vendor/` (originally `mods/ports/stb_truetype/`,
+  renamed since — see `docs/DOCS.md`), with a thin
+  `truetype_impl.cpp` wrapper (was `stb_truetype_impl.cpp`, mirrors `minimp3.cpp`'s pattern)
+  supplying real `STBTT_ifloor`/`STBTT_iceil`/`STBTT_fmod` (confirmed by
+  grepping the vendored header that these are genuinely reachable from
+  the rasterizer path used) and stubbing `STBTT_acos` (confirmed
+  unreachable outside the SDF API, which is never called).
+- **Bakes fixed-size glyph atlases once, at boot**, via
+  `stbtt_PackFontRange` (3 tiers matching the 3 scale factors already in
+  use — 16px/24px/32px) — never rasterizes live, since `-O0` + x87-only
+  floats (`-mno-sse` etc.) makes live per-glyph rasterization real cost,
+  worth paying once, not per redraw. Every offset in the blit path
+  (`ttf_blit_glyph()`, `mods/core/fontman/fontman.h`) stays a
+  signed `int` end to end and gets clipped before any caller's `unsigned`
+  x/y is added in — the direct, explicit fix for the bug class that
+  killed the prior attempt.
+- **The panic screen was deliberately left untouched** — confirmed via
+  `git diff` showing zero changes to `vbe.cpp`/`isr.cpp`/`font.h`, not
+  just by inference. A fault handler is the wrong place to depend on a
+  new subsystem (atlas lookups, boot-init having succeeded, possible
+  heap corruption being what caused the fault in the first place).
+- **A real, second bug found and fixed via boot-testing**: first full
+  boot attempt page-faulted (`CR2=0xFFFFFFFC`, write, supervisor) deep
+  inside `stbtt_MakeGlyphBitmapSubpixel`. Bisected via QEMU headless
+  boot-testing (1 glyph → fine, 2 glyphs starting from space → crash, 1
+  glyph = space alone → crash) down to `free(NULL)`:
+  `mods/std/stdlib.cpp`'s `free()` never null-checked its argument (this
+  one's still in `mods/std/`, unrelated to the fontman relocation), and
+  unconditionally computed `ptr - sizeof(block_t)` — for `ptr == NULL`
+  that's `0 - 8 = 0xFFFFFFF8`, and the very next line writes to
+  `block->next` (offset +4 into the struct) = exactly `0xFFFFFFFC`,
+  matching the fault address byte-for-byte. `free(NULL)` is standard-
+  mandated to be a safe no-op in every real libc; this kernel's never
+  was, and nothing had ever called `free(NULL)` before —
+  `stbtt_MakeGlyphBitmapSubpixel` legitimately does exactly that for any
+  glyph with zero contours (space has no outline). Fixed with a one-line
+  null-check. Not a font-code bug at all — a real, pre-existing,
+  previously-latent kernel bug, same "new correct code exercises an
+  untested path" pattern as the `kernel_main()` task-creation race found
+  earlier this session.
+- **Verified visually, not just via boot success** — new technique this
+  session: QEMU monitor's `screendump` command captures the guest
+  framebuffer even under `-display none` (confirmed working), converted
+  PPM→PNG via `sips`, and actually looked at the rendered output:
+  genuine anti-aliased TrueType glyphs (smooth curves on 'a'/'f'/'o'/'m',
+  proper letterforms), confirmed at both the scale-2 body-text tier and
+  the title tier. Letter-spacing is visibly loose/generous — the direct,
+  expected consequence of keeping the fixed monospace-grid stride
+  instead of switching to proportional spacing, not a bug.
+- See `docs/DOCS.md` ("Font Rendering System", "mods/std/stdlib.cpp —
+  free(NULL)") for the full writeup.
 
 ### Keyboard ownership for concurrent stdin readers
 

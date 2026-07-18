@@ -1,0 +1,6 @@
+# Vendored third-party code (single-header libraries under mods/ports/*/vendor/,
+# e.g. stb_truetype.h, minimp3) -- excluded from GitHub's language stats since
+# none of it was written for/by this project. The thin wrapper files that
+# instantiate each library (stb_truetype_impl.cpp, minimp3.cpp) are NOT under
+# vendor/, so they still count as this project's own code.
+src/src/kernel/mods/ports/**/vendor/** linguist-vendored

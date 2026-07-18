@@ -10,22 +10,32 @@ void WidgetDemo::utility_draw_pixel(unsigned x, unsigned y, unsigned color) {
 };
 
 void WidgetDemo::utility_draw_char(unsigned x, unsigned y, char c, unsigned color, unsigned scale) {
-    for (unsigned i = 0; i < 8; i++) {
-        for (unsigned j = 0; j < 8; j++) {
-            if (Font[(int)c][i] & (1 << j)) {
-                for (unsigned k = 0; k < scale; k++) {
-                    for (unsigned l = 0; l < scale; l++) {
-                        utility_draw_pixel(x + j * scale + l, y + i * scale + k, color);
+    const FontAtlas* atlas = ttf_font_get_atlas(scale);
+    if (atlas == nullptr) {
+        for (unsigned i = 0; i < 8; i++) {
+            for (unsigned j = 0; j < 8; j++) {
+                if (Font[(int)c][i] & (1 << j)) {
+                    for (unsigned k = 0; k < scale; k++) {
+                        for (unsigned l = 0; l < scale; l++) {
+                            utility_draw_pixel(x + j * scale + l, y + i * scale + k, color);
+                        }
                     }
                 }
             }
         }
+        return;
     }
+    ttf_blit_glyph(atlas, c, (int)x, (int)y, color,
+        [&](int px, int py, uint8_t alpha, uint32_t fg) {
+            color_t under = this->window->surface->getPixel(px, py);
+            utility_draw_pixel((unsigned)px, (unsigned)py, ttf_blend_over(under, fg, alpha));
+        });
 };
 
 void WidgetDemo::utility_draw_string(unsigned x, unsigned y, const char* str, unsigned color, unsigned scale) {
+    int charAdvance = ttf_font_char_advance(scale);
     for (unsigned i = 0; str[i] != '\0'; i++) {
-        utility_draw_char(x + i * (8 * scale), y, str[i], color, scale);
+        utility_draw_char(x + i * charAdvance, y, str[i], color, scale);
     }
 };
 
@@ -141,6 +151,10 @@ bool WidgetDemo::onMouseEvent(int x, int y, int dx, int dy, unsigned char button
     (void)dx;
     (void)dy;
     (void)buttons;
+    // See docs/DOCS.md ("mods/core/wingman/suite/widgetdemo/widgetdemo.cpp" section) for the hover-cursor rationale.
+    bool hoveringClickable = this->button->contains(x, y) || this->checkbox->contains(x, y) || this->toggle->contains(x, y);
+    set_cursor_id(hoveringClickable ? 2 : 0);
+
     if (!(pressedEdge & 1)) return false;
 
     // Click inside the field focuses it; click anywhere else in the
@@ -155,6 +169,7 @@ bool WidgetDemo::onMouseEvent(int x, int y, int dx, int dy, unsigned char button
         this->toggle->click(x, y);
     }
 
-    this->draw_widgets();
+    // See docs/DOCS.md ("mods/core/wingman/suite/widgetdemo/widgetdemo.cpp -- click redraw").
+    this->redraw();
     return true;
 };

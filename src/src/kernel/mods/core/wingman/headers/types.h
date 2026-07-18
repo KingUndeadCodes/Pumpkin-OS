@@ -32,3 +32,32 @@ struct Environment {
     color_t foregroundColor;
     color_t backgroundColor;
 };
+
+// See docs/DOCS.md ("mods/core/wingman/headers/types.h -- Rect / dirty-rect compositing").
+struct Rect {
+    int x, y, w, h;
+};
+
+// See docs/DOCS.md ("mods/core/wingman/headers/types.h -- Rect / dirty-rect compositing").
+static inline bool rect_empty(Rect r) {
+    return r.w <= 0 || r.h <= 0;
+}
+
+static inline Rect rect_intersect(Rect a, Rect b) {
+    int x0 = a.x > b.x ? a.x : b.x;
+    int y0 = a.y > b.y ? a.y : b.y;
+    int x1 = (a.x + a.w) < (b.x + b.w) ? (a.x + a.w) : (b.x + b.w);
+    int y1 = (a.y + a.h) < (b.y + b.h) ? (a.y + a.h) : (b.y + b.h);
+    Rect r = { x0, y0, x1 - x0, y1 - y0 };
+    return r;
+}
+
+// See docs/DOCS.md ("mods/core/wingman/headers/types.h -- Rect / dirty-rect compositing").
+static inline Rect rect_union(Rect a, Rect b) {
+    int x0 = a.x < b.x ? a.x : b.x;
+    int y0 = a.y < b.y ? a.y : b.y;
+    int x1 = (a.x + a.w) > (b.x + b.w) ? (a.x + a.w) : (b.x + b.w);
+    int y1 = (a.y + a.h) > (b.y + b.h) ? (a.y + a.h) : (b.y + b.h);
+    Rect r = { x0, y0, x1 - x0, y1 - y0 };
+    return r;
+}

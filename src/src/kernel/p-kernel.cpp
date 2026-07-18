@@ -5,6 +5,8 @@
 #include "mods/core/wingman/headers/wingman.h"
 #include "mods/dev/pci/drivers/ac97.h"
 #include "mods/dev/tasking/tasking.h"
+#include "mods/dev/console/console.h"
+#include "mods/dev/logging/logging.h"
 #include "mods/dev/chorus/chorus.h"
 #include "mods/dev/memory/memory.h"
 #include "mods/dev/serial/serial.h"
@@ -23,8 +25,6 @@
 #include "mods/dev/net/udp.h"
 #include "mods/dev/port.cpp"
 #include "mods/dev/kb/kb.h"
-#include <graphics.h>
-#include <logging.h>
 #include <string.h>
 #include <stdio.h>
 #include <ctype.h>

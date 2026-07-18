@@ -1,6 +1,17 @@
 # Directories
 .claude
-src/bin
+# src/bin/* (not "src/bin") so the font-asset exceptions below actually
+# take effect -- git never descends into a directory that's ignored as a
+# whole, so a bare "src/bin" would silently defeat any "!src/bin/..."
+# negation, which is exactly what happened here the first time.
+src/bin/*
+# ...except the font asset, which src/src/kernel/mods/core/fontman/font_data.asm
+# embeds directly into the kernel via incbin -- unlike everything else in
+# src/bin (optional test/demo fixtures the build doesn't need to succeed),
+# this one's a real build dependency: without it, nasm fails to assemble
+# font_data.asm and the kernel build breaks entirely. See docs/DOCS.md
+# ("Font Rendering System") for the full story.
+!src/bin/fonts
 
 # Binary Files
 *.dat

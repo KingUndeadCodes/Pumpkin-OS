@@ -5,8 +5,9 @@
 #include <stdint.h>
 #include <string.h>
 #include <math.h>
-#include "graphics/font.h"
-#include "graphics/icons.h"
+#include "../vbe/font.h"
+#include "../../core/fontman/fontman.h"
+#include "../../core/wingman/headers/icons.h"
 
 void graphics_initalize_stage1(void);
 void graphics_initalize_stage2(void);

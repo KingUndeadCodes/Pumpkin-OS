@@ -20,8 +20,19 @@ int Surface::getHeight() { return this->height; }
 color_t* Surface::getBuffer() { return this->pixels; }
 
 void Surface::clear(color_t color) {
+    this->clear(0, 0, this->width, this->height, color);
+};
+
+// See docs/DOCS.md ("mods/core/wingman/headers/types.h -- Rect / dirty-rect compositing").
+void Surface::clear(int x, int y, int w, int h, color_t color) {
     if (this->pixels == NULL) return;
-    for (int i = 0; i < this->width * this->height; i++) this->pixels[i] = color;
+    int x0 = x < 0 ? 0 : x;
+    int y0 = y < 0 ? 0 : y;
+    int x1 = (x + w) > this->width ? this->width : (x + w);
+    int y1 = (y + h) > this->height ? this->height : (y + h);
+    for (int py = y0; py < y1; py++) {
+        for (int px = x0; px < x1; px++) this->pixels[py * this->width + px] = color;
+    }
 };
 
 void Surface::putPixel(int x, int y, color_t color) {

@@ -12,8 +12,9 @@
 #include "../../headers/widgets/button.h"
 #include "../../../../dev/serial/serial.h"
 #include "../../../../dev/vbe/vga_table.h"
-#include "../../../../std/include/graphics/font.h"
-#include "../../../../std/include/graphics/icons.h"
+#include "../../../../dev/vbe/font.h"
+#include "../../../fontman/fontman.h"
+#include "../../headers/icons.h"
 
 enum MessageBoxType {
     DialogBoxWarning,
