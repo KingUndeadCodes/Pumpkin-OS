@@ -31,8 +31,8 @@ void Logging::capture() {
     return;
 }
 
-// See docs/DOCS.md ("mods/std/logging.cpp" section) for the
-// NUL-termination fix shared by flush() and log() below.
+// See docs/DOCS.md ("mods/dev/logging/logging.cpp -- NUL-termination fix
+// in flush()/log()") for the fix shared by both functions below.
 void Logging::flush() {
     if (Logging::capturing) {
         FILE* file = fopen("/kmsglog", "r");

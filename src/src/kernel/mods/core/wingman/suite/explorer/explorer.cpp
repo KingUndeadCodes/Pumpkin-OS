@@ -5,6 +5,10 @@
 // See docs/DOCS.md ("mods/core/wingman/suite/explorer/explorer.cpp -- selection color").
 #define COLOR_B 0xFFFF5C04
 #define COLOR_W 0xFFFFFFFF
+// See docs/DOCS.md ("mods/core/wingman/suite/explorer/explorer.cpp -- window chrome")
+// -- matches MessageBox/WidgetDemo's own COLOR_TITLEBAR/COLOR_DIVIDER exactly.
+#define COLOR_TITLEBAR 0xFF2d2928
+#define COLOR_DIVIDER 0xFF55504f
 
 /*
 inline color_t rgb24_to_argb32(uint32_t color24) {
@@ -198,37 +202,85 @@ void FileManager::draw_background(void) {
     for (int y = 0; y < innerH; y++) {
         for (int x = 0; x < innerW; x++) utility_draw_pixel(innerX + x, innerY + y, 0xFF403a39);
     }
+    // See docs/DOCS.md ("mods/core/wingman/suite/explorer/explorer.cpp -- window chrome").
+    int titleBarHeight = 64;
+    for (int y = innerY; y < titleBarHeight; y++) {
+        for (int x = 0; x < innerW; x++) utility_draw_pixel(innerX + x, y, COLOR_TITLEBAR);
+    }
+    for (int x = 0; x < innerW; x++) utility_draw_pixel(innerX + x, titleBarHeight, COLOR_DIVIDER);
 };
 
 void FileManager::draw_title(void) {
-    utility_draw_icon(padding * frames + 4, padding * frames + 4, 0);
-    const char* titleString = "Select File";
+    // Icon at scale 1 (32x32) so it comfortably fits inside the 64px title
+    // band with room either side -- the previous default scale (2, 64x64)
+    // overflowed past the divider into the body.
+    int iconX = padding * frames + 4;
+    int iconY = 18;
+    utility_draw_icon(iconX, iconY, 8, 1); // 8 = Open Folder (icons.h)
+    // See docs/DOCS.md ("mods/core/wingman/suite/explorer/explorer.cpp -- current
+    // path display"). this->path is nullptr at root.
+    const char* titleString = (this->path != nullptr) ? this->path : "/";
     int charAdvance = ttf_font_char_advance(4);
-    for (int i = 0; i < strlen(titleString); i++) utility_draw_char(
-        padding * frames + 4 + 78 + (charAdvance * i),
-        padding * frames + 24,
+    int textStartX = iconX + 48; // icon width (32) + gutter
+    int innerX = (frames - 1) * padding + thickness;
+    int innerW = width - 2 * ((frames - 1) * padding) - 2 * thickness;
+    int availableWidth = (innerX + innerW) - textStartX;
+    size_t maxChars = (charAdvance > 0) ? (size_t)(availableWidth / charAdvance) : 0;
+    size_t len = strlen(titleString);
+    if (len > maxChars) len = maxChars; // defensive clamp -- don't draw past the window edge
+    for (size_t i = 0; i < len; i++) utility_draw_char(
+        textStartX + (charAdvance * i),
+        iconY,
         titleString[i],
         COLOR_W
     );
 };
 
+// See docs/DOCS.md ("mods/core/wingman/suite/explorer/explorer.cpp -- multi-column
+// layout") for the column-major index math (column = idx/rowsPerColumn, row =
+// idx%rowsPerColumn) shared with onKeyboard()/onMouseEvent(), and why this is
+// bounded by page capacity now instead of drawing every entry unconditionally
+// (the old unbounded loop could write past the window surface's pixel buffer
+// for a large-enough directory -- Surface::putPixelUnsafe does no bounds check).
+FileGridLayout FileManager::computeGridLayout(void) {
+    FileGridLayout layout;
+    int innerX = (frames - 1) * padding + thickness;
+    int innerY = (frames - 1) * padding + thickness;
+    int innerW = width - 2 * ((frames - 1) * padding) - 2 * thickness;
+    int innerH = height - 2 * ((frames - 1) * padding) - 2 * thickness;
+    layout.listStartX = padding * frames + 78 - 49;
+    layout.listStartY = padding * frames + 106;
+    layout.columnWidth = 200;   // matches the original single-column mouse hit-box width
+    layout.columnGutter = padding;
+    layout.rowHeight = 35;
+    int reservedBottom = 25; // room for the "Page N/M" indicator
+    int availableHeight = (innerY + innerH) - layout.listStartY - reservedBottom;
+    layout.rowsPerColumn = availableHeight / layout.rowHeight;
+    if (layout.rowsPerColumn < 1) layout.rowsPerColumn = 1;
+    int availableWidth = (innerX + innerW) - layout.listStartX;
+    layout.columnsPerPage = availableWidth / (layout.columnWidth + layout.columnGutter);
+    if (layout.columnsPerPage < 1) layout.columnsPerPage = 1;
+    layout.capacityPerPage = layout.rowsPerColumn * layout.columnsPerPage;
+    return layout;
+}
+
 // FIXME: The Directory is listed every time the FileManager is instanciated. It should only have to be listed once.
 void FileManager::draw_options(void) {
     if (!files) return;
+    FileGridLayout g = computeGridLayout();
     int charAdvance = ttf_font_char_advance(2);
-    int i = 0;
-    while (files[i].filename != nullptr) {
+    int page = this->currentSelection / g.capacityPerPage;
+    int pageStart = page * g.capacityPerPage;
+    int pageEnd = pageStart + g.capacityPerPage;
+    if (pageEnd > this->fileCount) pageEnd = this->fileCount;
+    for (int i = pageStart; i < pageEnd; i++) {
+        int localIndex = i - pageStart;
+        int column = localIndex / g.rowsPerColumn;
+        int row = localIndex % g.rowsPerColumn;
+        int x = g.listStartX + column * (g.columnWidth + g.columnGutter);
+        int y = g.listStartY + row * g.rowHeight;
         const char* optionString = files[i].filename;
         size_t len = strlen(optionString);
-        // This loop will clear the icon border.
-        // TODO: Move this into utility_draw_icon? (Is it a good idea?)
-        /*
-        for (int x = 0; x < 32; x++) {
-            for (int y = 0; y < 32; y++) {
-                utility_draw_pixel(padding * frames + 78 - 49 + x, padding * frames + 106 + (35 * i) + y, 0xFF403a39);
-            }
-        }
-        */
         // Draw the icon.
         if (files[i].type == VFS_NODE_FILE) {
             int iconSelection = 0;
@@ -243,42 +295,68 @@ void FileManager::draw_options(void) {
             } else {
                 iconSelection = 6;
             }
-            utility_draw_icon(padding * frames + 78 - 49, padding * frames + 106 + (35 * i), iconSelection, 1);
+            utility_draw_icon(x, y, iconSelection, 1);
         } else {
-            // if (memcmp(files[i].filename, path, strlen(files[i].filename)) == 0) {
-            //     draw_icon(offsetX + padding * frames + 78 - 49, offsetY + padding * frames + 106 + (35 * i), 8, 1);
-            // } else {
-            //     draw_icon(offsetX + padding * frames + 78 - 49, offsetY + padding * frames + 106 + (35 * i), 7, 1);
-            // }
-            utility_draw_icon(padding * frames + 78 - 49, padding * frames + 106 + (35 * i), 7, 1);
+            utility_draw_icon(x, y, 7, 1);
         }
-        for (size_t j = 0; j < len; j++) {
-            utility_draw_char(padding * frames + 4 + 78 + (charAdvance * j), padding * frames + 106 + (35 * i) + 8, optionString[j], (i == currentSelection ? COLOR_B : COLOR_W), 2);
+        // Defensive clamp -- keep the filename inside this column's own
+        // footprint so it can't bleed into the next column or the gutter.
+        int textOffset = 53; // matches the original icon-to-text x delta (92 - 39)
+        size_t maxChars = (charAdvance > 0) ? (size_t)((g.columnWidth - textOffset) / charAdvance) : 0;
+        size_t drawLen = len < maxChars ? len : maxChars;
+        for (size_t j = 0; j < drawLen; j++) {
+            utility_draw_char(x + textOffset + (charAdvance * j), y + 8, optionString[j], (i == currentSelection ? COLOR_B : COLOR_W), 2);
         }
-        i++;
     }
+    // Page indicator, bottom-right of the content area.
+    int totalPages = (this->fileCount + g.capacityPerPage - 1) / g.capacityPerPage;
+    if (totalPages < 1) totalPages = 1;
+    char pageBuf[32];
+    sprintf(pageBuf, "Page %d/%d", page + 1, totalPages);
+    int pbLen = (int)strlen(pageBuf);
+    int innerX = (frames - 1) * padding + thickness;
+    int innerY = (frames - 1) * padding + thickness;
+    int innerW = width - 2 * ((frames - 1) * padding) - 2 * thickness;
+    int innerH = height - 2 * ((frames - 1) * padding) - 2 * thickness;
+    int pbX = innerX + innerW - (charAdvance * pbLen) - padding;
+    int pbY = innerY + innerH - 20;
+    for (int k = 0; k < pbLen; k++) utility_draw_char(pbX + (charAdvance * k), pbY, pageBuf[k], COLOR_W, 2);
 };
+
+int FileManager::fileIndexAt(int x, int y) {
+    FileGridLayout g = computeGridLayout();
+    int rectHeight = 32;
+    int page = this->currentSelection / g.capacityPerPage;
+    // Bail early if x is left of the list, or past the last column.
+    if (x < g.listStartX) return -1;
+    int localCol = (x - g.listStartX) / (g.columnWidth + g.columnGutter);
+    if (localCol < 0 || localCol >= g.columnsPerPage) return -1;
+    // Bail if the point landed in the gutter between columns, not on a column itself.
+    int colInnerX = (x - g.listStartX) - localCol * (g.columnWidth + g.columnGutter);
+    if (colInnerX > g.columnWidth) return -1;
+    // Bail early if y is above the first row, or past the last row.
+    if (y < g.listStartY) return -1;
+    int row = (y - g.listStartY) / g.rowHeight;
+    if (row < 0 || row >= g.rowsPerColumn) return -1;
+    if (y > g.listStartY + (row * g.rowHeight) + rectHeight) return -1;
+    int localIndex = localCol * g.rowsPerColumn + row;
+    int index = page * g.capacityPerPage + localIndex;
+    if (index < 0 || index >= this->fileCount) return -1;
+    return index;
+}
 
 bool FileManager::onMouseEvent(int x, int y, int dx, int dy, unsigned char buttons, unsigned char pressedEdge) {
     (void)dx;
     (void)dy;
     (void)buttons;
+    // See docs/DOCS.md ("mods/core/wingman/suite/explorer/explorer.cpp -- hover cursor").
+    set_cursor_id(fileIndexAt(x, y) != -1 ? 2 : 0);
+
     if (pressedEdge & 1) {
         // See docs/DOCS.md ("mods/core/wingman/suite/explorer/explorer.cpp -- selection-highlight redraw").
         uint8_t redraw_description = 0b00111000;
-        int listStartX = padding * frames + 78 - 49;
-        int listStartY = padding * frames + 106;
-        int rowHeight = 35;
-        int rectWidth = 200;
-        int rectHeight = 32;
-        // Bail early if x is outside the list region
-        if (x < listStartX || x > listStartX + rectWidth) return false;
-        // Bail early if y is above the first entry
-        if (y < listStartY) return false;
-        int clicked = (y - listStartY) / rowHeight;
-        // Validate: within bounds, and within the row's drawn height (not in the gap)
-        if (clicked < 0 || clicked >= this->fileCount) return false;
-        if (y > listStartY + (clicked * rowHeight) + rectHeight) return false;
+        int clicked = fileIndexAt(x, y);
+        if (clicked == -1) return false;
         if (this->currentSelection == clicked) {
             bool redraw_needed = false;
             redraw_description = 0;
@@ -302,6 +380,11 @@ bool FileManager::onMouseEvent(int x, int y, int dx, int dy, unsigned char butto
 struct RunningElfEntry {
     char filename[VFS_MAX_NAME];
     task_t* task;
+    uint32_t pid; // See docs/DOCS.md ("mods/dev/tasking/tasking.cpp -- task/stack
+                  // reaper"): once the reaper exists, task->state alone can't
+                  // prove this entry still refers to the run we tracked -- the
+                  // slot may have been reaped and recycled for an unrelated
+                  // task. pid disambiguates.
 };
 static RunningElfEntry runningElfTasks[MAX_TRACKED_ELF_TASKS] = {};
 
@@ -309,18 +392,22 @@ static bool isElfAlreadyRunning(const char* filename) {
     for (int i = 0; i < MAX_TRACKED_ELF_TASKS; i++) {
         if (!runningElfTasks[i].task) continue;
         if (strcmp(runningElfTasks[i].filename, filename) != 0) continue;
-        if (runningElfTasks[i].task->state != TASK_DEAD) return true;
-        runningElfTasks[i].task = NULL; // stale entry, reclaim the slot
+        bool sameTask = runningElfTasks[i].task->pid == runningElfTasks[i].pid;
+        if (sameTask && runningElfTasks[i].task->state != TASK_DEAD) return true;
+        runningElfTasks[i].task = NULL; // finished, or slot recycled -- reclaim either way
     }
     return false;
 }
 
 static void trackElfTask(const char* filename, task_t* task) {
     for (int i = 0; i < MAX_TRACKED_ELF_TASKS; i++) {
-        if (runningElfTasks[i].task && runningElfTasks[i].task->state != TASK_DEAD) continue;
+        bool sameTask = runningElfTasks[i].task &&
+            runningElfTasks[i].task->pid == runningElfTasks[i].pid;
+        if (sameTask && runningElfTasks[i].task->state != TASK_DEAD) continue;
         strncpy(runningElfTasks[i].filename, filename, VFS_MAX_NAME - 1);
         runningElfTasks[i].filename[VFS_MAX_NAME - 1] = '\0';
         runningElfTasks[i].task = task;
+        runningElfTasks[i].pid = task->pid;
         return;
     }
     // No free slot to track it in -- worst case this specific launch just
@@ -434,20 +521,7 @@ bool FileManager::fileClick(bool* redrawNeeded, uint8_t* redraw_description) {
             struct mp3_info_t* mp3_info = read_mp3_info((uint8_t*)buffer, buffer_len);
             if (mp3_info) {
                 play_mp3(mp3_info, 0);
-                // The AC97 IRQ refill callback reads directly from this buffer
-                // for the whole playback duration, so it can't be freed until
-                // playback finishes (same constraint the boot-time MP3 test
-                // handles by blocking on AC97IsPlaying() before freeing).
-                //
-                // We got here via the mouse IRQ handler chain, which is an
-                // interrupt gate (irq.cpp's IDTSetGate(..., 0x8E) for IRQ12)
-                // and so cleared IF on entry. Without re-enabling it, neither
-                // the AC97 refill IRQ nor anything else can fire while we
-                // wait, and hlt below would halt the whole system instead of
-                // just pausing this handler. iretd restores the mouse
-                // handler's original EFLAGS when it eventually returns,
-                // regardless of what we do with IF here.
-                asm volatile("sti");
+                // See docs/DOCS.md ("mods/core/wingman/suite/explorer/explorer.cpp -- MP3 playback buffer lifetime").
                 while (AC97IsPlaying()) {
                     asm volatile("hlt");
                 }
@@ -511,6 +585,28 @@ bool FileManager::onKeyboard(char key, bool shift, bool meta, unsigned char scan
     } else if (key == 'w') {
         if (this->currentSelection > 0) {
             this->currentSelection--;
+            redraw_description |= 0b00111000;
+            redrawNeeded = true;
+        }
+    } else if (key == 'd') {
+        // See docs/DOCS.md ("mods/core/wingman/suite/explorer/explorer.cpp --
+        // multi-column layout") -- +/- rowsPerColumn jumps a whole column,
+        // and crossing a page's last column naturally rolls into the next
+        // page's first column since page is just column/columnsPerPage.
+        FileGridLayout g = computeGridLayout();
+        int next = this->currentSelection + g.rowsPerColumn;
+        if (next >= this->fileCount) next = this->fileCount - 1;
+        if (next != this->currentSelection && next >= 0) {
+            this->currentSelection = next;
+            redraw_description |= 0b00111000;
+            redrawNeeded = true;
+        }
+    } else if (key == 'a') {
+        FileGridLayout g = computeGridLayout();
+        int prev = this->currentSelection - g.rowsPerColumn;
+        if (prev < 0) prev = 0;
+        if (prev != this->currentSelection) {
+            this->currentSelection = prev;
             redraw_description |= 0b00111000;
             redrawNeeded = true;
         }

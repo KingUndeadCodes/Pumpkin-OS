@@ -1,6 +1,8 @@
 #include "../../dev/chorus/chorus.h"
 #include "../../dev/syscall/syscall.h"
 #include "../../dev/pit/pit.h"
+#include "../../dev/tasking/tasking.h"
+#include "../../dev/port.cpp"
 #include "./suite/explorer/explorer.h"
 #include "./suite/message/message.h"
 #include "./suite/widgetdemo/widgetdemo.h"
@@ -21,6 +23,25 @@ static int dragOffsetY = 0;
 static uint64_t lastDragRedrawMs = 0;
 // See docs/DOCS.md ("mods/core/wingman/headers/types.h -- Rect / dirty-rect compositing") for why this exists.
 static Rect dragLastRect = { 0, 0, 0, 0 };
+
+// See docs/DOCS.md ("mods/core/wingman/wingman.cpp -- input queue / worker task").
+#define WINGMAN_INPUT_QUEUE_SIZE 32
+
+enum WingmanInputEventType { WINGMAN_EVENT_MOUSE, WINGMAN_EVENT_KEY };
+
+struct WingmanInputEvent {
+    WingmanInputEventType type;
+    int x, y, dx, dy;
+    unsigned char buttons;
+    char key;
+    bool shift, meta;
+    unsigned char scancode;
+};
+
+static WingmanInputEvent g_inputQueue[WINGMAN_INPUT_QUEUE_SIZE];
+static volatile int g_inputQueueHead = 0;
+static volatile int g_inputQueueTail = 0;
+static task_t* g_inputWorkerTask = nullptr;
 
 inline void redraw_screen(void) {
     color_t* buffer = wm->screen->getBuffer();
@@ -52,7 +73,7 @@ inline void redraw_screen_rect(Rect rect) {
 };
 
 void keyboardFunctionWindowManager(char key, bool shift, bool meta, unsigned char scancode) {
-    // See docs/DOCS.md ("mods/core/wingman/wingman.cpp — stdin exclusivity").
+    // See docs/DOCS.md ("mods/dev/syscall/syscall.cpp -- stdin_is_reading() / stdin exclusivity").
     if (stdin_is_reading()) return;
     if (wm != nullptr) {
         if (wm->keyboard_handler(key, shift, meta, scancode)) {
@@ -174,20 +195,71 @@ void mouseFunctionWindowManager(int x, int y, int dx, int dy, unsigned char butt
     return;
 }
 
+// See docs/DOCS.md ("mods/core/wingman/wingman.cpp -- input queue / worker task").
+void queueMouseEventForWingman(int x, int y, int dx, int dy, unsigned char buttons) {
+    unsigned long flags = enter_critical();
+    int next = (g_inputQueueHead + 1) % WINGMAN_INPUT_QUEUE_SIZE;
+    if (next != g_inputQueueTail) {
+        WingmanInputEvent& e = g_inputQueue[g_inputQueueHead];
+        e.type = WINGMAN_EVENT_MOUSE;
+        e.x = x; e.y = y; e.dx = dx; e.dy = dy; e.buttons = buttons;
+        g_inputQueueHead = next;
+    }
+    exit_critical(flags);
+    if (g_inputWorkerTask) task_wake(g_inputWorkerTask);
+}
+
+void queueKeyEventForWingman(char key, bool shift, bool meta, unsigned char scancode) {
+    unsigned long flags = enter_critical();
+    int next = (g_inputQueueHead + 1) % WINGMAN_INPUT_QUEUE_SIZE;
+    if (next != g_inputQueueTail) {
+        WingmanInputEvent& e = g_inputQueue[g_inputQueueHead];
+        e.type = WINGMAN_EVENT_KEY;
+        e.key = key; e.shift = shift; e.meta = meta; e.scancode = scancode;
+        g_inputQueueHead = next;
+    }
+    exit_critical(flags);
+    if (g_inputWorkerTask) task_wake(g_inputWorkerTask);
+}
+
+static void wingman_input_worker_fn(void* arg) {
+    while (true) {
+        while (g_inputQueueTail == g_inputQueueHead) {
+            task_block();
+        }
+        unsigned long flags = enter_critical();
+        WingmanInputEvent e = g_inputQueue[g_inputQueueTail];
+        g_inputQueueTail = (g_inputQueueTail + 1) % WINGMAN_INPUT_QUEUE_SIZE;
+        exit_critical(flags);
+
+        if (e.type == WINGMAN_EVENT_MOUSE) {
+            mouseFunctionWindowManager(e.x, e.y, e.dx, e.dy, e.buttons);
+        } else {
+            keyboardFunctionWindowManager(e.key, e.shift, e.meta, e.scancode);
+        }
+    }
+}
+
+void wingman_spawn_input_worker(void* stack_mem) {
+    sched_lock();
+    g_inputWorkerTask = task_create(wingman_input_worker_fn, nullptr, stack_mem);
+    sched_unlock();
+}
+
 void initalizeWindowSystem(void) {
     wm = new WindowManager();
     fileManager = new FileManager();
     wm->add(fileManager->window);
     // See docs/DOCS.md ("mods/core/wingman/wingman.cpp" section) for MessageBox wiring here.
     MessageBox* messageBox = new MessageBox(wm, DialogBoxInformational, "chorus: not initialized; call initalize() first.", 5);
-    messageBox->addButton("Initialize", 0xFF605a59, [](void) { 
+    messageBox->addButton("Initialize", 0xFF605a59, [](void) {
         serial_write_string("Initializing AC97 Audio Codec...\n");
         chorus_initalize();
     });
     messageBox->addButton("Ignore", rgb(255, 0, 0));
     new WidgetDemo(wm);
-    kb_add_event(keyboardFunctionWindowManager);
-    mouse_add_event(mouseFunctionWindowManager);
+    kb_add_event(queueKeyEventForWingman);
+    mouse_add_event(queueMouseEventForWingman);
     set_cursor_id(0);
     wm->composite();
     bufferSize = wm->screen->getWidth() * wm->screen->getHeight() * sizeof(color_t);

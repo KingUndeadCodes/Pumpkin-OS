@@ -4,6 +4,13 @@ Standing checklist of things to add/fix, ordered by recommended priority
 (top = do next). Ring-0-only is an intentional design choice (like
 TempleOS), not something any of these notes are trying to walk back.
 
+**Next up:** "Priority 1 — Do next" is now fully done (as of 2026-07-21), and
+the cursor-tearing item in "Priority 3" is also done — see "Recently
+completed" below. What's left in Priority 3 is either already
+sub-scoped-out (window-manager-focus routing) or permanently out of scope
+by design (per-task memory isolation). Next places to look:
+- [Miscellaneous — parked, revisit later](#miscellaneous--parked-revisit-later) — standalone bugs and the performance-audit backlog
+
 ---
 
 ## Priority 1 — Do next
@@ -94,7 +101,7 @@ Enabled!", "Memory pool initialized!", "Keyboard Enabled!", "Mouse
 Enabled!", "PIT Enabled!", "Checking for PCI devices...", each "Found
 PCI ..." line) ran together on one line with no separator at all, since
 none of the `Logging::log(...)` calls that produce them
-(`p-kernel.cpp:255-264`, `mods/dev/pci/pci.cpp:238`'s `sprintf` format
+(`p-kernel.cpp:258-267`, `mods/dev/pci/pci.cpp:236`'s `sprintf` format
 string) included a trailing `\n`. `Terminal::write()` itself handles
 `\n` correctly (confirmed by tracing it and by the "Welcome to
 PumpkinOS" banner, which does include `\n` and rendered on its own
@@ -102,27 +109,41 @@ lines) -- the messages themselves were just missing it. Added `\n` to
 each. Also fixed the same issue in `mods/dev/pci/drivers/rtl8139.cpp`'s
 `Logging::log("[RTL8139] Waiting for transmit_ok ...")` call from item
 7, found while checking for other call sites with the same bug.
-`p-kernel.cpp:227`'s `Logging::log("Tasking Enabled!")` has the same
-issue but is inside a commented-out/disabled block, so left alone.
+`p-kernel.cpp:313`'s "Tasking Enabled!" message already had its own
+trailing `\n` and uses `serial_write_string` directly rather than
+`Logging::log`, so it was never affected by this bug -- it's live,
+executed code (tasking has been on since 2026-07-14), not a
+commented-out/disabled block as this note previously said.
 
-### 11. Fix the `serialDevice` `LogDevice` function-pointer type mismatch
+### 11. Fix the `serialDevice` `LogDevice` function-pointer type mismatch — DONE
 
-Found while chasing item 10's Terminal bug, not yet fixed.
+Found while chasing item 10's Terminal bug.
 `p-kernel.cpp`'s `LogDevice serialDevice = { .log = &serial_write_string };`
-assigns a 3-parameter function (`const char*, bool, enum Types`) to a
+assigned a 3-parameter function (`const char*, bool, enum Types`) to a
 field typed `void (*log)(const char* message)` — default arguments don't
-change a function's pointer type, so this is a genuine signature
-mismatch. It compiles silently only because of `-fpermissive -w` in the
-build flags. Every `Logging::propagate()` call ends up invoking
+change a function's pointer type, so this was a genuine signature
+mismatch. It compiled silently only because of `-fpermissive -w` in the
+build flags. Every `Logging::propagate()` call ended up invoking
 `serial_write_string` through a 1-argument-shaped call site, so the
-function's own body reads its 2nd/3rd parameters (`time_show`, `Type`)
-as whatever garbage happens to be on the stack at those offsets — a real
-ABI violation. `terminalDevice`'s `&terminal_write` is fine (its actual
+function's own body read its 2nd/3rd parameters (`time_show`, `Type`)
+as whatever garbage happened to be on the stack at those offsets — a real
+ABI violation, not cosmetic: the timestamp and severity coloring on every
+log line reaching serial through this path (the early-boot captured
+buffer replayed via `Logging::flush()`, plus any `Logging::log()` call
+after device registration) were driven by uninitialized stack data.
+`terminalDevice`'s `&terminal_write` was already fine (its actual
 signature is `void terminal_write(const char* str)`, matching exactly).
-Fix is presumably a thin `void serial_log_adapter(const char* message) {
-serial_write_string(message); }`-style wrapper for `serialDevice` to
-point at instead, matching the pattern that already works for
-`terminal_write`.
+
+Fixed by adding `serial_log_adapter(const char* message)`
+(`mods/dev/serial/serial.h`/`.cpp`, next to `serial_write_string` itself)
+— a real `void(const char*)`-typed thin wrapper forwarding to
+`serial_write_string(message)` with its normal defaults — and pointing
+`serialDevice.log` at it instead, mirroring the pattern that already
+worked for `terminal_write`. Boot-tested: every log line through the
+`LogDevice`/`propagate()` path now shows consistent, correctly-formatted
+`[timestamp] INFO - message` output (verified against the 3 real call
+sites: the early-boot buffer replay, `"Jumped to kmsglog"`,
+`"Hello, World!"`), no crash, normal boot completion.
 
 ### 12. Add a way to move windows around the screen — DONE
 
@@ -166,7 +187,7 @@ these exports by name.
 ### 14. Formalize the bootloader→kernel interface — DONE
 
 New item (2026-07-09), surfaced by an external peer review of
-`docs/FULL.md` — not previously tracked anywhere. `src/boot/loader/main.cpp`'s
+`docs/FULL.md` — not previously tracked anywhere. `boot/loader/main.cpp`'s
 `read_file_frontend` (a closure-like wrapper around the bootloader's own
 FAT12 reader, bound to the already-open boot disk state) gets handed to
 the kernel as its `read_file` function-pointer argument to
@@ -176,7 +197,7 @@ implementation.
 
 Traced end to end (2026-07-13) and found a real hazard, not just a
 documentation gap: the pointer used to cross from
-`src/boot/loader/main.cpp` into `src/boot/loader/entry.asm` via a
+`boot/loader/main.cpp` into `boot/loader/entry.asm` via a
 hand-computed absolute address (`READ_FUNCTION_ADDRESS`, a `#define`
 chain in the C++ file) that `entry.asm` referenced as a bare, disconnected
 hex literal (`0x3FFBF8`) — two files, two languages, one number, nothing
@@ -203,13 +224,16 @@ re-verifies this by hand later).
 
 ---
 
-## Priority 2 — Before tasking (Proposal 1) can be turned on
+## Priority 2 — Phase 0 hardening (tasking Proposal 1)
 
 Real multitasking is proposed in `agile-napping-stallman.md` (each ELF run
 becomes its own preemptible task). Given an explicit go-ahead (2026-07-08),
-Phase 1 and Phase 2 are now done — see "Full tasking proposal" further
-down for the whole plan; Phase 3 (blocking syscalls block the task, not
-the CPU) hasn't been started.
+**Phases 0, 1, 2, and 3 are all now done and boot-verified** — see "Full
+tasking proposal" further down for the whole checklist. Tasking has been
+on since 2026-07-14; this section's items below (Phase 0 hardening) were
+the prerequisite work, kept here for the record. Task/stack reaping (the
+one item that was still open after Phase 3) is now also done, as of
+2026-07-20 — see "Full tasking proposal"'s Phase 2 notes.
 
 All Phase 0 hardening items below are done.
 
@@ -267,9 +291,6 @@ All Phase 0 hardening items below are done.
   genuinely deferred, since ELF programs don't have windows at all today
   — that's a real, separate, bigger feature (see the "Recently completed"
   writeup for the scoping discussion).
-- Moving mouse/keyboard IRQ work out of interrupt context (the cursor
-  tearing problem) — real task-blocking gives us the primitive to do this
-  properly later, but it's a separate change.
 - Per-task memory isolation (ring 3, per-task page tables) — out of scope,
   same boundary as everything else. Ring 0 only, by design.
 
@@ -283,11 +304,11 @@ Found (2026-07-13) while working item #14 — same class of hazard as that
 item's `READ_FUNCTION_ADDRESS` bug, but worse blast radius. `0x400000` is
 defined three separate times with no build-time link between the copies:
 
-- `src/boot/loader/main.cpp:5` — `#define KERNEL_LOCATION 0x400000`
+- `boot/loader/main.cpp:5` — `#define KERNEL_LOCATION 0x400000`
   (where the bootloader writes `KERNEL.BIN` and jumps to start it)
-- `src/boot/loader/entry.asm:5` — `KERNEL_LOCATION equ 0x400000` (second
+- `boot/loader/entry.asm:5` — `KERNEL_LOCATION equ 0x400000` (second
   independent copy of the same value)
-- `src/kernel/kernel.ld:6` — `. = 0x400000;` (tells the linker what base
+- `kernel/kernel.ld:6` — `. = 0x400000;` (tells the linker what base
   address the *compiled kernel itself* assumes for every internal
   absolute symbol/global/jump)
 
@@ -299,7 +320,7 @@ entire kernel binary wrong at once. Realistically an instant
 triple-fault or silent garbage execution, not something with a
 debuggable symptom.
 
-Also noticed in passing: `src/boot/stage1.asm:7` defines its own
+Also noticed in passing: `boot/stage1.asm:7` defines its own
 `KERNEL_LOCATION equ 0x8000` — same name, unrelated meaning (that one's
 where *stage2* loads, not the kernel). Different value, never
 cross-referenced against the other three, but a landmine for anyone
@@ -451,16 +472,18 @@ it's revisited.
 
 #### GUI rendering performance
 
-- `mods/dev/vbe/vbe.cpp` `fill()` — calls `draw_pixel()` per pixel for a
+- ~~`mods/dev/vbe/vbe.cpp` `fill()` — calls `draw_pixel()` per pixel for a
   full-screen fill instead of one linear fill over the contiguous
-  framebuffer.
-- `vbe.cpp` `draw_char()` — up to 1024 individual `draw_pixel()` calls
-  per glyph at the default scale; this is the primitive behind all
-  on-screen text.
-- `mods/dev/console/console.cpp` `Terminal::scroll()` — scrolls via
+  framebuffer.~~ — DONE. `fill()` now writes directly through a linear
+  `uint32_t*` framebuffer pointer, no `draw_pixel()` call. See
+  `docs/DOCS.md` ("`mods/dev/vbe/vbe.cpp` — bulk framebuffer operations").
+- ~~`vbe.cpp` `draw_char()` — up to 1024 individual `draw_pixel()` calls
+  per glyph at the default scale.~~ — DONE, same fix, same DOCS.md
+  section.
+- ~~`mods/dev/console/console.cpp` `Terminal::scroll()` — scrolls via
   `get_pixel()`/`draw_pixel()` per pixel across the whole 1024x768
-  framebuffer (~780K operations) instead of one `memmove` of the
-  framebuffer region.
+  framebuffer (~780K operations).~~ — DONE. Now calls a new
+  `scroll_framebuffer_up()` (`vbe.cpp`), which uses `memmove()`.
 - `mods/core/wingman/manager.cpp` `composite()` — still reads the
   destination pixel unconditionally before calling `blend()`, even when
   `blend()`'s own fast paths (fully opaque/fully transparent source)
@@ -501,7 +524,7 @@ it's revisited.
 
 #### Boot/memory performance
 
-- `src/boot/loader/floppy.cpp` / `libboot.cpp` — every single 512-byte
+- `boot/loader/floppy.cpp` / `libboot.cpp` — every single 512-byte
   sector read (FAT table, each cluster) does a full drive
   reset/recalibrate/motor-on cycle instead of batching contiguous
   sectors into one multi-sector read.
@@ -530,6 +553,66 @@ it's revisited.
 ---
 
 ## Recently completed
+
+### Idle task (`task0`) taken out of round-robin rotation — DONE (2026-07-21)
+
+Direct follow-up to the IRQ→task change below: moving mouse/keyboard
+compositing off the IRQ path made the whole desktop noticeably slower,
+not faster. Root cause: `task0` (`for(;;) hlt;`) was a real round-robin
+participant, on equal footing with the new input-worker task — no
+priority scheduling exists, `pick_next()` just gives one task per 1ms
+tick. So every other tick now went to an idle task doing nothing, instead
+of draining queued input/compositing work — roughly halving GUI
+throughput compared to the old exclusive-IRQ-context handling. Fixed by
+taking the idle task out of rotation entirely: `task_create()` gained an
+`enqueue` parameter (default `true`) so `tasking_spawn_idle()` can build
+it without ever pushing it onto `g_runqueue`, and `pick_next()` now falls
+back to it directly only when nothing else is `TASK_READY`. Also fixed a
+latent bug this surfaced: `pick_next()`'s old fallback (`return cur`) was
+only ever safe because `task0` guaranteed there was always a real
+alternative — with that gone, a task that just called `task_block()`
+(the reaper, the input worker) could have been resumed as if it had never
+blocked at all, since nothing checked whether `cur` was still actually
+runnable before falling back to it. `pick_next()` now checks `cur`'s
+state explicitly. See `docs/DOCS.md` ("mods/dev/tasking/tasking.cpp —
+idle task") for the full writeup.
+
+### Moving mouse/keyboard IRQ work out of interrupt context (cursor tearing) — DONE (2026-07-21)
+
+Mouse/keyboard IRQ handlers (interrupt gates, `IF` cleared for the whole
+handler) used to call `mouseFunctionWindowManager()`/
+`keyboardFunctionWindowManager()` directly — real `WindowManager::composite()`
+blending and a raw `memcpy` into the live framebuffer, synchronously, with
+interrupts fully masked for the duration. One of two causes of cursor
+tearing (the other, no double-buffering/vsync at the hardware level, is a
+separate, still-open problem). Fixed by reusing the `task_block()`/
+`task_wake()` primitive the task/stack reaper already established: a
+bounded ring-buffer queue of input events in `mods/core/wingman/wingman.cpp`,
+two thin push functions (`queueMouseEventForWingman()`/
+`queueKeyEventForWingman()`) now registered with `mouse_add_event()`/
+`kb_add_event()` in place of the heavy functions, and a dedicated worker
+task (`wingman_input_worker_fn()`, spawned via
+`wingman_spawn_input_worker()`) that drains the queue and calls the
+original, unchanged heavy functions from task context instead. Also
+removed a now-stale `sti`/comment in `explorer.cpp`'s MP3 playback path,
+which existed only to compensate for the interrupt-gate's cleared `IF` and
+no longer applies once that code runs from the worker task. See
+`docs/DOCS.md` ("mods/core/wingman/wingman.cpp — input queue / worker
+task") for the full design writeup.
+
+Boot-tested (2026-07-21): normal boot completion with no fault-handler
+output, mouse click/focus/drag and keyboard selection both verified
+working end-to-end through the new queue+worker path via screenshot
+comparison, and a 40-event rapid-fire mixed mouse/keyboard burst produced
+no crash, hang, or stuck state. MP3 playback itself couldn't be
+conclusively verified in the headless QEMU test environment (no audio
+backend was configured, and `play_mp3()` failed early with "AC97: cannot
+start; missing DMA buffer or stream info" — most likely a test-environment
+gap, not a regression, since this project's `wingman.cpp`/`ac97.cpp`
+changes are unrelated to DMA/stream setup) — but the system stayed fully
+responsive throughout the attempt, and the `sti` removal is sound by
+construction regardless, since the interrupt-gate constraint it existed to
+work around no longer applies once the call runs from task context.
 
 ### Dirty-rect compositing — DONE (2026-07-16)
 
@@ -578,7 +661,7 @@ above), so this was a genuine retry with real verification, not a blind
 repeat.
 
 - **Font asset**: `Cousine-Regular.ttf` (SIL OFL 1.1, Google Fonts),
-  shipped at `src/bin/` alongside this project's other binary assets,
+  shipped at `src/bin/fonts/`, alongside this project's other binary assets,
   confirmed metrically monospace at bake time (every printable-ASCII
   glyph's `advanceWidth` checked equal) — required, since every layout
   call site (`Button` auto-size, `TextInput` scroll math, `FileManager`
@@ -808,10 +891,14 @@ dependency, since heap or GUI-state corruption could be what caused the
 fault in the first place. The new helpers live in a `FaultHandler`
 namespace; `ISRInstall()` and the ISR/IRQ glue stay loose functions since
 they're called by exact symbol name from hand-written assembly. A
-`test_fault_handler()` hook (`p-kernel.cpp`) deliberately triggers a #BP
-then a #PF at `0xDEADB000` to exercise both paths — call manually while
-testing, never boot-tested end-to-end in this environment (sandbox QEMU
-limitation, unrelated to the kernel code).
+`test_fault_handler()` hook (`p-kernel.cpp`) once existed to deliberately
+trigger a #BP then a #PF, exercising both paths manually — it was removed
+during tasking Phase 2 cleanup and no longer exists. The fault-handler
+paths it was meant to exercise have since been boot-tested end-to-end
+anyway (a real forced page fault against a deliberately unmapped address,
+confirming `draw_panic_screen()`'s rendered output is pixel-correct) —
+see `docs/DOCS.md` ("`mods/dev/vbe/vbe.cpp` — bulk framebuffer
+operations", verification note).
 
 ### Validate ELF header offsets/counts before trusting them
 
@@ -830,8 +917,9 @@ bounds.
 
 ### Fix the hardcoded WAV buffer size in the file explorer
 
-`mods/core/wingman/suite/explorer/explorer.cpp:359` had
-`uint32_t buffer_len = 52640;` — a fixed size instead of the real file
+`mods/core/wingman/suite/explorer/explorer.cpp` (WAV handler, now at
+line 398) had `uint32_t buffer_len = 52640;` — a fixed size instead of
+the real file
 size. The ELF/MP3 handlers already did this correctly (read
 `vfs_find()->size`) — same fix, now applied to the WAV path too. This was
 the original bug that kicked off the "why can't I play WAVs longer than 2
@@ -939,7 +1027,9 @@ does real work (allocates, touches a file, or touches AC97 state).
 - [x] `pit_init(1000)` already existed (Proposal 2) — no further work
       needed.
 - Not yet found while doing this: `task_t` still has no `TASK_BLOCKED`
-  state or `stack_base` field (Phase 2/3 still need to add both).
+  state or `stack_base` field (Phase 2/3 still need to add both). Both
+  now exist -- `TASK_BLOCKED` landed with Phase 3, `stack_base` with the
+  task/stack reaper (2026-07-20).
 - **Boot-tested for real (2026-07-14)**, the "sandbox can't boot-test"
   limitation turned out to be wrong — QEMU runs headless in this
   environment (`-display none`, `-serial file:...`, plus a monitor
@@ -980,17 +1070,29 @@ does real work (allocates, touches a file, or touches AC97 state).
   `free(buffer)` would run before the task even starts, and the next
   timer tick would jump into freed memory. Fixed by only freeing the
   buffer on the failure paths (load/spawn failed); on a successful spawn
-  it's intentionally leaked for now (see `docs/DOCS.md`) — same category
-  as the task-stack/task_t-slot leak below, not yet solved by a reaper.
-- **Known, deliberately deferred**: neither the malloc'd task stack nor
-  the task_t slot (`g_tasks[MAX_TASKS]`, `MAX_TASKS = 32`) is ever
-  reclaimed when a spawned ELF task exits — there's no reaper yet. In
-  the worst case this means only 32 ELF programs can ever be run for the
-  lifetime of one boot before the task table is exhausted, plus a
-  64KB+file-size leak per run. The proposal's own "Files touched" section
-  already flagged a `stack_base` field + reaper as a needed follow-up;
-  this wasn't built now since it's genuinely separate from "make
-  elf_run non-blocking," not a small addition.
+  it's intentionally leaked for now (see `docs/DOCS.md`) — this ELF
+  *file buffer* leak is still open (separate from the task-stack/
+  task_t-slot leak below, which is now fixed by the reaper).
+- ~~**Known, deliberately deferred**: neither the malloc'd task stack nor
+  the task_t slot... is ever reclaimed when a spawned ELF task exits —
+  there's no reaper yet.~~ — DONE (2026-07-20). Added a `stack_base`
+  field to `task_t` (NULL for statically-allocated stacks like
+  `task0`/`task1`/`task2`, set by `elf_spawn()` for dynamically-allocated
+  ones) and a dedicated reaper task (`tasking_spawn_reaper()`,
+  `mods/dev/tasking/tasking.cpp`), woken via `task_wake()` from
+  `task_exit()`, that unlinks dead nodes from the runqueue, frees their
+  stack, and clears their `g_tasks[]` slot. Found and fixed a real
+  prerequisite gap along the way: `elf_spawn()`'s own `task_create()`
+  call wasn't wrapped in `sched_lock()`/`sched_unlock()`, the same race
+  class already fixed for `kernel_main()`'s direct calls — closed that
+  too. Also updated `explorer.cpp`'s `runningElfTasks[]` guard to check
+  `pid`, not just `state`, since a `task_t*` can now outlive the specific
+  program run it originally tracked once slots get recycled. Boot-tested
+  by spawning 50 short-lived tasks in one session against `MAX_TASKS =
+  32` — all 50 succeeded, proving slots actually get reclaimed and
+  reused, not just "doesn't crash." See `docs/DOCS.md`
+  ("`mods/dev/tasking/tasking.cpp` — task/stack reaper") for the full
+  design writeup.
 
 **Priority note (2026-07-09, informed by an external peer review of
 `docs/FULL.md`)**: when Phase 3 is picked up, do blocking/wakeups (below)
@@ -1082,12 +1184,12 @@ task run."
 
 ##### Explicitly deferred (related, but not part of this proposal)
 
-- **Keyboard focus routing**: with multiple tasks able to block on stdin,
-  keystrokes need to go to one "focused" task, not all of them (`kb_run_events`
-  currently broadcasts to every registered callback). This wants to tie into
-  window-manager focus, which doesn't have a solid concept of "this window
-  owns this task's console" yet — worth its own follow-up rather than
-  bundling into this one, since it's really a window-manager design question.
+- ~~**Keyboard focus routing**~~ — DONE (2026-07-14), the minimal
+  per-task stdin-ownership version (a LIFO stack of stdin readers, see
+  "Recently completed"). The window-manager-focus version (routing based
+  on which *window* is focused) is still genuinely deferred, since ELF
+  programs don't have windows at all today — a real, separate, bigger
+  feature.
 - **Moving mouse/keyboard IRQ work out of interrupt context** (the cursor
   tearing conversation) — real task-blocking gives us the primitive to do
   this properly later (IRQ just wakes a compositor task instead of drawing
@@ -1221,7 +1323,7 @@ disk swap after boot and load additional code (drivers, data) off it. A
 targeted investigation found this is feasible but leans on pieces that
 don't fully exist yet:
 
-- **Floppy access after boot is not real-mode-only.** `src/boot/loader/floppy.cpp`
+- **Floppy access after boot is not real-mode-only.** `boot/loader/floppy.cpp`
   is a real protected-mode FDC driver (direct port I/O to 0x3F0–0x3F7,
   handles seek/recalibrate/read), so re-reading the floppy after the switch
   to protected mode is architecturally fine — it isn't limited to BIOS INT
@@ -1232,7 +1334,7 @@ don't fully exist yet:
   worth checking whether the bootloader-resident region is identity-mapped,
   which would remove the need to toggle paging at all.
 - **FAT12 parsing only exists in the bootloader-resident stage2 blob**
-  (`src/boot/loader/main.cpp`'s `read_file`/`fat12_next_cluster`), called
+  (`boot/loader/main.cpp`'s `read_file`/`fat12_next_cluster`), called
   from the kernel via a function pointer handed off at boot. This still
   works post-boot as long as that memory region stays reserved (not handed
   back to the physical allocator) and mapped — needs verifying, not yet
@@ -1243,9 +1345,10 @@ don't fully exist yet:
   loader/relocator (used for `MAIN.ELF`) is the natural primitive to reuse
   for loading a driver blob off a swapped disk — same relocation problem,
   just a different entry-point symbol convention (`driver_init` instead of
-  `_start`). `elf_lookup_symbol()` is currently stubbed to `return NULL`,
-  which would need real implementation if a loaded driver needs to call
-  back into kernel-exported functions rather than just using syscalls.
+  `_start`). `elf_lookup_symbol()` is no longer a stub — it was
+  implemented for real (item 13 above, `elf_exports[]` table) — so a
+  loaded driver blob could already call back into kernel-exported
+  functions by name, not just use syscalls, without further work here.
 - **No other block-device driver exists** (no IDE/AHCI) — floppy would be
   the only swappable medium unless that's added too.
 

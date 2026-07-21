@@ -484,12 +484,19 @@ task_t* elf_spawn(void *entry_point) {
         printf_serial(false, FAIL, "%s", "ELF: failed to allocate task stack.\n");
         return NULL;
     }
+    // See docs/DOCS.md ("p-kernel.cpp — kernel_main() task-creation race")
+    // for why task_create()'s runqueue_push() needs sched_lock() held --
+    // that fix only covered kernel_main()'s own direct task_create() calls,
+    // this call site had the exact same gap.
+    sched_lock();
     task_t* t = task_create(elf_task_trampoline, entry_point, stack);
+    sched_unlock();
     if (!t) {
         free(stack);
         printf_serial(false, FAIL, "%s", "ELF: failed to create task.\n");
         return NULL;
     }
+    t->stack_base = stack; // dynamically allocated -- reaper frees this on exit
     return t;
 }
 

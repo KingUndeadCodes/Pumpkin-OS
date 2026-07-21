@@ -123,19 +123,10 @@ private:
     int currentTextForegroundColor;
     int currentTextBackgroundColor;
 
+    // See docs/DOCS.md ("mods/dev/vbe/vbe.cpp -- bulk framebuffer operations").
     void scroll() {
         int lineHeight = charHeight + lineSpacing;
-        for (int y = 0; y < screenHeight - lineHeight; y++) {
-            for (int x = 0; x < screenWidth; x++) {
-                unsigned color = get_pixel(x, y + lineHeight);
-                draw_pixel(x, y, color);
-            }
-        }
-        for (int y = screenHeight - lineHeight; y < screenHeight; y++) {
-            for (int x = 0; x < screenWidth; x++) {
-                draw_pixel(x, y, currentTextBackgroundColor);
-            }
-        }
+        scroll_framebuffer_up((unsigned)lineHeight, (unsigned)currentTextBackgroundColor);
         cursorY -= lineHeight;
     }
 

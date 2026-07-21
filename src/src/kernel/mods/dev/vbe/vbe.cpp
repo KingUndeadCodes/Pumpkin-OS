@@ -5,6 +5,7 @@
 #include "../../core/wingman/headers/icons.h"
 #include "font.h"
 #include "./vga_table.h"
+#include <string.h>
 // #include "vga_table.h"
 
 static uint8_t pciBus = 0;
@@ -14,12 +15,27 @@ static uint32_t* linearFramebuffer = (uint32_t*)VBE_DISPI_LFB_PHYSICAL_ADDRESS;
 
 #define rgb(r, g, b) (((r) << 16) | ((g) << 8) | (b))
 
+// See docs/DOCS.md ("mods/dev/vbe/vbe.cpp -- bulk framebuffer operations").
 void fill(unsigned color) {
-    for (unsigned y = 0; y < VBE_DISPI_MAX_YRES * 1; y++) {
-        for (unsigned x = 0; x < VBE_DISPI_MAX_XRES * 1; x++) {
-            draw_pixel(x, y, color);
-        }
+    uint32_t* fb = linearFramebuffer;
+    uint32_t count = (uint32_t)SCREEN_X * (uint32_t)SCREEN_Y;
+    for (uint32_t i = 0; i < count; i++) fb[i] = color;
+}
+
+// See docs/DOCS.md ("mods/dev/vbe/vbe.cpp -- bulk framebuffer operations").
+void scroll_framebuffer_up(unsigned lines, unsigned bg) {
+    if (lines == 0) return;
+    uint32_t* fb = linearFramebuffer;
+    if (lines >= (unsigned)SCREEN_Y) {
+        fill(bg);
+        return;
     }
+    uint32_t moveRows = (uint32_t)SCREEN_Y - lines;
+    size_t moveBytes = (size_t)moveRows * (size_t)SCREEN_X * sizeof(uint32_t);
+    memmove(fb, fb + (size_t)lines * (size_t)SCREEN_X, moveBytes);
+    uint32_t* bottom = fb + (size_t)moveRows * (size_t)SCREEN_X;
+    uint32_t bottomCount = lines * (uint32_t)SCREEN_X;
+    for (uint32_t i = 0; i < bottomCount; i++) bottom[i] = bg;
 }
 
 void pci_vbe_init(uint8_t bus, uint8_t device, uint8_t function) {
@@ -29,17 +45,18 @@ void pci_vbe_init(uint8_t bus, uint8_t device, uint8_t function) {
 }
 
 
-// Function simmlar to draw_char but scales the font by a factor of `scale`
+// See docs/DOCS.md ("mods/dev/vbe/vbe.cpp -- bulk framebuffer operations").
+// 8x8 pixel font, scaled by `scale`.
 void draw_char(unsigned x, unsigned y, char c, unsigned color, unsigned scale = 4) {
-    // 8x8 pixel font
+    uint32_t* fb = linearFramebuffer;
     for (unsigned i = 0; i < 8; i++) {
         for (unsigned j = 0; j < 8; j++) {
-            if (Font[(int)c][i] & (1 << j)) {
-                for (unsigned k = 0; k < scale; k++) {
-                    for (unsigned l = 0; l < scale; l++) {
-                        draw_pixel(x + j * scale + l, y + i * scale + k, color);
-                    }
-                }
+            if (!(Font[(int)c][i] & (1 << j))) continue;
+            unsigned blockX = x + j * scale;
+            unsigned blockY = y + i * scale;
+            for (unsigned k = 0; k < scale; k++) {
+                uint32_t* row = fb + (blockY + k) * (unsigned)SCREEN_X + blockX;
+                for (unsigned l = 0; l < scale; l++) row[l] = color;
             }
         }
     }

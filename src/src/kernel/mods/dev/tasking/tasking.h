@@ -17,6 +17,7 @@ typedef struct task {
     struct task* next;        // circular runqueue
     task_state_t state;
     uint32_t pid;
+    void* stack_base;         // malloc'd stack to free on reap; NULL for statically-allocated stacks (never freed)
 } task_t;
 
 // exported scheduler state
@@ -25,7 +26,10 @@ extern task_t* g_runqueue;
 extern uint32_t g_next_pid;
 
 void tasking_init(void);
-task_t* task_create(void (*entry)(void*), void* arg, void* stack_mem);
+// enqueue=false builds the task_t/stack frame without pushing it onto
+// g_runqueue -- see docs/DOCS.md ("mods/dev/tasking/tasking.cpp -- idle
+// task") for why the idle task is the one caller that needs this.
+task_t* task_create(void (*entry)(void*), void* arg, void* stack_mem, bool enqueue = true);
 
 // called ONLY from IRQ handler (returns regs-frame pointer / esp)
 uint32_t* scheduler_on_tick(uint32_t* current_esp);
@@ -44,3 +48,16 @@ extern "C" void task_wake(task_t* t);
 // not just the scheduler's internal use of it.
 extern "C" void sched_lock(void);
 extern "C" void sched_unlock(void);
+
+// See docs/DOCS.md ("mods/dev/tasking/tasking.cpp — task/stack reaper") for
+// design. Call once at boot (kernel_main(), inside the same sched_lock()
+// span the idle task is created in) with a statically-allocated stack --
+// the reaper task itself never exits, so its own stack is never freed.
+void tasking_spawn_reaper(void* stack_mem);
+
+// See docs/DOCS.md ("mods/dev/tasking/tasking.cpp -- idle task") for
+// design. Call once at boot, before any other task_create() in the same
+// span, with a statically-allocated stack -- the idle task never exits,
+// so its own stack is never freed. Not part of round-robin rotation
+// (task_create()'s enqueue=false); pick_next() falls back to it directly.
+void tasking_spawn_idle(void* stack_mem);

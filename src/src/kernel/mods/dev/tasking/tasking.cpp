@@ -1,5 +1,6 @@
 #include "tasking.h"
 #include "../serial/serial.h"
+#include "../../std/include/stdlib.h"
 
 // ----------------------
 // Globals
@@ -7,6 +8,10 @@
 task_t* g_current = NULL;      // bootstrap task initially
 task_t* g_runqueue = NULL;     // circular list tail pointer
 uint32_t g_next_pid = 1;
+// See docs/DOCS.md ("mods/dev/tasking/tasking.cpp -- idle task"). Not part
+// of g_runqueue -- pick_next() falls back to it directly, so it needs to
+// be visible up here, ahead of pick_next()'s own definition below.
+static task_t* g_idle_task = NULL;
 
 // ----------------------
 // Task storage
@@ -47,19 +52,29 @@ static task_t* runqueue_head(void) {
     return g_runqueue ? g_runqueue->next : NULL;
 }
 
-// pick next READY task after cur (round-robin)
+// Pick next READY task after cur (round-robin). If nothing else in
+// g_runqueue is READY, cur can only keep running if it's still actually
+// runnable itself (state == TASK_RUNNING) -- a cur that just called
+// task_block()/task_exit() is BLOCKED/DEAD at this point (that's what
+// forced the reschedule that led here), and resuming it directly would
+// silently defeat the block/exit. See docs/DOCS.md ("mods/dev/tasking/
+// tasking.cpp -- idle task") for the bug this used to be before the idle
+// task existed as an explicit fallback rather than a round-robin peer.
 static task_t* pick_next(task_t* cur) {
-    if (!g_runqueue) return cur;
+    if (g_runqueue) {
+        task_t* t = cur ? cur->next : runqueue_head();
+        if (!t) t = runqueue_head();
+        task_t* start = t;
 
-    task_t* t = cur ? cur->next : runqueue_head();
-    if (!t) t = runqueue_head();
-    task_t* start = t;
-
-    while (t && t->state != TASK_READY) {
-        t = t->next;
-        if (t == start) return cur; // nothing runnable
+        while (t && t->state != TASK_READY) {
+            t = t->next;
+            if (t == start) { t = NULL; break; } // nothing runnable in the queue
+        }
+        if (t) return t;
     }
-    return t ? t : cur;
+
+    if (cur && cur->state == TASK_RUNNING) return cur;
+    return g_idle_task;
 }
 
 // ----------------------
@@ -96,13 +111,99 @@ void tasking_init(void) {
 }
 
 // ----------------------
+// Idle task
+// ----------------------
+// See docs/DOCS.md ("mods/dev/tasking/tasking.cpp -- idle task") for why
+// this is a fallback pick_next() switches to directly, not a real
+// round-robin participant: round-robin would give it equal footing with
+// every other task, wasting every other tick on `hlt` even when there's
+// real work queued elsewhere.
+static void idle_task_fn(void* arg) {
+    (void)arg;
+    for (;;) asm volatile("hlt");
+}
+
+void tasking_spawn_idle(void* stack_mem) {
+    g_idle_task = task_create(idle_task_fn, NULL, stack_mem, false);
+}
+
+// ----------------------
+// Task/stack reaper
+// ----------------------
+// See docs/DOCS.md ("mods/dev/tasking/tasking.cpp — task/stack reaper")
+// for why this is a dedicated task woken via task_wake(), not scheduler-
+// or join-triggered: g_runqueue has no remove function and no prev
+// pointer, so unlinking a dead node is real list surgery that doesn't
+// belong in the timer IRQ path, and there's no join/wait primitive here
+// to hang reaping off of.
+static task_t* g_reaper_task = NULL;
+static volatile int g_reap_pending = 0;
+
+// Unlinks and frees every TASK_DEAD node in the runqueue. Caller must
+// already hold sched_lock() -- this mutates g_runqueue's link structure
+// and must not be preempted mid-splice.
+static void task_reap_dead(void) {
+    if (!g_runqueue) return;
+
+    task_t* prev = g_runqueue;      // tail; prev->next == head
+    task_t* cur = g_runqueue->next;
+
+    // Bounded by MAX_TASKS, not by walking back to a captured start node:
+    // once nodes get unlinked the list can shrink to a self-loop that
+    // never again equals whatever pointer we started at.
+    for (int i = 0; i < MAX_TASKS && g_runqueue != NULL; i++) {
+        task_t* next = cur->next;
+        if (cur->state == TASK_DEAD) {
+            if (cur == cur->next) {
+                g_runqueue = NULL; // was the sole remaining node
+            } else {
+                prev->next = next;
+                if (cur == g_runqueue) g_runqueue = prev; // removed the tail
+            }
+            free(cur->stack_base); // no-op if NULL (statically-allocated stack)
+            int idx = (int)(cur - g_tasks);
+            g_task_used[idx] = 0;
+        } else {
+            prev = cur;
+        }
+        cur = next;
+    }
+}
+
+static void reaper_task_fn(void* arg) {
+    (void)arg;
+    for (;;) {
+        sched_lock();
+        bool hasWork = (g_reap_pending != 0);
+        if (hasWork) {
+            g_reap_pending = 0;
+            task_reap_dead();
+        }
+        sched_unlock();
+
+        if (!hasWork) task_block();
+    }
+}
+
+void tasking_spawn_reaper(void* stack_mem) {
+    g_reaper_task = task_create(reaper_task_fn, NULL, stack_mem);
+}
+
+// ----------------------
 // Task exit: mark dead and yield via timer vector
 // ----------------------
 extern "C" void task_exit(void) {
     // Don’t let nested scheduling happen while we mark state
     sched_lock();
     if (g_current) g_current->state = TASK_DEAD;
+    g_reap_pending = 1;
     sched_unlock();
+
+    // Reaper may not be blocked yet (e.g. hasn't run once at all) --
+    // task_wake() is a no-op in that case, but g_reap_pending being
+    // already set means it'll reap on its very next run regardless, so
+    // no wakeup is ever truly lost, just possibly delayed.
+    if (g_reaper_task) task_wake(g_reaper_task);
 
     // Force a reschedule using the timer vector (0x20 == 32)
     asm volatile("int $0x20");
@@ -140,7 +241,7 @@ extern "C" void task_wake(task_t* t) {
 // Task creation: build an interrupt frame matching irq_common_stub
 // IMPORTANT: This must match your idt.asm irq_common_stub pop order.
 // ----------------------
-task_t* task_create(void (*entry)(void*), void* arg, void* stack_mem) {
+task_t* task_create(void (*entry)(void*), void* arg, void* stack_mem, bool enqueue) {
     task_t* t = task_alloc();
     if (!t) return NULL;
 
@@ -180,7 +281,7 @@ task_t* task_create(void (*entry)(void*), void* arg, void* stack_mem) {
 
     t->saved_esp = sp;
 
-    runqueue_push(t);                      // ✅ enqueue
+    if (enqueue) runqueue_push(t);
     return t;
 }
 
@@ -209,7 +310,9 @@ uint32_t* scheduler_on_tick(uint32_t* current_esp) {
     // If current died, mark it dead (already done in task_exit) and move on
     task_t* next = pick_next(g_current);
     if (!next || next == g_current) {
-        // If nothing else is READY, just keep running current (or idle task if you made one)
+        // pick_next() already verified this is safe: either cur is still
+        // TASK_RUNNING and there's nothing else to switch to, or cur *is*
+        // g_idle_task and nothing woke up. Either way, no switch needed.
         return current_esp;
     }
 

@@ -205,11 +205,6 @@ long fibbanoci(long n) {
     return fibbanoci(n - 1) + fibbanoci(n - 2);
 };
 
-// idle task
-void task0(void *arg) {
-    for (;;) asm volatile("hlt");
-};
-
 void task1(void *arg) {
     (void)arg;
     char* string = (char*)malloc(128);
@@ -268,13 +263,12 @@ extern "C" void kernel_main(read_file load_floppy) {
     checkAllBuses();
     graphics_initalize_stage1();
     LogDevice terminalDevice = { .log = &terminal_write };
-    LogDevice serialDevice = { .log = &serial_write_string };
+    LogDevice serialDevice = { .log = &serial_log_adapter };
     Logging::addLogDevice(&terminalDevice);
     Logging::addLogDevice(&serialDevice);
     Logging::flush();
     write_serial('\n');
     graphics_initalize_stage2();
-    // test_fault_handler();
     test_vfs_file_io(load_floppy);
     // serial_write_string("Initializing AC97 Audio Codec...\n");
     // initalize();
@@ -301,9 +295,16 @@ extern "C" void kernel_main(read_file load_floppy) {
     test_udp_echo();
     procMan();
     // See docs/DOCS.md ("p-kernel.cpp — tasking_init() placement") for why
-    // this is safe to spawn now, at the very end of boot.
-    static uint8_t stack0[KSTACK_SIZE] __attribute__((aligned(16)));
-    task_create(task0, NULL, stack0);
+    // this is safe to spawn now, at the very end of boot. Spawned first so
+    // it exists before anything else that might call task_block().
+    static uint8_t idleStack[KSTACK_SIZE] __attribute__((aligned(16)));
+    tasking_spawn_idle(idleStack);
+    // See docs/DOCS.md ("mods/dev/tasking/tasking.cpp — task/stack reaper").
+    static uint8_t reaperStack[KSTACK_SIZE] __attribute__((aligned(16)));
+    tasking_spawn_reaper(reaperStack);
+    // See docs/DOCS.md ("mods/core/wingman/wingman.cpp -- input queue / worker task").
+    static uint8_t inputWorkerStack[KSTACK_SIZE] __attribute__((aligned(16)));
+    wingman_spawn_input_worker(inputWorkerStack);
     // Temporarily disabled while debugging the ELF-stdin character-doubling
     // bug, to rule out interference from these two CPU-heavy tasks.
     // static uint8_t stack1[KSTACK_SIZE] __attribute__((aligned(16)));

@@ -56,6 +56,7 @@ void draw_char(unsigned x, unsigned y, char c, unsigned color, unsigned scale = 
 void pci_vbe_init(uint8_t bus, uint8_t device, uint8_t function);
 
 void fill(unsigned color);
+void scroll_framebuffer_up(unsigned lines, unsigned bg);
 void init(void);
 // void test(void); 
 

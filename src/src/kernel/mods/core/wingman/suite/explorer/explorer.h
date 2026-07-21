@@ -8,6 +8,7 @@
 #include <stdbool.h>
 #include "../../headers/window.h"
 #include "../../headers/surface.h"
+#include "../../headers/cursor.h"
 #include "../../../../dev/elf/elf.h"
 #include "../../../../dev/chorus/wav.h"
 #include "../../../../dev/chorus/mp3.h"
@@ -21,8 +22,20 @@
 struct FileEntity {
     // struct FileEntity* children;
     // int childCount;
-    char* filename; 
+    char* filename;
     int type;
+};
+
+// See docs/DOCS.md ("mods/core/wingman/suite/explorer/explorer.cpp -- multi-column layout").
+struct FileGridLayout {
+    int listStartX;
+    int listStartY;
+    int columnWidth;
+    int columnGutter;
+    int rowHeight;
+    int rowsPerColumn;
+    int columnsPerPage;
+    int capacityPerPage;
 };
 
 // ISS - Integrated Software Suite
@@ -37,6 +50,10 @@ class FileManager : public KeyboardDelegate, MouseDelegate {
         FileEntity* readDirectory(const char* _path = "/");
         char* parent_path(const char *path);
         void freeFileList(FileEntity* list);
+        FileGridLayout computeGridLayout(void);
+        // Returns the file index at (x, y), or -1 if none -- shared by
+        // onMouseEvent()'s click handling and its hover-cursor check.
+        int fileIndexAt(int x, int y);
     public:
         int width;
         int height;

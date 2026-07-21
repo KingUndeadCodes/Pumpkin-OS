@@ -19,6 +19,11 @@ enum Types {
 char read_serial();
 void write_serial(char a);
 void serial_write_string(const char* string, bool time_show = true, enum Types Type = INFO);
+// See docs/DOCS.md ("mods/dev/serial/serial.cpp -- serial_log_adapter()")
+// for why this exists: a real void(const char*)-typed adapter for
+// LogDevice::log, which serial_write_string itself is not (default
+// arguments don't change a function's pointer type).
+void serial_log_adapter(const char* message);
 
 __attribute__ ((format (printf, 3, 4))) int printf_serial(bool time_show, enum Types Type, const char* format, ...);
 

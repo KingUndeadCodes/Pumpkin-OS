@@ -390,6 +390,28 @@ kind of "someone else owns input right now" situation.
 
 ---
 
+## `mods/core/wingman/suite/explorer/explorer.cpp` — hover cursor
+
+Added (2026-07-21) so hovering a file switches the cursor to the same
+hand sprite (`cursor_id = 2`) `WidgetDemo`'s buttons and `MessageBox`'s
+buttons already use for "this is clickable" -- Explorer just never had
+this despite being the most-clicked window in the system. Same pattern as
+`widgetdemo.cpp`: compute hover state and call `set_cursor_id()` on
+*every* `onMouseEvent()` call, before the `pressedEdge` check, so a plain
+mouse move (not just a click) updates it.
+
+The hit-test itself (which file index, if any, is under a given point)
+used to live inline in the `pressedEdge & 1` click-handling branch only.
+Factored out into `fileIndexAt(x, y)` (returns `-1` for "no file here")
+since the hover check needs the exact same column/row/page math the click
+handler already had -- not a new abstraction speculatively built ahead of
+need, just the same real computation now genuinely called from two sites.
+`onMouseEvent()` itself is otherwise unchanged: `set_cursor_id(fileIndexAt(x, y)
+!= -1 ? 2 : 0)` runs unconditionally first, then the existing
+`pressedEdge & 1` branch calls `fileIndexAt()` again for the click itself
+(cheap enough per-event that caching across the two calls isn't worth the
+complexity).
+
 ## `mods/core/wingman/suite/explorer/explorer.cpp` — running-ELF tracking
 
 Forbids re-launching a `.elf` file that's already running, at the
@@ -467,6 +489,107 @@ already used elsewhere for error/danger, e.g. the red "Ignore" button in
 `MessageBox`), to avoid a selection state visually implying an error
 state.
 
+### `mods/core/wingman/suite/explorer/explorer.cpp` — multi-column layout
+
+`draw_options()` used to loop over every entry in `files[]` unconditionally,
+mapping list index directly to a y-offset (`106 + 35*i`) with no bound tied
+to window height and no column concept at all. Beyond the ~9 rows that fit
+on screen, this wasn't just a cosmetic overflow -- `Surface::putPixelUnsafe`
+does zero bounds checking, so a large enough directory wrote straight past
+the end of the window's pixel buffer (heap corruption, not just off-screen
+drawing). Replaced with a column-major grid, paginated when there isn't
+room for every column at once.
+
+**Column-major index math.** For file index `i`, `column = i / rowsPerColumn`
+and `row = i % rowsPerColumn`, filling one column top-to-bottom before
+starting the next -- reading order matches visual order. `page = column /
+columnsPerPage` falls out of the same arithmetic, so a page is just "every
+column whose `column / columnsPerPage` matches," not separately-tracked
+state. This is why `onKeyboard()`'s `'a'`/`'d'` handlers are just
+`currentSelection -= rowsPerColumn` / `+= rowsPerColumn` (clamped to
+`[0, fileCount-1]`) -- jumping a full column naturally crosses into the
+next/previous page once `column` crosses a multiple of `columnsPerPage`,
+with no separate "flip page" branch needed. `'s'`/`'w'` (`currentSelection
++/- 1`, unchanged from before this work) also already did the right thing
+for free: incrementing/decrementing the flat index moves down/up within a
+column and rolls into the next/previous column at the row boundary.
+
+**`computeGridLayout()`** (`explorer.h`'s `FileGridLayout` struct) is the
+single source of truth for `listStartX`/`listStartY`/`columnWidth`
+(`200`px, matching the original single-column mouse hit-box)/`columnGutter`
+(`padding`, `10`px)/`rowHeight` (`35`px, unchanged) and the two derived
+values, `rowsPerColumn` and `columnsPerPage`, computed from the window's
+actual content geometry (with a `reservedBottom = 25`px strip for the page
+indicator). `draw_options()` and `onMouseEvent()` both call it and must
+agree on these values -- worth keeping as one shared method rather than
+duplicating the arithmetic, since a drift between the two would mean clicks
+resolve to the wrong file.
+
+**`onMouseEvent()`** extends the original 1D "which row" bucket
+(`(y-listStartY)/rowHeight`) with a matching column bucket
+(`(x-listStartX)/(columnWidth+columnGutter)`), rejects clicks landing in
+the gutter between columns, then reconstructs a flat index from
+`page*capacityPerPage + localColumn*rowsPerColumn + row` -- the inverse of
+the column-major math above.
+
+**Page indicator**: `"Page N/M"`, bottom-right of the content area,
+computed from `currentSelection`/`capacityPerPage` and `fileCount`. Not a
+separate `redraw()` bitmask bit -- it's drawn as part of `draw_options()`
+since it needs to be current whenever the file grid is.
+
+**Defensive per-column text clamp**: a filename longer than fits in
+`columnWidth` is now truncated at draw time instead of running unbounded
+into the next column's space, computed from the same `charAdvance` value
+used to lay out each character. Not purely cosmetic either -- `columnWidth`
+is chosen so a column's footprint stays inside the window, so this also
+keeps `utility_draw_char`'s `x` argument bounded, closing off the same
+class of unbounded-write risk `draw_options()`'s row-count bound closes.
+
+### `mods/core/wingman/suite/explorer/explorer.cpp` — window chrome
+
+Explorer's `draw_background()` filled its *entire* inner content rect with
+the flat body color (`0xFF403a39`) and never painted a distinct header
+band -- every other Wingman window (`MessageBox`, `WidgetDemo`) paints a
+darker `COLOR_TITLEBAR` (`0xFF2d2928`) band under the title with a
+`COLOR_DIVIDER` (`0xFF55504f`) line beneath it, so the title reads as a
+separate header rather than floating on the body background. Explorer now
+does the same, `titleBarHeight = 64` (matching `MessageBox`'s height, not
+`WidgetDemo`'s `40`).
+
+The title icon was originally left at `draw_title()`'s default scale (`2`,
+i.e. 64x64 rendered) -- taller than the 64px band itself, so it visibly
+overflowed past the divider into the body. Fixed by explicitly drawing it
+at scale `1` (32x32) instead, vertically centered in the band (`iconY =
+18`), with the path text positioned relative to the icon's actual width
+(`textStartX = iconX + 48`) rather than the old hardcoded offset sized for
+the bigger icon.
+
+### `mods/core/wingman/suite/explorer/explorer.cpp` — current path display
+
+`this->path` already existed and was already correctly maintained by
+`fileClick()` (`nullptr` at root, a real path string once you descend into
+a subdirectory) -- it just wasn't drawn anywhere. `draw_title()` now shows
+it in place of the previously-hardcoded `"Select File"` string (root
+displays as `"/"`), with the same defensive length clamp used for
+filenames, so a sufficiently deep path can't run past the window's right
+edge.
+
+### Verification
+
+Boot-tested (2026-07-20) via two temporary, fully-reverted test setups:
+(1) a page-capacity override (forced `rowsPerColumn=2, columnsPerPage=2`)
+to confirm real 2-column, 2-page rendering and correct `"Page 1/2"` math
+without needing dozens of real files, and (2) the `MessageBox`/`WidgetDemo`
+windows temporarily disabled to get an unobstructed screenshot of
+Explorer's title bar/path/grid/page-indicator all at once. Both confirmed
+correct. Separately: an attempt to generate ~35 real dummy files via a
+`sprintf(name, "/dummy%02d.txt", i)` loop surfaced that this kernel's
+`sprintf()` doesn't substitute the `%02d` width/zero-pad flag (every
+"different" filename collapsed to the literal `"dummy02d.txt"`) -- a real,
+separate, minor `sprintf()` limitation, not a ramfs bug, not chased further
+here since it wasn't blocking (the page-capacity-override test above
+verified pagination without needing many real files).
+
 ---
 
 ## `mods/dev/kb/kb.cpp` — `kb_add_event()` dedup
@@ -500,8 +623,8 @@ since it wasn't implicated in the reported symptom.
 
 `task_create()`'s ASM trampoline (`tasking.asm`) already calls
 `task_exit()` unconditionally whenever the entry function it invoked
-returns -- this is the exact same mechanism `task0`/`task1`/`task2` rely
-on (none of them call `task_exit()` themselves either). So
+returns -- this is the exact same mechanism the idle task/`task1`/`task2`
+rely on (none of them call `task_exit()` themselves either). So
 `elf_task_trampoline()` just needs to correctly cast and call the real
 ELF entry point; when that returns (or when `sys_exit()`'s now-direct
 `task_exit()` call fires mid-execution, in which case this function never
@@ -578,11 +701,20 @@ closing `jmp $` spin) -- but it's why task creation can't happen any
 earlier than the true end of boot without abandoning whatever boot steps
 were still left unexecuted.
 
-`task0` (idle, `for(;;) hlt;`) is spawned before `task1`/`task2` so there's
-always something `TASK_READY` in the rotation once the fibonacci tasks
-finish and `task_exit()` marks them `TASK_DEAD` -- without it, `pick_next()`
-would find nothing runnable and just keep re-selecting whatever task
-happened to finish last, rather than a clean idle state.
+The idle task (`tasking_spawn_idle()`) is spawned before anything else in
+this span, so it exists before any real task could possibly call
+`task_block()`. As of 2026-07-21 it's no longer a round-robin participant
+at all (see "mods/dev/tasking/tasking.cpp — idle task" for why) --
+`pick_next()` falls back to it directly whenever nothing in `g_runqueue`
+is `TASK_READY`, rather than it occupying an actual rotation slot the way
+`task0` used to.
+
+Currently `task1`/`task2`'s `task_create()` calls are commented out in
+`kernel_main()` (temporarily disabled while debugging an unrelated
+ELF-stdin character-doubling bug) -- only the reaper and Wingman's input
+worker actually run at boot right now, alongside the (no-longer-rotating)
+idle task. The spawn-ordering rationale above still applies whenever
+`task1`/`task2` are re-enabled.
 
 ---
 
@@ -843,11 +975,11 @@ double-fault instead of finishing the report.
 
 ### `draw_panic_screen()`
 
-Direct framebuffer writes only (`fill()`/`draw_char()`, which bottom out in
-`draw_pixel()`) -- no malloc, no Surface/Window/Terminal objects. If the
-fault was caused by heap or GUI-state corruption, the panic screen still
-needs to render, so it can't depend on any of the things that might be
-what's actually broken.
+Direct framebuffer writes only (`fill()`/`draw_char()`, see
+"mods/dev/vbe/vbe.cpp -- bulk framebuffer operations") -- no malloc, no
+Surface/Window/Terminal objects. If the fault was caused by heap or
+GUI-state corruption, the panic screen still needs to render, so it
+can't depend on any of the things that might be what's actually broken.
 
 ---
 
@@ -1150,15 +1282,6 @@ while the mouse is inside the box at all.
 
 ---
 
-## `p-kernel.cpp` — `test_fault_handler()`
-
-Deliberately exercises both paths of the reworked `_fault_handler()`: #BP
-(recoverable -- should log and fall straight through to the next line) and
-then #PF against a deliberately unmapped address (fatal -- should print
-CR2/err_code diagnostics, a stack trace, and the panic screen, then halt).
-Only call this manually while testing; it never returns once the #PF
-fires.
-
 ## `mods/dev/elf/elf.cpp` — `elf_lookup_symbol()`
 
 Previously a stub that always returned `NULL`, meaning any ET_REL ELF
@@ -1182,9 +1305,12 @@ The export table intentionally mirrors only functions that are genuinely
 implemented in `mods/std/`, not everything declared in its headers.
 `ftell()` is declared in `mods/std/include/stdio.h` but has no definition
 anywhere in the kernel; exporting it would hand a program a pointer to
-nothing, which `--oformat binary` linking (see build-system section
-above) would not catch at kernel-build time either. Any future export
-added to this table should be checked the same way before being listed.
+nothing, which `--oformat binary` linking (see "`mods/dev/context/
+setjmp.h`/`setjmp.asm` deletion" above -- `x86_64-elf-ld`'s `--oformat
+binary` output doesn't error on undefined symbols the way a normal
+ELF-format link does) would not catch at kernel-build time either. Any
+future export added to this table should be checked the same way before
+being listed.
 
 ## Bootloader → kernel `read_file` handoff
 
@@ -1320,6 +1446,244 @@ pre-set to `0x202` (IF=1) in its initial stack frame, so switching to any
 other task, even just the idle task's `hlt`-loop, is what lets the
 keyboard IRQ that will eventually call `task_wake()` actually fire.
 
+## `mods/dev/tasking/tasking.cpp` — idle task
+
+`task0` used to be a real round-robin participant: `for(;;) hlt;`, spawned
+via plain `task_create()` like everything else, sharing rotation equally
+with every other task. That was fine when it was the *only* other task
+most of the time, but once the input-worker task (above) put real,
+latency-sensitive GUI work on the same round-robin footing, it became a
+real problem: `pick_next()` gives one task exactly one tick before
+rotating to the next, with no priority concept, so every other 1ms tick
+went to `task0` doing nothing useful instead of draining queued
+mouse/keyboard work. Compositing that used to run atomically inside the
+IRQ handler (interrupts masked, exclusive CPU access, however long it
+took) now had its effective throughput roughly halved by an idle task
+that produces nothing — the direct cause of a user-reported "everything
+got slower" regression right after the input-worker change landed
+(2026-07-21).
+
+Fixed (2026-07-21) by taking the idle task out of round-robin rotation
+entirely: `task_create()` gained an `enqueue` parameter (default `true`,
+unchanged for every other caller) that skips the `runqueue_push()` call.
+`tasking_spawn_idle()` uses `enqueue=false` to build the idle task's
+`task_t`/stack frame without ever putting it in `g_runqueue`, and stores
+it in `g_idle_task`. `pick_next()` now falls back to `g_idle_task`
+directly whenever nothing in `g_runqueue` is `TASK_READY`, instead of
+treating idle as just another rotation candidate — so it only ever runs
+when there's genuinely nothing else to do, not once every other tick
+regardless of load.
+
+### A latent bug this surfaced (and fixed as a prerequisite)
+
+`pick_next()`'s old fallback, when nothing else was `TASK_READY`, was
+`return cur` unconditionally — correct only because `task0` was *always*
+present as a real alternative, so the fallback path was never actually
+exercised in practice. Taking `task0` out of rotation exposed the real
+bug underneath: `task_block()`/`task_exit()` both force an immediate
+reschedule (`int $0x20`) right after setting `g_current`'s state to
+`TASK_BLOCKED`/`TASK_DEAD` — if `pick_next()` still found nothing else
+ready and returned `cur` (itself, now non-runnable) instead of a genuine
+idle fallback, `scheduler_on_tick()` would resume execution right where
+`task_block()`/`task_exit()` left off, as if the call had just returned
+normally. For `task_block()` specifically, that would silently defeat the
+whole point of blocking — the reaper or input-worker task's "wait until
+woken" loop would just spin as if nothing happened, whenever they were
+the only other real task and momentarily had nothing to do.
+
+This is the same failure mode already documented in "`p-kernel.cpp` —
+`kernel_main()` task-creation race" (further down), where a real timer
+tick landing before `task0` existed at all hit an equivalent no-alternative
+case — that fix (deferring all ticks via `sched_lock()`/`sched_unlock()`
+until every startup task exists) only guaranteed idle exists *before
+scheduling starts*, not that `pick_next()` handles "nothing ready" safely
+once scheduling is already live. `pick_next()` now checks `cur`'s actual
+state (only `TASK_RUNNING` is safe to just keep running) before ever
+falling back to it, and falls back to `g_idle_task` otherwise — a real
+fix to the underlying gap, not just a workaround for the case that
+happened to surface it.
+
+## `mods/dev/tasking/tasking.cpp` — task/stack reaper
+
+Phase 2 left a known gap: neither a spawned ELF task's `malloc`'d stack
+nor its `g_tasks[MAX_TASKS]` slot was ever reclaimed on exit, capping
+the kernel at 32 ELF programs ever launched per boot. Closed
+(2026-07-20) with a dedicated reaper task, not scheduler- or
+join-triggered reaping — see "why a dedicated task" below.
+
+### `stack_base`
+
+`task_t` gained a `stack_base` field: the original `malloc`'d stack
+pointer, set only by `elf_spawn()` (`elf.cpp`) right after a successful
+`task_create()`. Statically-allocated stacks (the idle task's, the
+reaper's own, `task1`/`task2`) leave it `NULL` -- `task_alloc()` already
+zeroes every new `task_t` byte-for-byte, so this is the default with no
+extra code.
+The reaper unconditionally calls `free(t->stack_base)` on every reaped
+task; `free(NULL)` is a guaranteed safe no-op (see "Font Rendering
+System" → "Two real bugs found while building this" → Bug 1, the
+session that actually added that guarantee), so one code path handles
+both stack ownership cases correctly without a second flag.
+
+### Why a dedicated task, not scheduler- or join-triggered reaping
+
+`g_runqueue` is a singly-linked **circular** list with no `prev` pointer
+and no existing remove function -- `runqueue_push()` is the only thing
+that ever mutates it. Dead tasks were never unlinked; `pick_next()` just
+skipped over them forever via the `state != TASK_READY` check. Reaping
+therefore isn't just "free some memory," it's real list surgery (walk to
+find the predecessor, splice the dead node out), and that doesn't belong
+in `scheduler_on_tick()`/`pick_next()` -- doing it in the timer IRQ path
+would extend the single most latency-sensitive code path in the kernel
+for work that has no urgency of its own, on principle the same reasoning
+already written into the "moving IRQ work out of interrupt context"
+deferred item elsewhere in `docs/TODO.md`. Join-based reaping (the way
+Linux ties `task_struct` freeing to a parent's `wait()`) was considered
+and rejected too, not on principle but on cost: there's no parent/child
+relationship or `wait()`-equivalent blocking primitive in this codebase
+yet, and building one just to reap tasks would be substantially more
+new infrastructure than the reaper itself.
+
+A dedicated reaper task reuses everything that already exists instead:
+`task_block()`/`task_wake()` for being woken, `sched_lock()`/
+`sched_unlock()` for safely mutating the runqueue outside the IRQ path
+(the same primitive `kernel_main()`'s task-creation race fix already
+established for exactly this kind of "safely touch scheduler state
+without a tick interrupting mid-mutation" need). No new synchronization
+primitive was needed anywhere.
+
+### `task_reap_dead()` and `reaper_task_fn()`
+
+`task_exit()` now also sets a `g_reap_pending` flag and calls
+`task_wake(g_reaper_task)`, both inside/right after the same
+`sched_lock()` span it already used to mark `TASK_DEAD`. The reaper
+task loops: `sched_lock()`, check-and-clear `g_reap_pending`, and if it
+was set, call `task_reap_dead()` (which walks the runqueue, unlinks
+every `TASK_DEAD` node, frees `stack_base`, and clears the
+corresponding `g_task_used[]` slot via pointer arithmetic,
+`idx = cur - g_tasks`), then `sched_unlock()`; if nothing was pending
+it calls `task_block()` instead of looping tight.
+
+The walk in `task_reap_dead()` is bounded by a plain `MAX_TASKS`
+iteration count, deliberately not by walking back to a captured "start"
+node: once nodes get unlinked mid-walk, the list can shrink to a
+self-looped single remaining node that never again equals whatever
+pointer the walk started at, which would make a start-based termination
+condition loop forever. A fixed iteration bound visits every real node
+at least once regardless of how much the list shrinks during the walk,
+and harmlessly revisits an already-checked live node at most a few
+times near the end of the budget if the list is now shorter than
+`MAX_TASKS`.
+
+`task_wake()` is a no-op if the reaper hasn't actually reached its own
+`task_block()` call yet (e.g. very early after boot) -- this is not a
+lost-wakeup bug, since `g_reap_pending` stays set regardless of whether
+the wake landed, and the reaper reaps on its very next run either way,
+just possibly slightly delayed rather than instant.
+
+### A prerequisite bug found while building this: `elf_spawn()`'s missing `sched_lock()`
+
+`kernel_main()`'s own direct `task_create()` calls (`task0`, etc.) were
+already wrapped in `sched_lock()`/`sched_unlock()` (see "kernel_main()
+task-creation race" above) -- but `elf_spawn()`'s call to the same
+`task_create()`, which also calls `runqueue_push()`, was not. Since the
+reaper depends on the runqueue's link structure staying coherent, this
+was a real, exploitable gap: a timer tick landing mid-`runqueue_push()`
+from an ELF spawn could hand `scheduler_on_tick()` a partially-updated
+list. Closed by wrapping `elf_spawn()`'s `task_create()` call the same
+way.
+
+### `explorer.cpp`'s `runningElfTasks[]` guard needed a matching fix
+
+Before the reaper existed, a dead task's `g_tasks[]` slot was never
+reused, so a stored `task_t*`'s `.state` field was a reliable, permanent
+signal that "this specific program run is done." Once slots can be
+reaped and recycled for an unrelated task, that's no longer true --
+`.state` on a recycled slot reflects the *new* occupant, not the
+original tracked run. Fixed by also storing the `pid` captured at
+tracking time in `RunningElfEntry` and checking `task->pid ==
+storedPid` before trusting `.state` at all; a pid mismatch is treated
+the same as `TASK_DEAD` (the slot's stale, reclaim it).
+
+### Verification
+
+Boot-tested (2026-07-20) by spawning 50 short-lived tasks in a single
+session via a temporary driver task (not inline in `kernel_main()` --
+see the next paragraph for why that distinction mattered) against
+`MAX_TASKS = 32`: 50 succeeded, 0 failed, no panic, no fault, no hang --
+proof slots are actually reclaimed and reused, not just "doesn't crash
+at 32."
+
+One real bug surfaced by the first attempt at this test, worth keeping
+in mind for any future test code in this area: test logic placed inline
+in `kernel_main()` *after* real tasks exist silently stops executing
+partway through and never completes, with no crash or error. `g_current`
+(pid 0, `kernel_main()`'s own bootstrap context) is built via
+`task_alloc()` directly, never `runqueue_push()`'d (see "tasking_init()
+placement" above) -- so once any real task is scheduled, the very next
+timer tick's "first tick" branch in `scheduler_on_tick()` permanently
+abandons whatever's left of `kernel_main()`, test code included. Test
+logic that needs to actually run after tasking is live has to be its
+own spawned task, not more of `kernel_main()`'s own flow.
+
+## `mods/core/wingman/wingman.cpp` — input queue / worker task
+
+Mouse/keyboard IRQ handlers (`irq.cpp`'s IDT gates for IRQ1/IRQ12 are
+interrupt gates, `IDTSetGate(..., 0x8E)`, so `IF` is cleared for the whole
+handler) used to call `mouseFunctionWindowManager()`/
+`keyboardFunctionWindowManager()` directly. Those functions do real work —
+`WindowManager::composite()` (per-pixel blending) and the final `memcpy`
+into the live framebuffer at `0xE0000000` — synchronously, with interrupts
+fully masked for the duration. This was one of two causes of cursor
+tearing (the other, no double-buffering/vsync at the hardware level, is a
+separate, still-open problem — see `docs/TODO.md`). Closed (2026-07-20) by
+moving that work off the IRQ stack entirely, reusing the
+`task_block()`/`task_wake()` primitive the task/stack reaper (above)
+already established as the pattern for "safely deferred work triggered
+from a hot path."
+
+### The queue
+
+A small bounded ring buffer (`WINGMAN_INPUT_QUEUE_SIZE = 32`) of tagged
+`WingmanInputEvent` structs (mouse or keyboard fields), pushed by two new
+thin functions — `queueMouseEventForWingman()`/`queueKeyEventForWingman()`
+— now registered with `mouse_add_event()`/`kb_add_event()` in place of the
+heavy functions. Push/pop critical sections use `enter_critical()`/
+`exit_critical()` (`mods/dev/port.cpp`), not `sched_lock()` — this is a
+plain data race guard around a few field writes, not scheduler-state
+surgery, so the lighter primitive is the right one (unlike the reaper's
+runqueue unlinking, which does need `sched_lock()`). On overflow (queue
+full), a push is silently dropped rather than blocking the IRQ handler —
+acceptable for input events, which are naturally re-sent on the next
+mouse/keyboard tick.
+
+### The worker task
+
+`wingman_input_worker_fn()` loops: block via `task_block()` while the
+queue is empty, otherwise pop one event and call the original, unchanged
+`mouseFunctionWindowManager()`/`keyboardFunctionWindowManager()` from task
+context (interrupts enabled). Spawned by `wingman_spawn_input_worker()`,
+which wraps its `task_create()` call in `sched_lock()`/`sched_unlock()` —
+the same pattern `elf_spawn()` and `tasking_spawn_reaper()` use — called
+from `p-kernel.cpp` alongside the reaper, inside the existing
+`kernel_main()` task-creation span (see "`kernel_main()` task-creation
+race" below).
+
+### `explorer.cpp` — MP3 playback buffer lifetime
+
+`play_mp3()`'s launch site in Explorer used to `asm volatile("sti")`
+before its `while (AC97IsPlaying()) hlt;` wait loop, because it ran from
+inside the mouse IRQ handler chain (an interrupt gate, `IF` cleared on
+entry) — without it, neither the AC97 refill IRQ nor anything else could
+fire while waiting, and `hlt` would've halted the whole system instead of
+just pausing the handler. Now that `mouseFunctionWindowManager()` runs
+from the worker task instead, this code path runs in ordinary task
+context with `IF` already set, so the `sti` no longer compensates for
+anything and was removed. The remaining wait loop still exists for an
+unrelated reason: the AC97 IRQ refill callback reads directly from the
+decoded buffer for the whole playback duration, so it can't be freed
+until playback finishes (same constraint the boot-time MP3 test handles).
+
 ## `mods/dev/syscall/syscall.cpp` — `stdin_read_line()` real blocking
 
 `stdin_read_line()` used to be `while (!stdin_line_done) { hlt; }` —
@@ -1365,9 +1729,11 @@ never the problem.
 Spawning `MAIN.ELF` (prompts, then blocks on `sys_read`) failed though:
 `task_block()` returned almost instantly, before any keystroke arrived,
 `stdin_buf_pos` still `0`. First guess was the already-known, unfixed
-`syscall.asm` segment push/pop mismatch (see `mods/dev/syscall/syscall.asm`
-below) corrupting the nested `int 0x80` frame `task_block()`'s `int
-$0x20` needs to resume into correctly — fixed that bug (it was real), 
+`syscall.asm` segment push/pop mismatch (see "Font Rendering System" →
+"Two real bugs found while building this" → Bug 2, further down in this
+document, for the fix itself) corrupting the nested `int 0x80` frame
+`task_block()`'s `int $0x20` needs to resume into correctly — fixed that
+bug (it was real), 
 retested, **identical failure**. Not the cause.
 
 Actual cause, found by dumping the live runqueue at the exact failing
@@ -1971,9 +2337,10 @@ finally exercising a path this codebase had never tested.
 push/pop mismatch**: found and fixed *before* bug 1, on the (reasonable
 but ultimately wrong) theory that it was corrupting a nested interrupt
 frame relevant to font baking. It wasn't related to this feature at
-all — see "`mods/dev/syscall/syscall.asm`" further up in this document
-for the actual story (it was the real cause of a *different* bug, the
-tasking Phase 3 boot-test failure). Left here as a cross-reference since
+all — see "`mods/dev/syscall/syscall.cpp` — `stdin_read_line()` real
+blocking" further up in this document for the actual story (it was the
+real cause of a *different* bug, the tasking Phase 3 boot-test failure).
+Left here as a cross-reference since
 it was genuinely investigated as a font-baking suspect first, and ruling
 it out (re-testing after fixing it, seeing the identical crash) is part
 of how bug 1 actually got found.
@@ -2010,9 +2377,12 @@ after the fact.
   moving off a flat `stbtt_packedchar[95]` array to something sparser if
   the range grows much beyond ASCII.
 - **Fixed monospace-grid layout, not real proportional text** — see "the
-  font asset" above. `xadvance` in `stbtt_packedchar` (the font's real
-  per-glyph advance width) is baked but currently unused by any caller;
-  every draw-string loop still advances by a fixed `8*scale`.
+  font asset" above. `ttf_font_char_advance()` does return the font's
+  real, narrower-than-`8*scale` advance width (verified uniform across
+  all 95 glyphs at bake time), and every draw-string call site now
+  advances by that instead of the bitmap-grid cell size -- but it's
+  still one uniform value per tier, not a true per-glyph proportional
+  advance read from each character's own `xadvance` individually.
 - **No kerning, no ligatures, no hinting beyond whatever
   `stbtt_PackFontRange`'s default rasterization applies** — this is the
   "bake a plain atlas" API, not `stbtt_PackFontRangesGatherRects`-style
@@ -2024,3 +2394,32 @@ after the fact.
   anywhere in the codebase means adding a 4th tier to `ttf_font.cpp`'s
   `kCellSizes[]`/`tier_for_scale()`, not something that falls out
   automatically.
+
+---
+
+## `mods/dev/vbe/vbe.cpp` — bulk framebuffer operations
+
+`fill()`, `draw_char()`, and the new `scroll_framebuffer_up()` write
+directly through a plain (non-`volatile`) `uint32_t*` onto the linear
+framebuffer instead of going through `draw_pixel()` per pixel.
+`draw_pixel()` itself stays `volatile` (it's the single-pixel API other
+callers still use), but that qualifier was forcing the compiler to
+re-issue one uncombined store per call even when the caller was writing
+whole rows/blocks/screens -- `fill()` alone is 786,432 calls per full
+clear, `draw_char()` up to `scale*scale` per set bit. The BGA linear
+framebuffer at `VBE_DISPI_LFB_PHYSICAL_ADDRESS` is plain mapped memory
+(`map_physical_memory(..., PAGE_PRESENT | PAGE_WRITABLE)`), not
+side-effecting MMIO, so batching these writes is safe.
+
+`scroll_framebuffer_up()` reuses `mods/std/string.cpp`'s existing
+`memmove()` to shift the rows above the scrolled-off region up in one
+call, rather than the row-by-row `get_pixel()`/`draw_pixel()` loop
+`Terminal::scroll()` used before. `Terminal::scroll()` in
+`mods/dev/console/console.cpp` now calls this instead of walking pixels
+itself.
+
+Verified via the real panic-screen path (`FaultHandler::draw_panic_screen()`
+in `mods/dev/idt/isr.cpp`, the only call site exercising `fill()`+`draw_char()`
+outside of normal boot/terminal rendering): forcing a page fault against a
+deliberately unmapped address and confirming the rendered panic screen's
+text and background are pixel-correct.

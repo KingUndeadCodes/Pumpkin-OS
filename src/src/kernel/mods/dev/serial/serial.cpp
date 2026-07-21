@@ -73,6 +73,11 @@ void serial_write_string(const char* string, bool time_show = true, enum Types T
     __serial_write_string(string);
 }
 
+// See docs/DOCS.md ("mods/dev/serial/serial.cpp -- serial_log_adapter()").
+void serial_log_adapter(const char* message) {
+    serial_write_string(message);
+}
+
 inline bool serial_token_is_int(int c) {
     bool isNumber = false;
     for (int i = 48; i < 58; i++) {

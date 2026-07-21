@@ -90,8 +90,9 @@ void *malloc(size_t size) {
 }
 
 void free(void *ptr) {
-    // See docs/DOCS.md ("mods/std/stdlib.cpp — free(NULL)") for how this
-    // was found: free(NULL) is standard-mandated to be a safe no-op (same
+    // See docs/DOCS.md ("Font Rendering System" -> "Two real bugs found
+    // while building this" -> Bug 1) for how this was found: free(NULL)
+    // is standard-mandated to be a safe no-op (same
     // as every real libc), but this never null-checked -- it computed
     // ptr - sizeof(block_t) unconditionally and wrote through the result,
     // which for ptr==NULL lands at a small, very-likely-unmapped address
