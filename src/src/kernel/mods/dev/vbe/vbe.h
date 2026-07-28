@@ -44,6 +44,8 @@
 #define SCREEN_Y VBE_DISPI_MAX_YRES
 #define SCREEN_BPP VBE_DISPI_BPP_32
 #define SCREEN_PITCH (SCREEN_X * (SCREEN_BPP / 8))
+// See docs/DOCS.md ("mods/dev/vbe/vbe.cpp -- hardware double buffering").
+#define VBE_FRAMEBUFFER_COUNT 2
 
 #define COLOR_W 0x00FFFFFF
 
@@ -65,6 +67,10 @@ void BgaWriteRegister(unsigned short IndexValue, unsigned short DataValue);
 void BgaSetVideoMode(unsigned int Width, unsigned int Height, unsigned int BitDepth, int UseLinearFrameBuffer, int ClearVideoMemory);
 void BgaSetBank(unsigned short BankNumber);
 unsigned short BgaReadRegister(unsigned short IndexValue);
+
+// See docs/DOCS.md ("mods/dev/vbe/vbe.cpp -- hardware double buffering").
+uint32_t* vbe_get_back_buffer(void);
+void vbe_flip(void);
 
 // void draw_icon(unsigned x, unsigned y, unsigned icon);
 

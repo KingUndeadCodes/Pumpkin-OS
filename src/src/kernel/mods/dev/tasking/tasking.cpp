@@ -1,6 +1,7 @@
 #include "tasking.h"
 #include "../serial/serial.h"
 #include "../../std/include/stdlib.h"
+#include "../gdt/gdt.h"
 
 // ----------------------
 // Globals
@@ -241,19 +242,35 @@ extern "C" void task_wake(task_t* t) {
 // Task creation: build an interrupt frame matching irq_common_stub
 // IMPORTANT: This must match your idt.asm irq_common_stub pop order.
 // ----------------------
-task_t* task_create(void (*entry)(void*), void* arg, void* stack_mem, bool enqueue) {
+task_t* task_create(void (*entry)(void*), void* arg, void* stack_mem,
+                     bool enqueue, uint8_t ring, void* user_stack_top) {
     task_t* t = task_alloc();
     if (!t) return NULL;
 
     t->pid = g_next_pid++;
     t->state = TASK_READY;
+    t->ring = ring;
+    t->kernel_stack_top = (uint32_t)((uint8_t*)stack_mem + KSTACK_SIZE);
 
-    uint32_t* sp = (uint32_t*)((uint8_t*)stack_mem + KSTACK_SIZE);
+    uint32_t* sp = (uint32_t*)t->kernel_stack_top;
 
-    // --- iret frame (popped by iret): eip, cs, eflags ---
-    *(--sp) = 0x00000202;                  // EFLAGS (IF=1)
-    *(--sp) = 0x00000008;                  // CS (kernel code selector)
-    *(--sp) = (uint32_t)task_start_trampoline; // EIP -> trampoline
+    // --- iret frame (popped by iret): eip, cs, eflags[, esp, ss] ---
+    // A ring-3 target needs the 5-value form -- iret only pops esp/ss
+    // when the popped CS's RPL differs from the current CPL, so a ring-0
+    // task's 3-value frame (unchanged from before ring support existed)
+    // is still exactly what it needs. See docs/DOCS.md ("mods/dev/tasking/
+    // tasking.cpp -- ring-transition GDT/TSS").
+    if (ring == 3) {
+        *(--sp) = 0x33;                             // SS (ring3 data | RPL3)
+        *(--sp) = (uint32_t)user_stack_top;          // ESP (ring3 user stack top)
+        *(--sp) = 0x00000202;                        // EFLAGS (IF=1, IOPL=00)
+        *(--sp) = 0x2B;                              // CS (ring3 code | RPL3)
+        *(--sp) = (uint32_t)task_start_trampoline;    // EIP -> trampoline
+    } else {
+        *(--sp) = 0x00000202;                  // EFLAGS (IF=1)
+        *(--sp) = 0x00000008;                  // CS (kernel code selector)
+        *(--sp) = (uint32_t)task_start_trampoline; // EIP -> trampoline
+    }
 
     // --- the stub discards 8 bytes: int_no + err_code (in that order as seen by regs*) ---
     // Your IRQ stubs push: err_code first, then int_no (push 0; push 32). :contentReference[oaicite:0]{index=0}
@@ -274,10 +291,11 @@ task_t* task_create(void (*entry)(void*), void* arg, void* stack_mem, bool enque
     *(--sp) = 0;                           // edi
 
     // --- segment regs (popped: gs, fs, es, ds) ---
-    *(--sp) = 0x10;                        // ds
-    *(--sp) = 0x10;                        // es
-    *(--sp) = 0x10;                        // fs
-    *(--sp) = 0x10;                        // gs
+    uint32_t data_sel = (ring == 3) ? 0x33 : 0x10;
+    *(--sp) = data_sel;                    // ds
+    *(--sp) = data_sel;                    // es
+    *(--sp) = data_sel;                    // fs
+    *(--sp) = data_sel;                    // gs
 
     t->saved_esp = sp;
 
@@ -301,6 +319,7 @@ uint32_t* scheduler_on_tick(uint32_t* current_esp) {
 
         g_current = first;
         g_current->state = TASK_RUNNING;
+        GDTSetKernelStack(g_current->kernel_stack_top);
         return g_current->saved_esp;
     }
 
@@ -321,6 +340,11 @@ uint32_t* scheduler_on_tick(uint32_t* current_esp) {
 
     next->state = TASK_RUNNING;
     g_current = next;
+    // See docs/DOCS.md ("mods/dev/tasking/tasking.cpp -- ring-transition
+    // GDT/TSS") -- must be set before any interrupt can catch a ring>0
+    // task running; a no-op for ring-0 tasks (ESP0 is only consulted by
+    // the CPU on a CPL-crossing trap).
+    GDTSetKernelStack(g_current->kernel_stack_top);
 
     return g_current->saved_esp;
 }

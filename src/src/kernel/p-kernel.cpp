@@ -16,6 +16,7 @@
 #include "mods/dev/chorus/wav.h"
 #include "mods/dev/chorus/mp3.h"
 #include "mods/dev/cmos/cmos.h"
+#include "mods/dev/gdt/gdt.h"
 #include "mods/dev/elf/elf.h"
 #include "mods/dev/idt/isr.h"
 #include "mods/dev/pit/pit.h"
@@ -234,6 +235,9 @@ void task2(void *arg) {
 }
 
 extern "C" void kernel_main(read_file load_floppy) {
+    // See docs/DOCS.md ("mods/dev/gdt/gdt.cpp -- ring-transition GDT/TSS").
+    GDTInstall();
+    TSSInstall();
     queryMemoryMap();
     PagingInstall();
     IDTInstall();

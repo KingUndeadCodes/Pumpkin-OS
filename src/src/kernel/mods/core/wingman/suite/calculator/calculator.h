@@ -8,16 +8,15 @@
 #include "../../headers/surface.h"
 #include "../../headers/manager.h"
 #include "../../headers/widgets/button.h"
-#include "../../headers/widgets/textinput.h"
-#include "../../headers/widgets/checkbox.h"
-#include "../../headers/widgets/slider.h"
 #include "../../headers/cursor.h"
-#include "../../../../dev/serial/serial.h"
 #include "../../../../dev/vbe/font.h"
 #include "../../../fontman/fontman.h"
 
-// See docs/DOCS.md ("mods/core/wingman/suite/widgetdemo/widgetdemo.cpp" section).
-class WidgetDemo : public KeyboardDelegate, public MouseDelegate {
+// See docs/DOCS.md ("mods/core/wingman/suite/calculator/calculator.cpp" section).
+#define CALCULATOR_KEY_COUNT 17
+#define CALCULATOR_DISPLAY_MAX 24
+
+class Calculator : public MouseDelegate {
     private:
         void utility_draw_pixel(unsigned x, unsigned y, unsigned color);
         void utility_draw_char(unsigned x, unsigned y, char c, unsigned color, unsigned scale = 2);
@@ -25,10 +24,21 @@ class WidgetDemo : public KeyboardDelegate, public MouseDelegate {
     private:
         WindowManager* wm;
         window_ref_t ref;
+        Button* keys[CALCULATOR_KEY_COUNT];
+        char display[CALCULATOR_DISPLAY_MAX];
+        int displayLen;
+        double storedValue;
+        char pendingOp;
+        bool waitingForOperand;
+        bool errorState;
+        void handleKey(char label);
+        void applyPendingOp(double operand);
+        void setDisplayNumber(double value);
         void draw_border(void);
         void draw_background(void);
         void draw_title(void);
-        void draw_widgets(void);
+        void draw_display(void);
+        void draw_keys(void);
     public:
         int width;
         int height;
@@ -37,15 +47,9 @@ class WidgetDemo : public KeyboardDelegate, public MouseDelegate {
         int padding;
         int thickness;
         Window* window;
-        Button* button;
-        TextInput* textInput;
-        Checkbox* checkbox;
-        Checkbox* toggle;
-        Slider* slider;
-        WidgetDemo(WindowManager* wm);
-        ~WidgetDemo();
+        Calculator(WindowManager* wm);
+        ~Calculator();
         void redraw(void);
-        bool onKeyboard(char key, bool shift, bool meta, unsigned char scancode) override;
         bool onMouseEvent(int x, int y, int dx, int dy, unsigned char buttons, unsigned char pressedEdge) override;
         void *operator new(size_t size) { return malloc(size); }
         void *operator new[](size_t size) { return malloc(size); }

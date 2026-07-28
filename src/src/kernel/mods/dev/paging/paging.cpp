@@ -126,4 +126,38 @@ void map_physical_memory(uintptr_t phys_addr, uintptr_t virt_addr, size_t size, 
     );
 }
 
+// See docs/DOCS.md ("mods/dev/paging/paging.cpp -- mark_region_user()").
+void mark_region_user(uintptr_t addr, size_t size, bool writable) {
+    uint32_t flags = PAGE_PRESENT | PAGE_USER | (writable ? PAGE_WRITABLE : 0);
+    map_physical_memory(addr, addr, size, flags);
+    size_t pages = (size + PAGE_SIZE - 1) / PAGE_SIZE;
+    for (size_t i = 0; i < pages; i++) {
+        size_t pd_index = ((addr + i * PAGE_SIZE) >> 22) & 0x3FF;
+        page_directory[pd_index] |= PAGE_USER;
+    }
+}
+
+// See docs/DOCS.md ("mods/dev/syscall/syscall.cpp -- ring-3 syscall gate
+// (Phase 1)"). CPL0 code is exempt from the CPU's own U/S check, so a
+// syscall handler validating a ring-3 caller's buffer has to replicate
+// it deliberately -- checks both PDE and PTE, same PAGE_USER asymmetry
+// mark_region_user() already has to fix up.
+bool is_user_accessible(uintptr_t addr, size_t size) {
+    if (size == 0) return true;
+    uintptr_t end = addr + size;
+    if (end < addr) return false; // overflow wraparound
+    uintptr_t page = addr & ~0xFFF;
+    while (page < end) {
+        size_t pd_index = (page >> 22) & 0x3FF;
+        if (!(page_directory[pd_index] & PAGE_PRESENT)) return false;
+        if (!(page_directory[pd_index] & PAGE_USER)) return false;
+        uint32_t* page_table = (uint32_t*)(page_directory[pd_index] & ~0xFFF);
+        size_t pt_index = (page >> 12) & 0x3FF;
+        if (!(page_table[pt_index] & PAGE_PRESENT)) return false;
+        if (!(page_table[pt_index] & PAGE_USER)) return false;
+        page += PAGE_SIZE;
+    }
+    return true;
+}
+
 // =====

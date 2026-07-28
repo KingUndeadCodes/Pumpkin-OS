@@ -55,7 +55,12 @@ void PagingInstall(void); // This is for the setup
 #define PAGE_SIZE 4096
 #define PAGE_PRESENT 0x1
 #define PAGE_WRITABLE 0x2
+#define PAGE_USER 0x4
 
 void map_physical_memory(uintptr_t phys_addr, uintptr_t virt_addr, size_t size, uint32_t flags);
+// See docs/DOCS.md ("mods/dev/paging/paging.cpp -- mark_region_user()").
+void mark_region_user(uintptr_t addr, size_t size, bool writable);
+// See docs/DOCS.md ("mods/dev/syscall/syscall.cpp -- ring-3 syscall gate (Phase 1)").
+bool is_user_accessible(uintptr_t addr, size_t size);
 
 #endif

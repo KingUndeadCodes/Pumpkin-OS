@@ -239,12 +239,21 @@ char *strncpy(char *s1, const char *s2, size_t n) {
 	return s1;
 }
 
-// Taken from: https://wiki.osdev.org/Meaty_Skeleton#libc.2Fstring.2Fmemcpy.c
-// Note: Removed Restrict Keyword so C++ can be happy.
+// See docs/DOCS.md ("mods/std/string.cpp -- memcpy") for why this is
+// `rep movsl` instead of the byte-at-a-time loop it replaces.
 void* memcpy(void* dstptr, const void* srcptr, size_t size) {
 	unsigned char* dst = (unsigned char*)dstptr;
 	const unsigned char* src = (const unsigned char*)srcptr;
-	for (size_t i = 0; i < size; i++) dst[i] = src[i];
+	size_t words = size / 4;
+	size_t trailing = size - words * 4;
+	__asm__ volatile(
+		"cld\n\t"
+		"rep movsl"
+		: "+D"(dst), "+S"(src), "+c"(words)
+		:
+		: "memory"
+	);
+	for (size_t i = 0; i < trailing; i++) dst[i] = src[i];
 	return dstptr;
 }
 

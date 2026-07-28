@@ -6,9 +6,11 @@
 #include "../serial/serial.h"
 #include "../kb/kb.h"
 #include "../tasking/tasking.h"
+#include "../paging/paging.h"
 
 #define SYSCALL_COUNT (sizeof(syscall_table) / sizeof(syscall_fn))
 #define MAX_SYSCALL_FDS 16
+#define SYS_OPEN_MAX_PATH 256
 
 typedef uint32_t syscall_t;
 
@@ -25,7 +27,24 @@ static int alloc_syscall_fd(FILE* f) {
     return -1;
 }
 
+// See docs/DOCS.md ("mods/dev/syscall/syscall.cpp -- ring-3 syscall gate
+// (Phase 1)"). Ring 0/1 callers are already trusted and unaffected; a
+// no-op for them, same as before this existed.
+static bool syscall_buf_ok(uint32_t buf, uint32_t size) {
+    if (g_current->ring != 3) return true;
+    return is_user_accessible((uintptr_t)buf, (size_t)size);
+}
+
 syscall_t sys_open(uint32_t path, uint32_t flags, uint32_t, uint32_t, uint32_t) {
+    if (g_current->ring == 3) {
+        if (!is_user_accessible((uintptr_t)path, SYS_OPEN_MAX_PATH)) return (uint32_t)-1;
+        bool terminated = false;
+        for (uint32_t i = 0; i < SYS_OPEN_MAX_PATH; i++) {
+            if (((const char*)path)[i] == '\0') { terminated = true; break; }
+        }
+        if (!terminated) return (uint32_t)-1;
+    }
+
     const char* mode = "r";
     if (flags == SYS_O_WRITE) mode = "w";
     else if (flags == SYS_O_APPEND) mode = "a";
@@ -117,6 +136,7 @@ static uint32_t stdin_read_line(char* buf, uint32_t size) {
 }
 
 syscall_t sys_read(uint32_t fd, uint32_t buf, uint32_t size, uint32_t, uint32_t) {
+    if (!syscall_buf_ok(buf, size)) return (uint32_t)-1;
     if (fd == 0) {
         return stdin_read_line((char*)buf, size);
     }
@@ -125,6 +145,7 @@ syscall_t sys_read(uint32_t fd, uint32_t buf, uint32_t size, uint32_t, uint32_t)
 }
 
 syscall_t sys_write(uint32_t fd, uint32_t buf, uint32_t size, uint32_t, uint32_t) {
+    if (!syscall_buf_ok(buf, size)) return (uint32_t)-1;
     if (fd == 1 || fd == 2) {
         const char* data = (const char*)buf;
         for (uint32_t i = 0; i < size; i++) {

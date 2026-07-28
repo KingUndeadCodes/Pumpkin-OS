@@ -9,6 +9,7 @@ enum WidgetType {
     WidgetTypeButton,
     WidgetTypeTextInput,
     WidgetTypeCheckbox,
+    WidgetTypeSlider,
 };
 
 class Widget {

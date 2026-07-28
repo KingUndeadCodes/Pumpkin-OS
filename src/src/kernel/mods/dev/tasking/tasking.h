@@ -18,6 +18,9 @@ typedef struct task {
     task_state_t state;
     uint32_t pid;
     void* stack_base;         // malloc'd stack to free on reap; NULL for statically-allocated stacks (never freed)
+    // See docs/DOCS.md ("mods/dev/tasking/tasking.cpp -- ring-transition GDT/TSS").
+    uint8_t  ring;             // target CPL: 0 for every existing task, 3 for a ring-3 task
+    uint32_t kernel_stack_top; // written into TSS.ESP0 whenever this task is current
 } task_t;
 
 // exported scheduler state
@@ -29,7 +32,11 @@ void tasking_init(void);
 // enqueue=false builds the task_t/stack frame without pushing it onto
 // g_runqueue -- see docs/DOCS.md ("mods/dev/tasking/tasking.cpp -- idle
 // task") for why the idle task is the one caller that needs this.
-task_t* task_create(void (*entry)(void*), void* arg, void* stack_mem, bool enqueue = true);
+// See docs/DOCS.md ("mods/dev/tasking/tasking.cpp -- ring-transition
+// GDT/TSS") for ring/user_stack_top -- ring 0 (the default) is unchanged
+// from before this existed; ring 3 needs user_stack_top set.
+task_t* task_create(void (*entry)(void*), void* arg, void* stack_mem,
+                     bool enqueue = true, uint8_t ring = 0, void* user_stack_top = NULL);
 
 // called ONLY from IRQ handler (returns regs-frame pointer / esp)
 uint32_t* scheduler_on_tick(uint32_t* current_esp);

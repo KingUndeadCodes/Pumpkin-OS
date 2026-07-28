@@ -164,6 +164,10 @@ namespace FaultHandler {
 
     // See docs/DOCS.md ("mods/dev/idt/isr.cpp" section) for why this can't use malloc/Surface/etc.
     static void draw_panic_screen(unsigned int int_no, unsigned int eip, unsigned int cr2, bool has_cr2) {
+        // A panic can fire while region 1 is displayed; force region 0 back
+        // on screen, permanently, since the system halts right after. See
+        // docs/DOCS.md ("mods/dev/vbe/vbe.cpp -- hardware double buffering").
+        BgaWriteRegister(VBE_DISPI_INDEX_Y_OFFSET, 0);
         fill(0xFF5C1010);
         char buf[11];
         panic_draw_string(40, 40, "KERNEL PANIC", 4);

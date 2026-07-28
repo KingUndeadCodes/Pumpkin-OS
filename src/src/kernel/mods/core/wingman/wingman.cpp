@@ -6,13 +6,13 @@
 #include "./suite/explorer/explorer.h"
 #include "./suite/message/message.h"
 #include "./suite/widgetdemo/widgetdemo.h"
+#include "./suite/calculator/calculator.h"
 #include "./headers/wingman.h"
 
 static FileManager* fileManager = nullptr;
 static WindowManager* wm = nullptr;
 static size_t bufferSize = 0;
-// See docs/DOCS.md ("mods/core/wingman/wingman.cpp" section) for outputBuffer/lastButtons.
-static color_t* outputBuffer = nullptr;
+// See docs/DOCS.md ("mods/core/wingman/wingman.cpp" section) for lastButtons.
 static unsigned char lastButtons = 0;
 // See docs/DOCS.md ("mods/core/wingman/wingman.cpp — window dragging") section.
 #define WINGMAN_DRAG_HANDLE_HEIGHT 30
@@ -43,33 +43,27 @@ static volatile int g_inputQueueHead = 0;
 static volatile int g_inputQueueTail = 0;
 static task_t* g_inputWorkerTask = nullptr;
 
-inline void redraw_screen(void) {
-    color_t* buffer = wm->screen->getBuffer();
-    memcpy(outputBuffer, buffer, bufferSize);
-    draw_cursor_into_buffer(outputBuffer, wm->screen->getWidth(), wm->screen->getHeight());
-    memcpy((void*)0xE0000000, outputBuffer, bufferSize);
+// See docs/DOCS.md ("mods/dev/vbe/vbe.cpp -- hardware double buffering").
+// Always a full-frame present now: real page-flipping means the back
+// buffer's prior contents are two presents stale, not one, so a partial
+// patch would leave the rest of the region wrong the instant it's shown.
+// wm->screen is always a complete, current frame regardless of how little
+// composite() actually recomputed, so copying all of it here is correct.
+void redraw_screen(void) {
+    if (wm == nullptr || wm->screen == nullptr) return;
+    const color_t* buffer = wm->screen->getBuffer();
+    color_t* back = (color_t*)vbe_get_back_buffer();
+    memcpy(back, buffer, bufferSize);
+    draw_cursor_into_buffer(back, wm->screen->getWidth(), wm->screen->getHeight());
+    vbe_flip();
 };
 
-// See docs/DOCS.md ("mods/core/wingman/headers/types.h -- Rect / dirty-rect compositing").
+// See docs/DOCS.md (same section) -- dirty-rect compositing still narrows
+// the blend work in WindowManager::composite(Rect); the present step
+// itself can no longer be partial once real page-flipping is in play.
 inline void redraw_screen_rect(Rect rect) {
-    if (wm == nullptr || wm->screen == nullptr) return;
-    const int screenWidth = wm->screen->getWidth();
-    const int screenHeight = wm->screen->getHeight();
-    Rect screenRect = { 0, 0, screenWidth, screenHeight };
-    rect = rect_intersect(rect, screenRect);
-    if (rect_empty(rect)) return;
-    const color_t* buffer = wm->screen->getBuffer();
-    color_t* fb = (color_t*)0xE0000000;
-    for (int y = rect.y; y < rect.y + rect.h; y++) {
-        int rowOffset = y * screenWidth + rect.x;
-        memcpy(&fb[rowOffset], &buffer[rowOffset], (size_t)rect.w * sizeof(color_t));
-    }
-    constexpr int CURSOR_W = 17;
-    constexpr int CURSOR_H = 24;
-    Rect cursorRect = { get_mouse_x(), get_mouse_y(), CURSOR_W, CURSOR_H };
-    if (!rect_empty(rect_intersect(cursorRect, rect))) {
-        draw_cursor_into_buffer(fb, screenWidth, screenHeight);
-    }
+    (void)rect;
+    redraw_screen();
 };
 
 void keyboardFunctionWindowManager(char key, bool shift, bool meta, unsigned char scancode) {
@@ -190,7 +184,11 @@ void mouseFunctionWindowManager(int x, int y, int dx, int dy, unsigned char butt
         update_mouse_position(mouse_get_x(), mouse_get_y());
         redraw_screen_rect(dirtyRect);
     } else {
-        redraw_cursor(wm, x, y);
+        // See docs/DOCS.md ("mods/core/wingman/wingman.cpp -- cursor
+        // duplication during drag") for why this reads the driver's live
+        // position instead of the possibly-stale x/y parameters, same as
+        // the needsRedraw branch above.
+        redraw_cursor(wm, mouse_get_x(), mouse_get_y());
     }
     return;
 }
@@ -258,12 +256,12 @@ void initalizeWindowSystem(void) {
     });
     messageBox->addButton("Ignore", rgb(255, 0, 0));
     new WidgetDemo(wm);
+    new Calculator(wm);
     kb_add_event(queueKeyEventForWingman);
     mouse_add_event(queueMouseEventForWingman);
     set_cursor_id(0);
     wm->composite();
     bufferSize = wm->screen->getWidth() * wm->screen->getHeight() * sizeof(color_t);
-    outputBuffer = (color_t*)malloc(bufferSize);
     redraw_screen();
     return;
 }

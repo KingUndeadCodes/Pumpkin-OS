@@ -97,14 +97,36 @@ uint32_t pciConfigReadDword(uint8_t bus, uint8_t device, uint8_t function, uint8
     return ((uint32_t)high << 16) | low;
 }
 
+static uint32_t currentBackRegion = 1;   // region 0 is displayed at boot (Y_OFFSET=0)
+
 void init(void) {
     BgaSetVideoMode(SCREEN_X, SCREEN_Y, SCREEN_BPP, 1, 1);
+    // Offset writes must come after BgaSetVideoMode() -- its own ENABLE
+    // transition resets VIRT_WIDTH/X_OFFSET/Y_OFFSET to 0 on QEMU. See
+    // docs/DOCS.md ("mods/dev/vbe/vbe.cpp -- hardware double buffering").
+    BgaWriteRegister(VBE_DISPI_INDEX_VIRT_HEIGHT, SCREEN_Y * VBE_FRAMEBUFFER_COUNT);
+    BgaWriteRegister(VBE_DISPI_INDEX_X_OFFSET, 0);
+    BgaWriteRegister(VBE_DISPI_INDEX_Y_OFFSET, 0);
+
+    // Permanent boot-time self-check: an out-of-bounds Y_OFFSET write is
+    // silently clamped back to 0 by the device rather than faulted, so
+    // this is the only way to know the VRAM-size assumption actually
+    // holds. See docs/DOCS.md (same section).
+    BgaWriteRegister(VBE_DISPI_INDEX_Y_OFFSET, (unsigned short)SCREEN_Y);
+    bool doubleBufferOk = (BgaReadRegister(VBE_DISPI_INDEX_Y_OFFSET) == (unsigned short)SCREEN_Y);
+    BgaWriteRegister(VBE_DISPI_INDEX_Y_OFFSET, 0);  // restore region 0 before boot console draws
+    serial_write_string(doubleBufferOk
+        ? "VBE: double-buffer VRAM check OK\n"
+        : "VBE: double-buffer VRAM check FAILED -- Y_OFFSET clamped, vbe_flip() will be a no-op\n",
+        false, doubleBufferOk ? INFO : FAIL);
+
     uint32_t bar = pciConfigReadDword(pciBus, pciDevice, pciFunction, 0x10);  // Or BAR2/4 depending on device
     uint32_t phys_addr = bar & ~0xF;
-    uint32_t allocationSize = SCREEN_X * SCREEN_Y * (SCREEN_BPP / 8);
+    uint32_t allocationSize = SCREEN_X * SCREEN_Y * (SCREEN_BPP / 8) * VBE_FRAMEBUFFER_COUNT;
     uint32_t virtualAddress = 0xE0000000;
     map_physical_memory(phys_addr, (uintptr_t)virtualAddress, allocationSize, PAGE_PRESENT | PAGE_WRITABLE);
     linearFramebuffer = (uint32_t*)virtualAddress;
+    currentBackRegion = 1;
     return;
 }
 
@@ -134,4 +156,18 @@ void BgaSetVideoMode(unsigned int Width, unsigned int Height, unsigned int BitDe
 
 void BgaSetBank(unsigned short BankNumber) {
     BgaWriteRegister(VBE_DISPI_INDEX_BANK, BankNumber);
+}
+
+// See docs/DOCS.md ("mods/dev/vbe/vbe.cpp -- hardware double buffering").
+uint32_t* vbe_get_back_buffer(void) {
+    uint32_t frameWords = (uint32_t)SCREEN_X * (uint32_t)SCREEN_Y;
+    return linearFramebuffer + (size_t)currentBackRegion * frameWords;
+}
+
+// Atomically swaps which VRAM region is displayed via Y_OFFSET. The
+// display hardware only picks this up at its own next frame boundary, so
+// this single write is the entire flip -- no vsync wait needed.
+void vbe_flip(void) {
+    BgaWriteRegister(VBE_DISPI_INDEX_Y_OFFSET, (unsigned short)(currentBackRegion * SCREEN_Y));
+    currentBackRegion = 1 - currentBackRegion;
 }

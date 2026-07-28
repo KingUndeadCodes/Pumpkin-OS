@@ -15,8 +15,8 @@ static inline uint8_t rounded_corner_coverage(double dx, double dy, int radius) 
     return (uint8_t)(edge * 255.0);
 }
 
-// See docs/DOCS.md ("mods/core/wingman/headers/shapes.h").
-static inline void draw_rounded_rect_fill(Surface* surface, int x, int y, int w, int h, int radius, color_t color) {
+// See docs/DOCS.md ("mods/core/wingman/headers/shapes.h -- per-corner rounding") for why this takes 4 corner flags instead of always rounding all 4.
+static inline void draw_rounded_rect_fill_corners(Surface* surface, int x, int y, int w, int h, int radius, color_t color, bool topLeft, bool topRight, bool bottomLeft, bool bottomRight) {
     if (w <= 0 || h <= 0) return;
     if (radius > w / 2) radius = w / 2;
     if (radius > h / 2) radius = h / 2;
@@ -28,7 +28,9 @@ static inline void draw_rounded_rect_fill(Surface* surface, int x, int y, int w,
             bool nearLeft = col < radius;
             bool nearRight = col >= w - radius;
             uint8_t coverage = 255;
-            if (radius > 0 && (nearTop || nearBottom) && (nearLeft || nearRight)) {
+            bool roundedCorner = (nearTop && nearLeft && topLeft) || (nearTop && nearRight && topRight) ||
+                                  (nearBottom && nearLeft && bottomLeft) || (nearBottom && nearRight && bottomRight);
+            if (radius > 0 && roundedCorner) {
                 double cx = nearLeft ? (double)radius : (double)(w - radius);
                 double dx = (col + 0.5) - cx;
                 double dy = (row + 0.5) - cy;
@@ -41,4 +43,9 @@ static inline void draw_rounded_rect_fill(Surface* surface, int x, int y, int w,
             surface->putPixelUnsafe(px, py, ttf_blend_over(under, color, coverage));
         }
     }
+}
+
+// See docs/DOCS.md ("mods/core/wingman/headers/shapes.h").
+static inline void draw_rounded_rect_fill(Surface* surface, int x, int y, int w, int h, int radius, color_t color) {
+    draw_rounded_rect_fill_corners(surface, x, y, w, h, radius, color, true, true, true, true);
 }

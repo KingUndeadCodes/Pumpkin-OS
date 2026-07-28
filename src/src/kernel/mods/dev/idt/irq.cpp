@@ -50,7 +50,10 @@ void IRQInstall() {
     IDTSetGate(45, (unsigned)IRQ13, 0x08, 0x8E);
     IDTSetGate(46, (unsigned)IRQ14, 0x08, 0x8E);
     IDTSetGate(47, (unsigned)IRQ15, 0x08, 0x8E);
-    IDTSetGate(0x80, (unsigned)syscall_handler, 0x08, 0x8E);
+    // See docs/DOCS.md ("mods/dev/syscall/syscall.cpp -- ring-3 syscall
+    // gate (Phase 1)"). DPL=3 (0xEE, vs every other gate above staying
+    // 0x8E/DPL=0) is what actually lets a ring-3 task reach this handler.
+    IDTSetGate(0x80, (unsigned)syscall_handler, 0x08, 0xEE);
 }
 
 static irq_handler_t irq_routines[IRQ_COUNT][IRQ_MAX_HANDLERS] = {};

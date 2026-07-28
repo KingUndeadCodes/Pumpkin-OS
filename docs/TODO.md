@@ -1,15 +1,33 @@
 # Pumpkin-OS — TODO
 
 Standing checklist of things to add/fix, ordered by recommended priority
-(top = do next). Ring-0-only is an intentional design choice (like
-TempleOS), not something any of these notes are trying to walk back.
+(top = do next). Ring-0-only was the original design choice (like
+TempleOS), but as of 2026-07-21 the project is deliberately moving toward
+a three-tier ring-based privilege model (Level 0/kernel at ring 0, Level
+1/trusted software at ring 1, Level 2/generic programs at ring 3, real
+paging-enforced isolation for Level 2) — see "Recently completed" below
+for Phase 0. Per-task memory isolation, listed elsewhere in this file as
+permanently out of scope, refers specifically to *general-purpose*
+per-process isolation of the kind rejected earlier in this project's
+history, not to the narrower, now-active ring work.
 
-**Next up:** "Priority 1 — Do next" is now fully done (as of 2026-07-21), and
-the cursor-tearing item in "Priority 3" is also done — see "Recently
-completed" below. What's left in Priority 3 is either already
-sub-scoped-out (window-manager-focus routing) or permanently out of scope
-by design (per-task memory isolation). Next places to look:
-- [Miscellaneous — parked, revisit later](#miscellaneous--parked-revisit-later) — standalone bugs and the performance-audit backlog
+**Next up:** "Priority 1 — Do next" is now fully done, and both
+cursor-tearing items in "Priority 3" (the IRQ→task move, and the
+hardware double-buffering fix for the framebuffer itself) are also done
+— see "Recently completed" below. Phases 0 and 1 of the ring-based
+architecture work
+(ring-transition mechanism, then the syscall gate raised to DPL=3 with
+`sys_read`/`sys_write`/`sys_open` hardened against a ring-3 caller) are
+done and boot-verified; the next phases are: move `wingman`/`fontman`/
+`mp3`/`chorus`/`Explorer` to ring 1, build real x86 call gates for Level 2
+→ Level 1 (no gate at all for Level 2 → Level 0 hardware access), and only
+then tackle Level 2 program internals (per-program memory region,
+`elf_spawn()`'s ELF loader rework — `elf_exports[]` currently hands
+ELF-loaded code raw kernel function pointers, bypassing even the existing
+`int 0x80` path, and will need closing before this is safe). See
+`docs/DOCS.md` ("mods/dev/gdt/gdt.cpp — ring-transition GDT/TSS (Phase
+0)" and "mods/dev/syscall/syscall.cpp — ring-3 syscall gate (Phase 1)")
+for the full design and what's already built.
 
 ---
 
@@ -291,12 +309,29 @@ All Phase 0 hardening items below are done.
   genuinely deferred, since ELF programs don't have windows at all today
   — that's a real, separate, bigger feature (see the "Recently completed"
   writeup for the scoping discussion).
-- Per-task memory isolation (ring 3, per-task page tables) — out of scope,
-  same boundary as everything else. Ring 0 only, by design.
+- ~~Per-task memory isolation (ring 3, per-task page tables) — out of
+  scope, same boundary as everything else. Ring 0 only, by design.~~ —
+  **superseded 2026-07-21.** The project is now deliberately pursuing a
+  ring-based privilege model; see "Recently completed" below for Phase 0
+  (ring-transition mechanism proven) and this file's intro for the
+  phase roadmap. Real per-task page-table isolation specifically for
+  Level 2 programs is a later phase (after syscall DPL + Level 1 move +
+  call gates), not yet started.
 
 ---
 
 ## Miscellaneous — parked, revisit later
+
+### `README.md` still says "Everything runs in ring 0"
+
+Flagged 2026-07-21 (user). `README.md:3` — "no ring 3. Everything runs in
+ring 0, single address space, TempleOS-style, by design." — is now stale
+given the active ring architecture work (see "Recently completed" /
+[[project-ring-architecture]] equivalent). Not updated yet on purpose:
+Phase 0's pilot ring-3 task is a throwaway proof-of-concept, not a real
+subsystem running outside ring 0, so the claim is still substantively true
+today. Update once a real phase (Level 1 move, or Level 2 programs
+actually running) makes it genuinely false, not before.
 
 ### `KERNEL_LOCATION` (`0x400000`) is independently hardcoded in three places
 
@@ -420,6 +455,30 @@ cause described above, so this bug may simply be gone as a side effect,
 not a targeted fix. Not confirmed — worth re-testing specifically rather
 than assuming it's resolved.
 
+### Cursor movement feels unnaturally fast after the `memcpy()` fix
+
+User feedback (2026-07-24), right after the hardware double-buffering +
+`rep movsl` `memcpy()` work landed: real 1:1 PS/2 tracking, no longer
+bottlenecked by the byte-at-a-time copy, reads as *too* fast/twitchy on
+real hardware compared to what feels natural. Not a bug — the driver is
+now reporting motion accurately and promptly for the first time; this is
+purely a feel/ergonomics question, the inverse problem of the slowness
+just fixed.
+
+Needs a deliberate, artificial slowdown somewhere in the mouse pipeline
+(most likely scaling down the raw PS/2 delta in `mods/dev/mouse/mouse.cpp`
+before it reaches `update_mouse_position()`/`redraw_cursor()`, rather than
+touching the now-fast present path that was just fixed) — a fixed
+divisor/multiplier on `dx`/`dy` would be the simplest first cut.
+
+- **Optional subtask**: make the slowdown factor variable rather than a
+  single hardcoded constant — a user-facing "mouse sensitivity" setting
+  (e.g. a multiplier the user can adjust, persisted somewhere and read at
+  cursor-update time) instead of one fixed value baked in. Lower priority
+  than just picking a single reasonable constant first; only worth doing
+  once there's an actual settings/config surface for a user to adjust it
+  through, which doesn't exist yet anywhere in this codebase today.
+
 ### Full-codebase performance/architecture audit (2026-07-07)
 
 A 3-way parallel audit (boot/memory/interrupts, drivers/networking,
@@ -536,9 +595,10 @@ it's revisited.
   identity-map.
 - `mods/std/string.cpp` — `strcmp()` does two full extra `strlen()` scans
   before comparing a single byte (and returns a raw pointer difference on
-  mismatch, not a proper comparison result); `memcpy`/`memset` are
+  mismatch, not a proper comparison result); `memset` is still
   byte-at-a-time with no word-sized fast path. Both are extremely hot
-  (VFS lookups, ELF symbol search, every buffer op).
+  (VFS lookups, ELF symbol search, every buffer op). `memcpy` itself is
+  fixed — see "Recently completed" below.
 
 #### Lower priority / informational
 
@@ -553,6 +613,97 @@ it's revisited.
 ---
 
 ## Recently completed
+
+### Calculator app added to Wingman — DONE (2026-07-27)
+
+New `Calculator` class (`mods/core/wingman/suite/calculator/calculator.cpp`),
+the first real (non-demo) app built on the `Button`/`Slider`/etc. widget
+set -- a basic 4-function calculator (add/subtract/multiply/divide,
+decimal point, clear, left-to-right evaluation, no operator precedence)
+in a 4x5 button grid, spawned at boot alongside `FileManager`/`WidgetDemo`.
+See `docs/DOCS.md` ("mods/core/wingman/suite/calculator/calculator.cpp")
+for the full design writeup, including a real portability bug hit and
+fixed along the way: `long long` division/modulo doesn't link in this
+kernel's `-m32`, no-libgcc build (`undefined reference to __moddi3`/
+`__divdi3`), fixed by using `long` instead. Boot-tested via QEMU mouse
+injection: multi-digit entry, an operator, and `=` all verified correct
+(`23 + 7` -> `30`), plus the divide-by-zero `Error` path and its recovery
+via `C`.
+
+### Slider widget added to Wingman — DONE (2026-07-26)
+
+New `Slider` class (`mods/core/wingman/widgets/slider.cpp`) alongside
+`Button`/`TextInput`/`Checkbox`, built to the same `Widget` base-class
+shape. Wired into `WidgetDemo` as a fourth demo row. See `docs/DOCS.md`
+("mods/core/wingman/widgets/slider.cpp") for the full design writeup,
+including why it needs a `buttons`/`pressedEdge`-aware `onMouse()` called
+on every event (not just clicks) unlike the other three widgets.
+Boot-tested via QEMU monitor mouse injection: renders correctly, drags
+correctly (thumb + fill track the cursor while held), a plain hover with
+no button held leaves the value untouched, click-elsewhere jumps to that
+position, and both ends of the min/max range clamp correctly (confirmed
+via the serial-logged `onChange` callback values).
+
+### Ring-3 syscall gate (Phase 1 of ring-based privilege model) — DONE (2026-07-21)
+
+Follow-up to Phase 0: raised the `int 0x80` syscall gate from DPL=0 to
+DPL=3 so a ring-3 task can actually reach the agreed safe-list syscalls
+(file ops, task control). The DPL flip itself was a one-line, mechanically
+self-contained change (`mods/dev/idt/irq.cpp:53`) — but research found it
+would have been a real vulnerability on its own: `sys_read`/`sys_write`
+did zero validation of their `buf`/`size` arguments, and `sys_open`
+trusted `path` as an unbounded C string. Since the syscall handler always
+runs at ring 0 once inside the trap, and CPL0 is exempt from the CPU's
+own U/S page check, simply raising the DPL would have handed any ring-3
+caller a genuine arbitrary-kernel-memory-read (`sys_write`) and -write
+(`sys_read`) primitive.
+
+Fixed with a new `is_user_accessible()` (`paging.cpp`) that replicates
+the hardware U/S check in software (checking both PDE and PTE, the same
+asymmetry Phase 0's `mark_region_user()` already had to handle), gated on
+`g_current->ring == 3` so ring-0/ring-1 callers see zero behavior change.
+Verified concretely, not just reviewed: temporarily extended the Phase 0
+pilot task with two real `int $0x80` attempts — a valid buffer succeeded
+(`[pilot] ok` on the serial log), an invalid buffer pointed at
+`page_directory` itself was rejected with no leaked bytes and no crash,
+confirmed via screenshot that the rest of the system stayed fully alive
+afterward. Both attempts were temporary verification wiring, since
+removed — `pilot_ring3_fn` is back to its bare Phase 0 counter loop; only
+the DPL flip, `is_user_accessible()`, and the ring-gated hardening stay.
+Full writeup, including two things confirmed explicitly out of scope
+(`elf_exports[]`'s bypass, the syscall fd table's missing per-task
+ownership): `docs/DOCS.md` ("mods/dev/syscall/syscall.cpp — ring-3
+syscall gate (Phase 1)").
+
+### Ring-transition mechanism (Phase 0 of ring-based privilege model) — DONE (2026-07-21)
+
+First step of a deliberate, agreed pivot away from ring-0-only: a
+three-tier model (Level 0/kernel at ring 0, Level 1/trusted software at
+ring 1, Level 2/generic programs at ring 3 with real paging-enforced
+isolation). Phase 0's scope was narrow and foundational: prove the actual
+ring-transition mechanism works end-to-end, with a single throwaway pilot
+ring-3 task, and zero behavior change to anything that existed before it.
+
+Built from scratch since none of it existed: a new GDT (`mods/dev/gdt/`,
+8 descriptors — the bootloader's original 3-entry GDT can't host a TSS
+and is left untouched, this one supersedes it via a fresh `lgdt` at the
+top of `kernel_main()`), a TSS (`ltr`'d once, `ESP0` kept current on every
+context switch), ring-aware `task_create()` (a 5-value `iret` frame for
+ring-3 targets vs. the existing 3-value one, needing zero changes to
+`irq_common_stub` — the CPU is what's ring-aware there, not the stub), and
+`mark_region_user()` (the `PAGE_USER` flag existed unused in `paging.h`
+since day one; the real work was a PDE-vs-PTE gotcha where an
+already-present page directory entry silently blocks ring-3 access even
+with the leaf PTE correctly marked).
+
+Two real bugs surfaced and fixed while building the pilot task itself —
+see `docs/DOCS.md` ("mods/dev/gdt/gdt.cpp — ring-transition GDT/TSS
+(Phase 0)") for both in full, plus the exact GDT/TSS byte layout and
+verification detail. Boot-tested in 5 incremental steps; final state
+confirmed via a temporary counter that rose steadily across repeated
+serial prints while the rest of the system (compositor, mouse/keyboard,
+hover cursor) stayed fully responsive — real evidence of preemption and
+resumption working correctly, not just "didn't crash."
 
 ### Idle task (`task0`) taken out of round-robin rotation — DONE (2026-07-21)
 
@@ -584,8 +735,9 @@ handler) used to call `mouseFunctionWindowManager()`/
 `keyboardFunctionWindowManager()` directly — real `WindowManager::composite()`
 blending and a raw `memcpy` into the live framebuffer, synchronously, with
 interrupts fully masked for the duration. One of two causes of cursor
-tearing (the other, no double-buffering/vsync at the hardware level, is a
-separate, still-open problem). Fixed by reusing the `task_block()`/
+tearing (the other, no double-buffering/vsync at the hardware level, was
+a separate problem at the time — closed 2026-07-24, see "Hardware double
+buffering" below). Fixed by reusing the `task_block()`/
 `task_wake()` primitive the task/stack reaper already established: a
 bounded ring-buffer queue of input events in `mods/core/wingman/wingman.cpp`,
 two thin push functions (`queueMouseEventForWingman()`/
@@ -613,6 +765,70 @@ changes are unrelated to DMA/stream setup) — but the system stayed fully
 responsive throughout the attempt, and the `sti` removal is sound by
 construction regardless, since the interrupt-gate constraint it existed to
 work around no longer applies once the call runs from task context.
+
+### `memcpy()` byte-at-a-time loop (`mods/std/string.cpp`) — DONE (2026-07-24)
+
+Found immediately after landing hardware double buffering (below): the
+double-buffering design requires every present, including a plain cursor
+move, to copy a full ~3MB frame via `memcpy()` — and this project's
+`memcpy()` was a plain `for` loop doing one `unsigned char` store per
+iteration (already flagged as a known hot path in "Boot/memory
+performance" above, but not yet fixed). At PS/2's packet rate that's tens
+of megabytes a second through the slowest possible copy shape, and the
+user confirmed on real hardware it made cursor movement "really freaking
+slow" — bad enough to be worth reverting double buffering entirely, before
+this fix instead addressed the actual bottleneck.
+
+Fixed with `rep movsl` inline assembly: copies `size / 4` words via the
+x86 string-copy instruction (no compiled loop-branch overhead per
+iteration, unlike the byte loop), then finishes any 0-3 trailing bytes
+with the original byte-at-a-time copy. `cld` first to guarantee the
+forward direction regardless of `DF`'s state on entry, since nothing in
+this freestanding kernel can be assumed to uphold the normal ABI
+guarantee that `DF` is always clear. No SIMD available (`-mno-sse
+-mno-sse2 -mno-mmx`), so this is the fastest option without hand-rolling
+a wider software copy. `memset`/`strcmp` in the same file are still
+byte-at-a-time — separate, not fixed here (see "Boot/memory performance"
+above).
+
+Boot-tested: full desktop render pixel-identical (fonts, RAMFS copy,
+every other `memcpy()` call site in the boot path all still correct),
+and cursor movement through the double-buffered present path re-verified
+artifact-free. Real-hardware throughput improvement itself isn't
+provable headlessly (same limitation as double buffering's tear-proof,
+above) — architecturally this cuts the ~3MB copy from ~3.1M single-byte
+stores (each with loop overhead) to ~780K hardware string-op iterations.
+
+### Hardware double buffering (cursor tearing/flicker, the hardware half) — DONE (2026-07-24)
+
+The other cause of cursor tearing flagged as still-open in the IRQ→task
+item above: no double-buffering/vsync at the framebuffer level, so every
+present wrote directly into the live, currently-displayed VRAM. Fixed via
+the BGA/VBE `dispi` interface's page-flipping registers
+(`VBE_DISPI_INDEX_VIRT_HEIGHT`/`_X_OFFSET`/`_Y_OFFSET`, defined in `vbe.h`
+but never used before this): VRAM doubled to two regions, `vbe_flip()`
+atomically switches which region is displayed via a single `Y_OFFSET`
+write, and every present (`wingman.cpp`'s `redraw_screen()`) now composites
+a full frame into the back region before flipping — real page-flipping
+means a partial patch can't be safely flipped into view. This supersedes
+the hardware-blit half of "Dirty-rect compositing" below (the
+`Rect`-driven `composite()` optimization itself is unaffected — only
+`redraw_screen_rect()`, which is now a thin full-frame wrapper). Also
+fixed the panic screen (`isr.cpp`'s `draw_panic_screen()`) to force
+`Y_OFFSET` back to 0 as its first line, since a panic can now fire while
+the non-zero region is displayed. See `docs/DOCS.md` ("mods/dev/vbe/
+vbe.cpp — hardware double buffering") for the full design writeup,
+including the QEMU register behavior this was verified against.
+
+Boot-tested incrementally (VRAM doubling alone, then the flip mechanism
+in isolation via a temporary register-readback self-test, then wired
+through `wingman.cpp`/`cursor.cpp`) and end-to-end: full desktop render,
+click/focus, window drag, keyboard input, and MessageBox interaction all
+confirmed working through the new flip-based present path; the panic
+screen confirmed visible (not blank) when triggered after at least one
+flip. Genuine tear-elimination is a real-time scanout property no static
+screenshot or serial log can prove headlessly — see the DOCS.md writeup's
+verification section for what is and isn't provable this way.
 
 ### Dirty-rect compositing — DONE (2026-07-16)
 

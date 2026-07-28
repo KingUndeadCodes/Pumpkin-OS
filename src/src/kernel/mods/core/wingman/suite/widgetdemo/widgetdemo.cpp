@@ -42,7 +42,7 @@ void WidgetDemo::utility_draw_string(unsigned x, unsigned y, const char* str, un
 WidgetDemo::WidgetDemo(WindowManager* wm) {
     this->wm = wm;
     this->width = 380;
-    this->height = 250;
+    this->height = 290;
     this->offsetX = 500;
     this->offsetY = 120;
     this->padding = 10;
@@ -75,6 +75,15 @@ WidgetDemo::WidgetDemo(WindowManager* wm) {
     this->toggle->x = 170;
     this->toggle->y = 193;
 
+    this->slider = new Slider(0.0f, 100.0f, 50.0f, [](float value, void* userdata) {
+        (void)userdata;
+        char msg[48];
+        sprintf(msg, "[WidgetDemo] Slider value: %d\n", (int)value);
+        serial_write_string(msg);
+    }, nullptr);
+    this->slider->x = 170;
+    this->slider->y = 233;
+
     this->window = new Window(width, height, offsetX, offsetY, "Widget Demo");
     this->window->setKeyboardDelegate(this);
     this->window->setMouseDelegate(this);
@@ -91,6 +100,7 @@ WidgetDemo::~WidgetDemo() {
     delete this->textInput;
     delete this->checkbox;
     delete this->toggle;
+    delete this->slider;
     if (this->window != NULL) {
         delete this->window;
         this->window = NULL;
@@ -133,10 +143,12 @@ void WidgetDemo::draw_widgets(void) {
     utility_draw_string(padding, 113, "Text:", COLOR_W, 2);
     utility_draw_string(padding, 159, "Checkbox:", COLOR_W, 2);
     utility_draw_string(padding, 199, "Toggle:", COLOR_W, 2);
+    utility_draw_string(padding, 239, "Slider:", COLOR_W, 2);
     this->button->draw(this->window->surface, this->thickness);
     this->textInput->draw(this->window->surface, this->thickness);
     this->checkbox->draw(this->window->surface, this->thickness);
     this->toggle->draw(this->window->surface, this->thickness);
+    this->slider->draw(this->window->surface, this->thickness);
 };
 
 bool WidgetDemo::onKeyboard(char key, bool shift, bool meta, unsigned char scancode) {
@@ -150,12 +162,17 @@ bool WidgetDemo::onKeyboard(char key, bool shift, bool meta, unsigned char scanc
 bool WidgetDemo::onMouseEvent(int x, int y, int dx, int dy, unsigned char buttons, unsigned char pressedEdge) {
     (void)dx;
     (void)dy;
-    (void)buttons;
     // See docs/DOCS.md ("mods/core/wingman/suite/widgetdemo/widgetdemo.cpp" section) for the hover-cursor rationale.
-    bool hoveringClickable = this->button->contains(x, y) || this->checkbox->contains(x, y) || this->toggle->contains(x, y);
+    bool hoveringClickable = this->button->contains(x, y) || this->checkbox->contains(x, y) || this->toggle->contains(x, y) || this->slider->contains(x, y);
     set_cursor_id(hoveringClickable ? 2 : 0);
 
-    if (!(pressedEdge & 1)) return false;
+    // See docs/DOCS.md ("mods/core/wingman/widgets/slider.cpp" section).
+    bool sliderChanged = this->slider->onMouse(x, y, buttons, pressedEdge);
+
+    if (!(pressedEdge & 1)) {
+        if (sliderChanged) this->redraw();
+        return sliderChanged;
+    }
 
     // Click inside the field focuses it; click anywhere else in the
     // window unfocuses it, same as any normal text field.
