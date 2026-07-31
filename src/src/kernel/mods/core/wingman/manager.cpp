@@ -2,6 +2,11 @@
 #include "./headers/types.h"
 
 #include "../../dev/serial/serial.h"
+#include "../../dev/pit/pit.h"
+
+// Height of the draggable band across a window's top edge. See docs/DOCS.md ("window dragging").
+#define WINGMAN_DRAG_HANDLE_HEIGHT 30
+#define WINGMAN_DRAG_REDRAW_INTERVAL_MS 33
 
 color_t blend(color_t src, color_t dst) {
     uint8_t srcA = COLOR_A(src);
@@ -50,6 +55,12 @@ WindowManager::WindowManager(/* Constraints constraints, Environment environment
     this->zOrder = (window_ref_t*)malloc(sizeof(window_ref_t) * this->maxWindowCount);
     this->zOrderCount = 0;
     this->focusedWindow = nullptr;
+    this->lastButtons = 0;
+    this->draggingWindow = WINGMAN_INVALID_WINDOW;
+    this->dragOffsetX = 0;
+    this->dragOffsetY = 0;
+    this->lastDragRedrawMs = 0;
+    this->dragLastRect = { 0, 0, 0, 0 };
     if (this->windows != nullptr) {
         for (uint32_t i = 0; i < this->maxWindowCount; i++) {
             this->windows[i] = nullptr;
@@ -194,4 +205,115 @@ void WindowManager::composite(Rect dirty) {
 void WindowManager::composite() {
     Rect full = { 0, 0, (int)this->constraints.screenXSizePx, (int)this->constraints.screenYSizePx };
     composite(full);
+}
+
+// Cached before the call, not re-read after: handleKeyboard() can delete the
+// focused window (e.g. MessageBox's Enter-to-dismiss), which would leave
+// focusedWindow null and a re-read here a NULL deref.
+bool WindowManager::handleKeyboardEvent(char key, bool shift, bool meta, unsigned char scancode, Rect* dirty) {
+    Window* focused = this->focusedWindow;
+    if (focused == nullptr) return false;
+    Rect focusedRect = { focused->offsetX, focused->offsetY, focused->width, focused->height };
+    if (!this->keyboard_handler(key, shift, meta, scancode)) return false;
+    this->composite(focusedRect);
+    if (dirty != nullptr) *dirty = focusedRect;
+    return true;
+}
+
+bool WindowManager::handleMouseEvent(int x, int y, int dx, int dy, unsigned char buttons, Rect* dirty) {
+    const unsigned char pressedEdge = buttons & (unsigned char)~this->lastButtons;
+    this->lastButtons = buttons;
+    bool needsRedraw = false;
+    // Accumulates the minimal region that actually changed this event, unioned in as work is found below.
+    Rect dirtyRect = { 0, 0, 0, 0 };
+    bool hasDirty = false;
+    auto markDirty = [&](Rect r) {
+        dirtyRect = hasDirty ? rect_union(dirtyRect, r) : r;
+        hasDirty = true;
+        needsRedraw = true;
+    };
+    // Clicking a background window raises it to focus.
+    if (pressedEdge & 1) {
+        window_ref_t hitRef = this->windowAt(x, y);
+        Window* hitWindow = this->get(hitRef);
+        if (hitWindow != nullptr && hitWindow != this->focusedWindow) {
+            this->focus(hitRef);
+            markDirty({ hitWindow->offsetX, hitWindow->offsetY, hitWindow->width, hitWindow->height });
+        }
+        // The close/minimize/maximize trio must not also start a window drag.
+        bool inCloseButtonZone = hitWindow != nullptr && (x - hitWindow->offsetX) < hitWindow->titleBar.closeButtonZoneWidth();
+        if (hitWindow != nullptr && !inCloseButtonZone && y - hitWindow->offsetY < WINGMAN_DRAG_HANDLE_HEIGHT) {
+            this->draggingWindow = hitRef;
+            this->dragOffsetX = x - hitWindow->offsetX;
+            this->dragOffsetY = y - hitWindow->offsetY;
+            this->dragLastRect = { hitWindow->offsetX, hitWindow->offsetY, hitWindow->width, hitWindow->height };
+        }
+    }
+    const bool wasDragging = (this->draggingWindow != WINGMAN_INVALID_WINDOW);
+    // Captured before the clear below so the drag-end block can still
+    // reach the window that was just released.
+    Window* draggedWindowBeforeRelease = wasDragging ? this->get(this->draggingWindow) : nullptr;
+    if (!(buttons & 1)) this->draggingWindow = WINGMAN_INVALID_WINDOW;
+    // See docs/DOCS.md ("mods/core/wingman/wingman.cpp — window dragging") for
+    // why a drag ending forces a redraw regardless of the throttle below.
+    if (wasDragging && this->draggingWindow == WINGMAN_INVALID_WINDOW && draggedWindowBeforeRelease != nullptr) {
+        Window* w = draggedWindowBeforeRelease;
+        Rect currentRect = { w->offsetX, w->offsetY, w->width, w->height };
+        markDirty(rect_union(this->dragLastRect, currentRect));
+    }
+    if (this->draggingWindow != WINGMAN_INVALID_WINDOW) {
+        Window* dragged = this->get(this->draggingWindow);
+        if (dragged != nullptr) {
+            int newX = x - this->dragOffsetX;
+            int newY = y - this->dragOffsetY;
+            // See docs/DOCS.md ("mods/core/wingman/wingman.cpp — window
+            // dragging") for why this clamps to keep the whole window rect
+            // on screen, not just the point under the cursor.
+            int maxX = this->screen->getWidth() - dragged->width;
+            int maxY = this->screen->getHeight() - dragged->height;
+            if (maxX < 0) maxX = 0;
+            if (maxY < 0) maxY = 0;
+            if (newX < 0) newX = 0;
+            if (newX > maxX) newX = maxX;
+            if (newY < 0) newY = 0;
+            if (newY > maxY) newY = maxY;
+            if (newX != dragged->offsetX || newY != dragged->offsetY) {
+                dragged->offsetX = newX;
+                dragged->offsetY = newY;
+                // See docs/DOCS.md ("mods/core/wingman/wingman.cpp — window
+                // dragging") for why the redraw itself is throttled here.
+                uint64_t now = timer_ticks;
+                if (now - this->lastDragRedrawMs >= WINGMAN_DRAG_REDRAW_INTERVAL_MS) {
+                    this->lastDragRedrawMs = now;
+                    Rect currentRect = { newX, newY, dragged->width, dragged->height };
+                    markDirty(rect_union(this->dragLastRect, currentRect));
+                    this->dragLastRect = currentRect;
+                }
+            }
+        }
+    } else {
+        // handleMouse() itself intercepts clicks on the title bar's close button before this reaches the delegate.
+        Window* focused = this->focusedWindow;
+        if (focused != nullptr) {
+            const int rectX = focused->offsetX;
+            const int rectY = focused->offsetY;
+            const int width = focused->width;
+            const int height = focused->height;
+            if (x >= rectX && x <= (rectX + width)) {
+                // Check vertical boundaries (assuming screen coordinates where Y goes down)
+                if (y >= rectY && y <= (rectY + height)) {
+                    const int _x = x - rectX;
+                    const int _y = y - rectY;
+                    if (focused->handleMouse(_x, _y, dx, dy, buttons, pressedEdge)) {
+                        markDirty({ rectX, rectY, width, height });
+                    }
+                }
+            }
+        }
+    }
+    if (needsRedraw) {
+        this->composite(dirtyRect);
+        if (dirty != nullptr) *dirty = dirtyRect;
+    }
+    return needsRedraw;
 }

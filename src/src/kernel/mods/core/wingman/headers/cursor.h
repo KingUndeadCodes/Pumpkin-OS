@@ -6,7 +6,7 @@
 #include "./wingman.h"
 #include "./manager.h"
 
-// See docs/DOCS.md ("mods/dev/vbe/font.h / mods/core/wingman/headers/icons.h / cursor.h" package-layout section).
+// See docs/DOCS.md ("mods/dev/vbe/font.h / mods/core/wingman/data/icons.h / cursor.h" package-layout section).
 //
 // 0 = no color
 // 1 = black

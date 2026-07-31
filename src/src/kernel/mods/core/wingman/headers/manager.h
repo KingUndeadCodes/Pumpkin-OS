@@ -36,6 +36,13 @@ class WindowManager {
         // Back-to-front paint/hit-test order -- last entry is topmost, separate from window slot indices.
         window_ref_t* zOrder;
         uint32_t zOrderCount;
+        // Interaction state -- previously scattered as file-static globals in wingman.cpp.
+        unsigned char lastButtons;
+        window_ref_t draggingWindow;
+        int dragOffsetX;
+        int dragOffsetY;
+        uint64_t lastDragRedrawMs;
+        Rect dragLastRect;
     public:
         Window* focusedWindow;
         bool keyboard_handler(char key, bool shift, bool meta, unsigned char scancode);
@@ -54,6 +61,12 @@ class WindowManager {
         void clearScreen();
         void clearScreen(Rect dirty);
         uint32_t count();
+        // Returns true if anything changed and needs presenting to hardware (and
+        // writes the affected region into *dirty); false means only the cursor
+        // sprite may need to move. Does not touch the real framebuffer -- callers
+        // still own presenting *dirty via redraw_screen_rect().
+        bool handleMouseEvent(int x, int y, int dx, int dy, unsigned char buttons, Rect* dirty);
+        bool handleKeyboardEvent(char key, bool shift, bool meta, unsigned char scancode, Rect* dirty);
         void* operator new(size_t size) { return malloc(size); }
         void operator delete(void* p) { free(p); }
 };

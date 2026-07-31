@@ -4,8 +4,7 @@
 #define COLOR_BG 0xFF403a39
 #define COLOR_DIVIDER 0xFF55504f
 
-MessageBox::MessageBox(WindowManager* wm, enum MessageBoxType dialogBoxType, const char* message, int icon = -1) {
-    this->wm = wm;
+MessageBox::MessageBox(WindowManager* wm, enum MessageBoxType dialogBoxType, const char* message, int icon = -1) : WingmanApp(wm) {
     this->dialogBoxType = dialogBoxType;
     this->icon = icon;
     this->width = 500;
@@ -49,15 +48,8 @@ MessageBox::MessageBox(WindowManager* wm, enum MessageBoxType dialogBoxType, con
         18, /*contentY */
         /*hasIcon=*/true, /*iconId=*/iconType, /*iconScale=*/1, /*textScale=*/3);
     this->window->setTitle(titleText);
-    this->window->setOnCloseRequested(&MessageBox::closeTrampoline, this);
-    this->window->setKeyboardDelegate(this);
-    this->window->setMouseDelegate(this);
     this->redraw(0b11101100);
-    this->ref = WINGMAN_INVALID_WINDOW;
-    if (this->wm != NULL) {
-        this->ref = this->wm->add(this->window);
-        if (this->ref != WINGMAN_INVALID_WINDOW) this->wm->focus(this->ref);
-    }
+    this->registerWindow();
 };
 
 // Splits buttonRowWidth evenly across however many buttons exist, re-run whenever the count changes.
@@ -186,20 +178,6 @@ void MessageBox::draw_buttons(void) {
     }
 };
 
-// Removes the window from the WindowManager, then frees this instance -- callers must not touch `this` after.
-void MessageBox::dismiss(void) {
-    if (this->wm != NULL && this->ref != WINGMAN_INVALID_WINDOW) {
-        this->wm->remove(this->ref);
-    }
-    this->window = NULL;
-    delete this;
-};
-
-// Registered with Window::setOnCloseRequested() so the title bar's close button reaches dismiss().
-void MessageBox::closeTrampoline(void* userdata) {
-    ((MessageBox*)userdata)->dismiss();
-};
-
 bool MessageBox::onKeyboard(char key, bool shift, bool meta, unsigned char scancode) {
     (void)shift;
     (void)meta;
@@ -208,7 +186,7 @@ bool MessageBox::onKeyboard(char key, bool shift, bool meta, unsigned char scanc
         if (this->buttonCount > 0 && this->buttons[0]->onClick != NULL) {
             this->buttons[0]->onClick(this->buttons[0]->userdata);
         }
-        this->dismiss();
+        this->close();
         return true;
     }
     return false;
@@ -229,7 +207,7 @@ bool MessageBox::onMouseEvent(int x, int y, int dx, int dy, unsigned char button
     set_cursor_id(hovered != NULL ? 2 : 0);
     if (!(pressedEdge & 1) || hovered == NULL) return false;
     if (hovered->onClick != NULL) hovered->onClick(hovered->userdata);
-    this->dismiss();
+    this->close();
     return true;
 };
 
@@ -238,10 +216,6 @@ MessageBox::~MessageBox() {
     if (this->buttons != NULL) {
         for (int i = 0; i < this->buttonCount; i++) delete this->buttons[i];
         free(this->buttons);
-    }
-    if (this->window != NULL) {
-        delete this->window;
-        this->window = NULL;
     }
     return;
 };

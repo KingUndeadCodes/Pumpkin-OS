@@ -5,8 +5,7 @@
 
 #define WIDGETDEMO_TITLEBAR_HEIGHT 40
 
-WidgetDemo::WidgetDemo(WindowManager* wm) {
-    this->wm = wm;
+WidgetDemo::WidgetDemo(WindowManager* wm) : WingmanApp(wm) {
     this->width = 380;
     this->height = 290;
     this->offsetX = 500;
@@ -34,15 +33,8 @@ WidgetDemo::WidgetDemo(WindowManager* wm) {
     }, nullptr, 170, 233);
     this->window = new Window(width, height, offsetX, offsetY, "Widget Demo");
     this->window->titleBar.configure(WIDGETDEMO_TITLEBAR_HEIGHT, this->thickness, /*hasCloseButton=*/true, /*contentY=*/12);
-    this->window->setOnCloseRequested(&WidgetDemo::closeTrampoline, this);
-    this->window->setKeyboardDelegate(this);
-    this->window->setMouseDelegate(this);
     this->redraw();
-    this->ref = WINGMAN_INVALID_WINDOW;
-    if (this->wm != NULL) {
-        this->ref = this->wm->add(this->window);
-        if (this->ref != WINGMAN_INVALID_WINDOW) this->wm->focus(this->ref);
-    }
+    this->registerWindow();
 };
 
 WidgetDemo::~WidgetDemo() {
@@ -51,10 +43,6 @@ WidgetDemo::~WidgetDemo() {
     delete this->checkbox;
     delete this->toggle;
     delete this->slider;
-    if (this->window != NULL) {
-        delete this->window;
-        this->window = NULL;
-    }
 };
 
 void WidgetDemo::redraw(void) {
@@ -76,20 +64,6 @@ void WidgetDemo::draw_background(void) {
     for (int y = thickness; y < height - thickness; y++) {
         for (int x = thickness; x < width - thickness; x++) surface_draw_pixel(this->window->surface, x, y, COLOR_BG);
     }
-};
-
-// Removes the window from the WindowManager, then frees this instance -- callers must not touch `this` after.
-void WidgetDemo::closeWindow(void) {
-    if (this->wm != NULL && this->ref != WINGMAN_INVALID_WINDOW) {
-        this->wm->remove(this->ref);
-    }
-    this->window = NULL;
-    delete this;
-};
-
-// Registered with Window::setOnCloseRequested() so the title bar's close button reaches closeWindow().
-void WidgetDemo::closeTrampoline(void* userdata) {
-    ((WidgetDemo*)userdata)->closeWindow();
 };
 
 void WidgetDemo::draw_widgets(void) {

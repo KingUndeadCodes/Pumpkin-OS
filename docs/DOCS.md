@@ -164,6 +164,195 @@ override capability nothing exercises.
 
 ---
 
+## `mods/core/wingman/wingman.cpp` — keyboard-path NULL deref, and the Initialize-button lambda
+
+Found while digging into an unreproducible visual glitch a user hit in a
+real (non-headless) QEMU session -- neither confirmed as that glitch's
+cause (leading theory is a QEMU host-side display artifact, since headless
+automated testing couldn't reproduce it across focus-change, drag-away,
+and drag-the-window-itself scenarios), but both real bugs found along the
+way.
+
+**`keyboardFunctionWindowManager()` used to re-read `wm->focusedWindow`
+*after* calling `wm->keyboard_handler()`.** Pressing Enter while
+`MessageBox` is focused runs `onKeyboard()` -> `dismiss()` ->
+`wm->remove(ref)`, which deletes the `Window` and correctly nulls
+`wm->focusedWindow` when it matches (`WindowManager::remove()`).
+`keyboard_handler()` still returns `true` (the keystroke was consumed).
+The re-read then dereferenced a now-null pointer for `dirty`'s rect --
+a crash. The mouse path already handles this correctly
+(`mouseFunctionWindowManager()`'s non-drag branch caches
+`rectX`/`rectY`/`width`/`height` into locals *before* calling
+`handleMouse()`), the keyboard path just never got the same treatment.
+Fixed by caching the focused window's rect before calling
+`keyboard_handler()`, mirroring the mouse path exactly.
+
+**The boot-time "Initialize" button's callback had the wrong signature.**
+`ButtonCallback` is `void(*)(void* userdata)`, but the lambda passed to
+`addButton()` was `[](void) { ... }` -- zero parameters. A non-capturing
+lambda only converts to a function pointer matching its own parameter
+list, so this was a genuine type mismatch; it only compiled because
+`CFLAGS` carries both `-fpermissive` and `-w`. Calling a zero-arg-compiled
+function with one argument passed happens not to crash under cdecl (the
+caller pushes the extra arg, the callee's prologue never reads it, the
+caller cleans the stack after), which is presumably why nothing was
+visibly broken by it -- but it was undefined behavior, not a guarantee.
+Fixed to match every other button/checkbox callback in the codebase:
+`[](void* userdata) { (void)userdata; ... }`.
+
+Boot-tested: with `MessageBox` explicitly focused (clicking its body,
+since `WidgetDemo` -- created last in `initalizeWindowSystem()` -- holds
+focus by default at boot), pressing Enter now dismisses it cleanly with
+no crash/panic screen, and the serial log shows both
+`Initializing AC97 Audio Codec...` and `chorus: initialized DMA PCM
+buffer.` -- confirming the Initialize callback (exercising the second fix)
+ran correctly, followed by `dismiss()` deleting the window and the
+keyboard-path recomposite completing without dereferencing the
+now-dangling reference (exercising the first fix), in a single test.
+
+---
+
+## `mods/core/wingman/headers/app.h` — common `WingmanApp` base class
+
+`FileManager`, `MessageBox`, `WidgetDemo` each independently hand-wrote
+the same boilerplate for "an app that owns a `Window`": identical
+`WindowManager* wm` / `window_ref_t ref` / `Window* window` members, an
+identical close-then-`delete this` method paired with an identical
+static trampoline, identical tail-of-constructor wiring
+(`setOnCloseRequested`/`setKeyboardDelegate`/`setMouseDelegate`/
+`wm->add()`/`wm->focus()`), and identical `malloc`/`free`-backed
+`operator new`/`operator delete` overloads (needed since this is a
+freestanding kernel with no global `operator new` -- confirmed no such
+override exists anywhere in the tree). Same bar already held elsewhere
+in this codebase for "not premature": three real, working call sites
+needed exactly this, unlike e.g. the dead `WidgetType` enum. `Widget`
+(`headers/widgets/widget.h`) is the direct precedent already in this
+codebase for the same move, applied to UI controls instead of apps.
+
+`WingmanApp` is header-only (like `Widget`), no matching `.cpp`, so no
+Makefile changes. It inherits `KeyboardDelegate`/`MouseDelegate` itself
+-- collapsing what used to be `class X : public KeyboardDelegate, public
+MouseDelegate` repeated three times into `class X : public WingmanApp`
+once. Bonus fix: `explorer.h`'s old inheritance was `class FileManager :
+public KeyboardDelegate, MouseDelegate` -- the second base had no access
+specifier, defaulting to **private** for a `class` (a real inconsistency
+vs. `MessageBox`/`WidgetDemo`'s `public` inheritance of the same
+interface). The single shared base fixes this for free.
+
+`registerWindow()` (protected, called once as the last line of each
+derived constructor, after `window` is fully built/configured) folds in
+`setOnCloseRequested`/`setKeyboardDelegate`/`setMouseDelegate` *and* the
+`wm->add()`/`wm->focus()` tail -- all identical single-line calls across
+all three apps. Safe regardless of each app's slightly different internal
+ordering before this change (`FileManager` called these slightly later
+than `MessageBox`/`WidgetDemo` did) because nothing renders until the one
+shared `wm->composite()` call at the end of `initalizeWindowSystem()` --
+ordering among these calls has no observable effect before then.
+
+`close()`/`closeTrampoline()`/`registerWindow()` are `protected` --
+nothing outside the class hierarchy called `closeWindow`/`dismiss`/
+`closeTrampoline` by name before this change. `~WingmanApp()` is
+`virtual` and `public` (matching `Widget`'s own `virtual ~Widget() {}`),
+deleting `this->window` if non-null -- required for `close()`'s
+`delete this` (invoked through a base pointer) to correctly run each
+derived class's real destructor first. `MessageBox`'s two internal
+self-close call sites (`onKeyboard()` on Enter, `onMouseEvent()` on a
+button click) were renamed from `this->dismiss()` to `this->close()`,
+the only behavioral rename anywhere -- `dismiss()` stops existing as a
+distinct name.
+
+**Deliberately out of scope**: `width`/`height`/`offsetX`/`offsetY`/
+`padding`/`thickness` are also duplicated ints across all three, but
+they're read directly (`this->width`, not `this->window->width`)
+throughout each app's own drawing code -- unifying that would mean
+touching every `draw_border()`/`draw_background()`/etc., a much bigger
+and riskier change than killing the wm/ref/window/close/registration
+boilerplate. Not done here.
+
+Boot-tested: visual output pixel-identical to the pre-refactor baseline;
+closed all three windows in turn via their title-bar close buttons,
+each disappearing cleanly with the other two unaffected (exercising
+`close()`/`closeTrampoline()`/the base destructor's window deletion for
+all three derived classes); re-verified `MessageBox`'s Enter-to-dismiss
+path specifically, since it's the exact scenario the keyboard NULL-deref
+fix above targets -- confirmed clean dismissal, no panic screen, and the
+serial log showing both `Initializing AC97 Audio Codec...` and
+`chorus: initialized DMA PCM buffer.`, same as before the `dismiss()` ->
+`close()` rename. No serial errors anywhere in the run.
+
+---
+
+## `mods/core/wingman/wingman.cpp` / `manager.{h,cpp}` — interaction state moved into `WindowManager`
+
+`wingman.cpp` used to own drag state (`draggingWindow`, `dragOffsetX`/
+`dragOffsetY`, `lastDragRedrawMs`, `dragLastRect`) and click-processing
+state (`lastButtons`) as file-static globals, while focus and z-order --
+the same category of "how does the window manager respond to
+interaction" state -- already lived as real `WindowManager` members. No
+architectural reason for the split; drag support was evidently added
+later into whichever file was already open. `mouseFunctionWindowManager()`
+and `keyboardFunctionWindowManager()`, the two full dispatch functions
+containing the actual interaction logic (focus-click routing, drag
+lifecycle, delegate dispatch, dirty-rect accumulation), moved onto
+`WindowManager` too, as `handleMouseEvent()`/`handleKeyboardEvent()`.
+`wingman.cpp` is now exactly two things: the input-queue/worker-task
+plumbing that decouples IRQ context from processing, and the boot-time
+wiring (`initalizeWindowSystem()`) that launches the starting apps.
+
+**What deliberately did not move, and why:**
+- `redraw_screen()`/`redraw_screen_rect()` stay in `wingman.cpp`. They're
+  hardware-presentation glue (`vbe_get_back_buffer()`, `vbe_flip()`,
+  `draw_cursor_into_buffer()`) -- a different concern from compositing
+  into `WindowManager`'s own offscreen `Surface`. Confirmed via grep that
+  `redraw_screen()` is also called from `cursor.cpp` (inside
+  `redraw_cursor()`) and is part of the public `headers/wingman.h` API,
+  so it needs to keep external linkage from this TU regardless.
+- `redraw_cursor(WindowManager* wm, int x, int y)` and `set_cursor_id()`
+  stay as free-function calls from `wingman.cpp`'s thin wrapper, matching
+  the *existing* precedent already in this codebase: `redraw_cursor()`
+  already took `WindowManager*` as a parameter rather than being a
+  method, and already internally called into the hardware-presentation
+  layer. Not disturbing that boundary.
+- `stdin_is_reading()`'s check stays in `wingman.cpp` -- it's a policy
+  question of whether an event should reach Wingman at all (a task owns
+  stdin right now), not a `WindowManager` concern. Keeping it out avoids
+  giving `WindowManager` a new dependency on `mods/dev/syscall/syscall.h`
+  for something unrelated to window management.
+- The static `WindowManager* wm` pointer, `bufferSize`, and the whole
+  input-queue/worker-task block are untouched -- exactly the boot-wiring
+  and queue-plumbing the refactor is meant to leave behind.
+- `fileManager`'s own dangling-pointer-on-close problem is a separate,
+  not-yet-addressed item (a registry would replace the bespoke global) --
+  out of scope here.
+
+`handleMouseEvent()`/`handleKeyboardEvent()` return `bool` (did anything
+change) and write the affected region into an out-parameter `Rect*
+dirty` rather than presenting to hardware themselves -- `WindowManager`
+stays hardware-agnostic (it only ever touches its own `Surface`), and
+`wingman.cpp`'s thin wrapper functions own deciding what to do with a
+dirty region (call `redraw_screen_rect()`) versus no change (call
+`redraw_cursor()` to keep just the sprite in sync). `handleKeyboardEvent()`
+wraps the existing `keyboard_handler()` method unchanged, adding the
+dirty-rect-cached-before-the-call fix from a recent session (caching
+`focusedWindow`'s rect before calling `keyboard_handler()`, since
+handling the key can delete the focused window) -- this fix now lives on
+`WindowManager` instead of the free function it used to guard.
+
+Boot-tested: pixel-identical to the pre-refactor baseline; dragged
+`WidgetDemo` to a new position and confirmed smooth movement with no
+stale pixels left behind (the relocated throttled-redraw/union-rect
+logic); clicked between overlapping windows and confirmed correct
+raise-to-front/z-order behavior (relocated `windowAt()`/`focus()`
+logic); closed a window via its title-bar button with no crash and the
+others unaffected; re-ran the `MessageBox` Enter-to-dismiss regression
+specifically (focus it, press Enter) and confirmed clean dismissal with
+the same `Initializing AC97 Audio Codec...` / `chorus: initialized DMA
+PCM buffer.` serial output as before, now exercised through
+`WindowManager::handleKeyboardEvent()` instead of the free function it
+replaced. No serial errors anywhere in the run.
+
+---
+
 ## `mods/core/wingman/headers/widgets/widget.h` — common `Widget` base class
 
 Extracted once there were three real widgets (`Button`, `TextInput`,
@@ -196,7 +385,7 @@ concrete type it has, if it needs to call a widget-specific method.
 
 ---
 
-## `mods/core/wingman/suite/widgetdemo/widgetdemo.cpp` — `WidgetDemo` window
+## `mods/core/wingman/apps/widgetdemo/widgetdemo.cpp` — `WidgetDemo` window
 
 A dedicated window rather than folding this into `MessageBox`, since
 `MessageBox` is semantically an alert (notify, dismiss) and this is a
@@ -244,7 +433,7 @@ Wired into `initalizeWindowSystem()` (`wingman.cpp`) as a second
 always-open window alongside the file explorer and the AC97 `MessageBox`,
 positioned at `(500, 120)` so it doesn't sit on top of either at boot.
 
-### `mods/core/wingman/suite/widgetdemo/widgetdemo.cpp` — click redraw
+### `mods/core/wingman/apps/widgetdemo/widgetdemo.cpp` — click redraw
 
 `onMouseEvent()` used to call `draw_widgets()` alone on every click
 anywhere in the window (not just on the button). `draw_widgets()` draws
@@ -263,7 +452,7 @@ swaps between two different colors), the visible symptom isn't smearing
 between colors -- it's the edge alpha compounding toward full opacity
 with each pass, i.e. the labels visibly got bolder with every single
 click anywhere in the window, not just on the button. Same root cause as
-`mods/core/wingman/suite/explorer/explorer.cpp`'s "selection-highlight
+`mods/core/wingman/apps/explorer/explorer.cpp`'s "selection-highlight
 redraw" (below), different symptom because the color didn't change
 between redraws there.
 
@@ -304,7 +493,7 @@ one self-contained call here, while `contains()` stays exposed separately
 too for a caller that wants its own hover/hit-test logic without
 triggering a toggle.
 
-Now wired into `mods/core/wingman/suite/widgetdemo/widgetdemo.cpp`, and
+Now wired into `mods/core/wingman/apps/widgetdemo/widgetdemo.cpp`, and
 retrofitted onto the `Widget` base class (see that section) once it gave
 a third data point to design the shared interface from.
 
@@ -450,7 +639,7 @@ circular thumb -- same "square + radius == half the side" trick
 `Checkbox`'s toggle-style thumb already uses to get a true circle out of
 `draw_rounded_rect_fill()` without a dedicated circle primitive.
 
-Wired into `mods/core/wingman/suite/widgetdemo/widgetdemo.cpp` (a 0-100
+Wired into `mods/core/wingman/apps/widgetdemo/widgetdemo.cpp` (a 0-100
 demo slider whose `onChange` logs the new value to serial) as the fourth
 widget row; `WidgetDemo`'s window grew from 250px to 290px tall to fit
 it. Boot-tested via QEMU monitor `mouse_move`/`mouse_button` plus
@@ -596,7 +785,7 @@ kind of "someone else owns input right now" situation.
 
 ---
 
-## `mods/core/wingman/suite/explorer/explorer.cpp` — hover cursor
+## `mods/core/wingman/apps/explorer/explorer.cpp` — hover cursor
 
 Added (2026-07-21) so hovering a file switches the cursor to the same
 hand sprite (`cursor_id = 2`) `WidgetDemo`'s buttons and `MessageBox`'s
@@ -618,7 +807,7 @@ need, just the same real computation now genuinely called from two sites.
 (cheap enough per-event that caching across the two calls isn't worth the
 complexity).
 
-## `mods/core/wingman/suite/explorer/explorer.cpp` — running-ELF tracking
+## `mods/core/wingman/apps/explorer/explorer.cpp` — running-ELF tracking
 
 Forbids re-launching a `.elf` file that's already running, at the
 explorer/UI level rather than in the kernel -- `elf.cpp` deliberately
@@ -646,7 +835,7 @@ reclaimed, so this tracking will need revisiting whenever that lands.
 
 ---
 
-## `mods/core/wingman/suite/explorer/explorer.cpp` — selection-highlight redraw
+## `mods/core/wingman/apps/explorer/explorer.cpp` — selection-highlight redraw
 
 `FileManager::redraw()` takes a bitmask (`0b00111000` by default: background
 + title + options) so callers can skip repainting parts of the window that
@@ -676,7 +865,7 @@ success path already used), so `draw_background()` clears the row back
 to the plain background color before `draw_options()` redraws it in its
 new color.
 
-### `mods/core/wingman/suite/explorer/explorer.cpp` — selection color
+### `mods/core/wingman/apps/explorer/explorer.cpp` — selection color
 
 `COLOR_B` (the selected-row text color) was `0xFF0000FF`, pure blue.
 Against this window's `0xFF403a39` background, that read as faint/
@@ -695,7 +884,7 @@ already used elsewhere for error/danger, e.g. the red "Ignore" button in
 `MessageBox`), to avoid a selection state visually implying an error
 state.
 
-### `mods/core/wingman/suite/explorer/explorer.cpp` — multi-column layout
+### `mods/core/wingman/apps/explorer/explorer.cpp` — multi-column layout
 
 `draw_options()` used to loop over every entry in `files[]` unconditionally,
 mapping list index directly to a y-offset (`106 + 35*i`) with no bound tied
@@ -751,7 +940,7 @@ is chosen so a column's footprint stays inside the window, so this also
 keeps `utility_draw_char`'s `x` argument bounded, closing off the same
 class of unbounded-write risk `draw_options()`'s row-count bound closes.
 
-### `mods/core/wingman/suite/explorer/explorer.cpp` — window chrome
+### `mods/core/wingman/apps/explorer/explorer.cpp` — window chrome
 
 Explorer's `draw_background()` filled its *entire* inner content rect with
 the flat body color (`0xFF403a39`) and never painted a distinct header
@@ -770,7 +959,7 @@ at scale `1` (32x32) instead, vertically centered in the band (`iconY =
 (`textStartX = iconX + 48`) rather than the old hardcoded offset sized for
 the bigger icon.
 
-### `mods/core/wingman/suite/explorer/explorer.cpp` — current path display
+### `mods/core/wingman/apps/explorer/explorer.cpp` — current path display
 
 `this->path` already existed and was already correctly maintained by
 `fileClick()` (`nullptr` at root, a real path string once you descend into
@@ -1253,7 +1442,7 @@ now has a real button living there.
 
 ---
 
-## `mods/core/wingman/suite/message/message.h` / `mods/core/wingman/suite/message/message.cpp` — `MessageBox` close button and title
+## `mods/core/wingman/apps/message/message.h` / `mods/core/wingman/apps/message/message.cpp` — `MessageBox` close button and title
 
 `MessageBox` was deliberately left out of the `TitleBar` migration above
 at first -- it already had a working self-dismiss path (`dismiss()`,
@@ -1291,7 +1480,7 @@ deleted along with the `redraw()` bit that used to call them.
 
 ---
 
-## `mods/core/wingman/suite/explorer/explorer.cpp` — title bar shows the current path
+## `mods/core/wingman/apps/explorer/explorer.cpp` — title bar shows the current path
 
 `FileManager` used to have its own `draw_title()` that drew `this->path`
 (or `"/"` at the root, since `this->path` is `nullptr` there) directly as
@@ -1753,7 +1942,7 @@ and isn't meaningful before that.
 
 ---
 
-## `mods/core/wingman/suite/message/message.h` / `message.cpp`
+## `mods/core/wingman/apps/message/message.h` / `message.cpp`
 
 ### `MESSAGEBOX_MAX_BUTTONS`
 
@@ -1770,7 +1959,7 @@ dismisses the box after running that button's callback, if any.
 ### `icon` (field + constructor param)
 
 -1 means "use dialogBoxType's default icon"; otherwise an index into
-`Icons[]` (see `mods/core/wingman/headers/icons.h`), overriding that default.
+`Icons[]` (see `mods/core/wingman/data/icons.h`), overriding that default.
 
 ### `buttonSectionDividerY`
 
@@ -1798,7 +1987,7 @@ gaps between them, so `draw_buttons()` and the mouse hit-test in
 
 ### `draw_title()` — icon bounds check
 
-`Icons[]` (`mods/core/wingman/headers/icons.h`) currently holds 12 icons -- an
+`Icons[]` (`mods/core/wingman/data/icons.h`) currently holds 12 icons -- an
 out-of-range override falls back to `dialogBoxType`'s default rather than
 reading past the array.
 
@@ -2562,12 +2751,12 @@ and every include path reaching them changed. `mods/std/include/graphics/`
 `mods/std/` through both of *these* moves, since splitting it up too
 would have widened this reorg's blast radius for no benefit at the time.
 It didn't stay there permanently, though -- see "Package layout:
-`mods/dev/vbe/font.h` / `mods/core/wingman/headers/icons.h` /
+`mods/dev/vbe/font.h` / `mods/core/wingman/data/icons.h` /
 `cursor.h`" below for why each of those three ended up split across
 three different, more specific homes instead of all three staying
 together as one `graphics/` bundle.
 
-### Package layout: `mods/dev/vbe/font.h` / `mods/core/wingman/headers/icons.h` / `cursor.h`
+### Package layout: `mods/dev/vbe/font.h` / `mods/core/wingman/data/icons.h` / `cursor.h`
 
 `mods/std/include/graphics/` held three unrelated bitmap-data files —
 `font.h` (`Font[]`, the 8x8 fallback glyph grid), `icons.h` (`Icons[]`,
@@ -2588,7 +2777,7 @@ already been mostly emptied of stateful/GUI-adjacent content by the
   (its own directory, not a shared `headers/`) reflects that primary
   ownership, even though several Wingman widgets also fall back to it
   when a TTF atlas isn't baked.
-- **`icons.h` -> `mods/core/wingman/headers/icons.h`.** `Icons[]`'s
+- **`icons.h` -> `mods/core/wingman/data/icons.h`.** `Icons[]`'s
   primary consumers are squarely Wingman-suite GUI code (`explorer.cpp`'s
   file-type icons, `message.cpp`'s dialog icons) — `headers/` already
   holds shared, Wingman-wide (not single-widget-owned) data like
@@ -2651,7 +2840,7 @@ _binary_font_ttf_end:
 ```
 
 Chosen over generating a giant C byte-array source file (the pattern
-`mods/core/wingman/headers/icons.h` already uses, at 78KB for a much
+`mods/core/wingman/data/icons.h` already uses, at 78KB for a much
 smaller asset than a ~300KB font). Two things were confirmed
 empirically *before* writing any real code, not assumed:
 - NASM resolves `incbin` paths relative to the assembler's CWD, not the
@@ -2834,9 +3023,9 @@ there already the way the other 5 do.
 | Call site | File | Plot primitive | Background handling |
 |---|---|---|---|
 | `VBEScreen::draw_char` | `mods/dev/console/console.cpp` | `draw_pixel` | Fills an opaque `bg` rect first, then draws the `Font[]` bitmap glyph directly (no TTF atlas lookup at all — see above). |
-| `MessageBox::utility_draw_char` | `mods/core/wingman/suite/message/message.cpp` | `utility_draw_pixel` → `Surface::putPixelUnsafe` | Transparent — reads the existing pixel via `Surface::getPixel` first, blends, writes back. |
-| `FileManager::utility_draw_char` | `mods/core/wingman/suite/explorer/explorer.cpp` | same | same |
-| `WidgetDemo::utility_draw_char` | `mods/core/wingman/suite/widgetdemo/widgetdemo.cpp` | same | same |
+| `MessageBox::utility_draw_char` | `mods/core/wingman/apps/message/message.cpp` | `utility_draw_pixel` → `Surface::putPixelUnsafe` | Transparent — reads the existing pixel via `Surface::getPixel` first, blends, writes back. |
+| `FileManager::utility_draw_char` | `mods/core/wingman/apps/explorer/explorer.cpp` | same | same |
+| `WidgetDemo::utility_draw_char` | `mods/core/wingman/apps/widgetdemo/widgetdemo.cpp` | same | same |
 | `Button`'s file-local `drawChar` | `mods/core/wingman/widgets/button.cpp` | `Surface::putPixelUnsafe` directly | same |
 | `TextInput`'s file-local `drawChar` | `mods/core/wingman/widgets/textinput.cpp` | `Surface::putPixelUnsafe` directly | same |
 

@@ -57,9 +57,9 @@ build:
 	$(CC) $(CFLAGS) mods/core/wingman/widgets/textinput.cpp -o textinput.o
 	$(CC) $(CFLAGS) mods/core/wingman/widgets/checkbox.cpp -o checkbox.o
 	$(CC) $(CFLAGS) mods/core/wingman/widgets/slider.cpp -o slider.o
-	$(CC) $(CFLAGS) mods/core/wingman/suite/explorer/explorer.cpp -o explorerWingman.o
-	$(CC) $(CFLAGS) mods/core/wingman/suite/message/message.cpp -o messageWingman.o
-	$(CC) $(CFLAGS) mods/core/wingman/suite/widgetdemo/widgetdemo.cpp -o widgetdemoWingman.o
+	$(CC) $(CFLAGS) mods/core/wingman/apps/explorer/explorer.cpp -o explorerWingman.o
+	$(CC) $(CFLAGS) mods/core/wingman/apps/message/message.cpp -o messageWingman.o
+	$(CC) $(CFLAGS) mods/core/wingman/apps/widgetdemo/widgetdemo.cpp -o widgetdemoWingman.o
 	$(CC) $(CFLAGS) mods/core/wingman/window.cpp -o window.o
 	$(CC) $(CFLAGS) mods/core/wingman/titlebar.cpp -o titlebar.o
 	$(CC) $(CFLAGS) mods/core/wingman/draw.cpp -o draw.o

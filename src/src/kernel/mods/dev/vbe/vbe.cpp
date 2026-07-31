@@ -2,7 +2,7 @@
 #include "../pci/pci.h"
 #include "../serial/serial.h"
 #include "../paging/paging.h"
-#include "../../core/wingman/headers/icons.h"
+#include "../../core/wingman/data/icons.h"
 #include "font.h"
 #include "./vga_table.h"
 #include <string.h>

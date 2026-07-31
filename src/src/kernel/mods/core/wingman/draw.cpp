@@ -1,6 +1,6 @@
 #include <stdint.h>
 #include "./headers/draw.h"
-#include "./headers/icons.h"
+#include "./data/icons.h"
 #include "../../dev/vbe/font.h"
 #include "../../dev/vbe/vga_table.h"
 #include "../fontman/fontman.h"

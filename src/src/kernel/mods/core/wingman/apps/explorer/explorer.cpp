@@ -104,8 +104,7 @@ void FileManager::freeFileList(FileEntity* list) {
     return;
 }
 
-FileManager::FileManager(WindowManager* wm) {
-    this->wm = wm;
+FileManager::FileManager(WindowManager* wm) : WingmanApp(wm) {
     this->width = 864 / 1.25;
     this->height= 576 / 1.25;
     this->offsetX = 512 - (this->width / 2);
@@ -125,18 +124,11 @@ FileManager::FileManager(WindowManager* wm) {
         /* iconScale = */ 1,
         /* textScale = */ 4
     );
-    this->window->setOnCloseRequested(&FileManager::closeTrampoline, this);
     this->files = readDirectory();
     this->path = nullptr;
     this->updateTitle();
     this->redraw(0b11111000);
-    this->window->setKeyboardDelegate(this);
-    this->window->setMouseDelegate(this);
-    this->ref = WINGMAN_INVALID_WINDOW;
-    if (this->wm != NULL) {
-        this->ref = this->wm->add(this->window);
-        if (this->ref != WINGMAN_INVALID_WINDOW) this->wm->focus(this->ref);
-    }
+    this->registerWindow();
 };
 
 void FileManager::redraw(uint8_t description = 0b00111000) {
@@ -179,19 +171,7 @@ void FileManager::updateTitle(void) {
     this->window->setTitle(this->path != nullptr ? this->path : "/");
 };
 
-// See docs/DOCS.md ("mods/core/wingman/wingman.cpp -- closing windows" section).
-void FileManager::closeWindow(void) {
-    if (this->wm != NULL && this->ref != WINGMAN_INVALID_WINDOW) this->wm->remove(this->ref);
-    this->window = NULL;
-    delete this;
-};
-
-// See docs/DOCS.md ("mods/core/wingman/headers/titlebar.h / mods/core/wingman/window.h -- TitleBar owned by Window" section).
-void FileManager::closeTrampoline(void* userdata) {
-    ((FileManager*)userdata)->closeWindow();
-};
-
-// See docs/DOCS.md ("mods/core/wingman/suite/explorer/explorer.cpp -- multi-column
+// See docs/DOCS.md ("mods/core/wingman/apps/explorer/explorer.cpp -- multi-column
 // layout") for the column-major index math (column = idx/rowsPerColumn, row =
 // idx%rowsPerColumn) shared with onKeyboard()/onMouseEvent(), and why this is
 // bounded by page capacity now instead of drawing every entry unconditionally
@@ -330,7 +310,7 @@ bool FileManager::onMouseEvent(int x, int y, int dx, int dy, unsigned char butto
     return false;
 };
 
-// See docs/DOCS.md ("mods/core/wingman/suite/explorer/explorer.cpp —
+// See docs/DOCS.md ("mods/core/wingman/apps/explorer/explorer.cpp —
 // running-ELF tracking") for why this lives here instead of in elf.cpp.
 #define MAX_TRACKED_ELF_TASKS 16
 struct RunningElfEntry {
@@ -547,7 +527,7 @@ bool FileManager::onKeyboard(char key, bool shift, bool meta, unsigned char scan
             redrawNeeded = true;
         }
     } else if (key == 'd') {
-        // See docs/DOCS.md ("mods/core/wingman/suite/explorer/explorer.cpp --
+        // See docs/DOCS.md ("mods/core/wingman/apps/explorer/explorer.cpp --
         // multi-column layout") -- +/- rowsPerColumn jumps a whole column,
         // and crossing a page's last column naturally rolls into the next
         // page's first column since page is just column/columnsPerPage.
@@ -580,6 +560,5 @@ bool FileManager::onKeyboard(char key, bool shift, bool meta, unsigned char scan
 FileManager::~FileManager() {
     freeFileList(this->files);
     free(this->path);
-    delete this->window;
     return;
 }

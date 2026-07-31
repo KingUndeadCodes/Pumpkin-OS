@@ -7,7 +7,7 @@
 #include <math.h>
 #include "../vbe/font.h"
 #include "../../core/fontman/fontman.h"
-#include "../../core/wingman/headers/icons.h"
+#include "../../core/wingman/data/icons.h"
 
 void graphics_initalize_stage1(void);
 void graphics_initalize_stage2(void);

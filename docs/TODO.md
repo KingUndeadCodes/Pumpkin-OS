@@ -431,7 +431,7 @@ Root cause understood, fix not yet landed: `elf_run()`
 blocking call from inside the mouse IRQ's handler chain, which is an
 interrupt gate (`IF` cleared on entry). Nothing re-enables interrupts for
 a plain run (unlike the MP3-playback branch right above the `.elf` branch
-in `mods/core/wingman/suite/explorer/explorer.cpp`, which explicitly does
+in `mods/core/wingman/apps/explorer/explorer.cpp`, which explicitly does
 `asm volatile("sti")` before its own blocking wait) — so the PS/2 mouse's
 relative-motion packets aren't just delayed while a program runs, they're
 dropped outright, and the driver's tracked position genuinely never
@@ -549,7 +549,7 @@ it's revisited.
   would ignore it entirely. Minor next to the dirty-rect fix below, not
   yet done. (The "clears and fully re-blends the entire screen on every
   redraw" half of this item is DONE — see "Recently completed".)
-- `mods/core/wingman/suite/explorer/explorer.cpp` `readDirectory()` —
+- `mods/core/wingman/apps/explorer/explorer.cpp` `readDirectory()` —
   counts entries then fills them in two separate passes, and since
   `ramfs_readdir()` itself walks the linked list from the head per index,
   the whole listing is O(n²), doubled, and it re-runs on every
@@ -613,6 +613,95 @@ it's revisited.
 ---
 
 ## Recently completed
+
+### Interaction state moved from `wingman.cpp` globals into `WindowManager` — DONE (2026-07-31)
+
+`wingman.cpp` owned drag state (`draggingWindow`/`dragOffsetX`/`dragOffsetY`/
+`lastDragRedrawMs`/`dragLastRect`) and `lastButtons` as file-static
+globals, split from focus/z-order state that already lived as real
+`WindowManager` members -- no reason for the split beyond drag support
+being added later into whichever file was open. `mouseFunctionWindowManager()`/
+`keyboardFunctionWindowManager()`'s full bodies (focus-click routing,
+drag lifecycle, delegate dispatch, dirty-rect accumulation) moved onto
+`WindowManager` as `handleMouseEvent()`/`handleKeyboardEvent()`.
+`wingman.cpp` is now exactly the input-queue/worker-task plumbing plus
+`initalizeWindowSystem()`'s boot wiring, nothing else. `redraw_screen()`/
+`redraw_screen_rect()`/`redraw_cursor()`/`set_cursor_id()` deliberately
+stayed put -- hardware-presentation/cursor-sprite concerns, matching an
+existing precedent (`redraw_cursor()` already takes `WindowManager*` as
+a parameter rather than being a method). See `docs/DOCS.md`
+("mods/core/wingman/wingman.cpp / manager.{h,cpp} -- interaction state
+moved into WindowManager") for the full design writeup, including why
+`WindowManager` stays hardware-agnostic (returns a dirty `Rect` rather
+than presenting it itself).
+
+Boot-tested: pixel-identical to baseline; dragged a window to a new
+position cleanly (no stale pixels); focus-click between overlapping
+windows raises correctly; closed a window via its title-bar button with
+the others unaffected; re-ran the `MessageBox` Enter-to-dismiss
+regression (the dirty-rect-cached-before-the-call fix, now living in
+`WindowManager::handleKeyboardEvent()`) and confirmed clean dismissal
+with the same serial output as before. No serial errors anywhere in the
+run.
+
+### Common `WingmanApp` base class for FileManager/MessageBox/WidgetDemo — DONE (2026-07-31)
+
+All three suite apps hand-wrote identical boilerplate for "an app that
+owns a Window": `wm`/`ref`/`window` members, a close-then-`delete this`
+method + trampoline pair, constructor tail wiring
+(`setOnCloseRequested`/`setKeyboardDelegate`/`setMouseDelegate`/
+`wm->add()`/`wm->focus()`), and `malloc`/`free`-backed `operator new`/
+`delete` overloads. New header-only `headers/app.h` (`WingmanApp`, no
+Makefile changes) consolidates all of it, following the same pattern
+`headers/widgets/widget.h`'s `Widget` already established for UI
+controls. Bonus: fixed `FileManager`'s previously-private
+`MouseDelegate` inheritance (a real, pre-existing bug -- the class
+declaration omitted the access specifier on the second base) for free,
+since it now inherits both interfaces once, correctly, through
+`WingmanApp`. `MessageBox`'s two internal `this->dismiss()` call sites
+became `this->close()` -- the only behavioral rename anywhere. See
+`docs/DOCS.md` ("mods/core/wingman/headers/app.h -- common WingmanApp
+base class") for the full design writeup.
+
+Explicitly not touched: `width`/`height`/`offsetX`/`offsetY`/`padding`/
+`thickness`, also duplicated across all three, since they're read
+directly throughout each app's own drawing code -- unifying those would
+require touching every `draw_border()`/`draw_background()`/etc., a much
+bigger change than this one.
+
+Boot-tested: pixel-identical to the pre-refactor baseline; closed all
+three windows via their title-bar close buttons in turn, each
+disappearing cleanly with the other two unaffected; re-verified
+`MessageBox`'s Enter-to-dismiss path specifically (the exact scenario
+the keyboard NULL-deref fix above targets) after the `dismiss()` ->
+`close()` rename -- clean dismissal, no panic screen, same
+`Initializing AC97 Audio Codec...` / `chorus: initialized DMA PCM
+buffer.` serial output as before. No serial errors anywhere in the run.
+
+### Keyboard-path NULL deref and Initialize-button lambda signature fixed — DONE (2026-07-30)
+
+Found while digging into an unreproducible visual glitch (leading theory:
+a QEMU host-side display artifact, not a Wingman bug -- automated headless
+testing couldn't reproduce it across focus-change occlusion, dragging File
+Manager away, or dragging MessageBox itself). Two real, independent bugs
+found and fixed along the way, neither confirmed as that glitch's cause:
+
+1. `keyboardFunctionWindowManager()` re-read `wm->focusedWindow` *after*
+   calling `keyboard_handler()`, but MessageBox's Enter-to-dismiss path
+   deletes the focused window and nulls that pointer during the call --
+   the re-read then NULL-derefed. Fixed by caching the rect before the
+   call, mirroring the mouse path's existing (correct) pattern.
+2. The boot-time "Initialize" button's callback lambda took zero
+   parameters against a `ButtonCallback` (`void(*)(void*)`) signature --
+   only compiled due to `-fpermissive -w`, undefined behavior at the call
+   site. Fixed to match every other callback's `(void* userdata)` shape.
+
+See `docs/DOCS.md` ("mods/core/wingman/wingman.cpp -- keyboard-path NULL
+deref, and the Initialize-button lambda"). Boot-tested: focused MessageBox,
+pressed Enter, confirmed clean dismissal with no crash and both fixes
+exercised in the same keystroke (serial log shows the Initialize callback
+running correctly, then the keyboard-path recomposite completing without
+dereferencing the deleted window).
 
 ### Positioned constructor overloads for Wingman widgets — DONE (2026-07-30)
 
@@ -702,7 +791,7 @@ no longer owns any title-band drawing code at all now (`draw_title()`
 and its private `utility_draw_icon()` helper were deleted). See
 `docs/DOCS.md` ("mods/core/wingman/headers/titlebar.h /
 mods/core/wingman/window.h -- TitleBar owned by Window" and
-"mods/core/wingman/suite/message/message.h / message.cpp -- MessageBox
+"mods/core/wingman/apps/message/message.h / message.cpp -- MessageBox
 close button and title") for the full writeup. Boot-tested via QEMU:
 all three windows render their title bars (including `MessageBox`'s
 icon+"Information"/"Error"/"Warning" text) correctly on first paint,
@@ -734,7 +823,7 @@ of the window's surface via bounds-unchecked `Surface::putPixelUnsafe`.
 Fixed by clamping `availableWidth` to `0` before the division. No
 shipped window configuration currently triggers (3), but nothing
 prevented a future one from doing so. See `docs/DOCS.md`
-("mods/core/wingman/suite/explorer/explorer.cpp -- title bar shows the
+("mods/core/wingman/apps/explorer/explorer.cpp -- title bar shows the
 current path") for the full path-title writeup. Boot-tested via QEMU:
 Explorer's title reads `/` at the root and updates live to `/hello` on
 entering that directory and back on navigating up via `".."`, with no
@@ -781,8 +870,8 @@ folder icon) supports. Both got shifted right (`iconX = thickness + 38`)
 to clear the new button, preserving the original icon-to-text gap.
 Registration is the same trampoline pattern as WidgetDemo/Explorer, just
 calling the existing `dismiss()`. See `docs/DOCS.md`
-("mods/core/wingman/suite/message/message.h /
-mods/core/wingman/suite/message/message.cpp -- MessageBox close button")
+("mods/core/wingman/apps/message/message.h /
+mods/core/wingman/apps/message/message.cpp -- MessageBox close button")
 for the full writeup. Boot-tested via QEMU with ground-truth
 `serial_write_string` logging (the same synthetic-click flakiness from
 earlier close-button testing showed up again -- several visually-correct
@@ -892,7 +981,7 @@ via `C`. Later picked up a macOS-style close button and a `TitleBar`
 migration alongside WidgetDemo/Explorer (see above).
 
 Removed on 2026-07-29 as out of place among the other suite apps --
-deleted `mods/core/wingman/suite/calculator/` entirely, along with its
+deleted `mods/core/wingman/apps/calculator/` entirely, along with its
 `wingman.cpp` spawn call and Makefile build/link rules. `FileManager`,
 `MessageBox`, and `WidgetDemo` are unaffected.
 
@@ -1312,7 +1401,7 @@ See `docs/DOCS.md` for more.
 
 ### Forbid re-launching an already-running ELF file
 
-`mods/core/wingman/suite/explorer/explorer.cpp` — Phase 2 of the tasking
+`mods/core/wingman/apps/explorer/explorer.cpp` — Phase 2 of the tasking
 proposal retired the kernel-side `elf_running` guard (running multiple
 *different* programs concurrently is now intended), which left nothing
 stopping the same `.elf` file from being launched twice (e.g. a fast
@@ -1330,7 +1419,7 @@ revisiting once one does.
 
 ### Finish wiring up MessageBox
 
-`mods/core/wingman/suite/message/message.{h,cpp}` — `MessageBox` is now a
+`mods/core/wingman/apps/message/message.{h,cpp}` — `MessageBox` is now a
 real `KeyboardDelegate`/`MouseDelegate`: it takes a `WindowManager*` in
 its constructor and self-registers/focuses, Enter or a click inside a
 button's rect dismisses it (`dismiss()` calls `wm->remove(ref)`, nulls
@@ -1399,7 +1488,7 @@ bounds.
 
 ### Fix the hardcoded WAV buffer size in the file explorer
 
-`mods/core/wingman/suite/explorer/explorer.cpp` (WAV handler, now at
+`mods/core/wingman/apps/explorer/explorer.cpp` (WAV handler, now at
 line 398) had `uint32_t buffer_len = 52640;` — a fixed size instead of
 the real file
 size. The ELF/MP3 handlers already did this correctly (read
@@ -1702,7 +1791,7 @@ task run."
   (Phase 3).
 - `src/src/kernel/mods/dev/pit/pit.cpp` / `pit.h` — implement `pit_init(hz)`
   (optional, Phase 1).
-- `src/src/kernel/mods/core/wingman/suite/explorer/explorer.cpp` — `.elf`
+- `src/src/kernel/mods/core/wingman/apps/explorer/explorer.cpp` — `.elf`
   handler calls `elf_spawn` instead of `elf_run` (Phase 2).
 
 #### Verification

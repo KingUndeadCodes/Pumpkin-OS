@@ -17,6 +17,7 @@
 #include "../../../../dev/pci/drivers/ac97.h"
 #include "../../../fontman/fontman.h"
 #include "../../headers/draw.h"
+#include "../../headers/app.h"
 
 struct FileEntity {
     // struct FileEntity* children;
@@ -40,7 +41,7 @@ struct FileGridLayout {
 
 // ISS - Integrated Software Suite
 
-class FileManager : public KeyboardDelegate, MouseDelegate {
+class FileManager : public WingmanApp {
     private:
         int EndsWith(const char *str, const char *suffix);
         FileEntity* readDirectory(const char* _path = "/");
@@ -50,9 +51,6 @@ class FileManager : public KeyboardDelegate, MouseDelegate {
         // Returns the file index at (x, y), or -1 if none -- shared by
         // onMouseEvent()'s click handling and its hover-cursor check.
         int fileIndexAt(int x, int y);
-    private:
-        WindowManager* wm;
-        window_ref_t ref;
     public:
         int width;
         int height;
@@ -63,7 +61,6 @@ class FileManager : public KeyboardDelegate, MouseDelegate {
         int thickness;
         int currentSelection;
         int fileCount; // Initalized by readDirectory
-        Window* window;
         FileEntity* files;
         char* path;
         FileManager(WindowManager* wm);
@@ -74,18 +71,12 @@ class FileManager : public KeyboardDelegate, MouseDelegate {
         void draw_options(void);
         // Mirrors this->path (or "/" at root) into the window's title bar.
         void updateTitle(void);
-        void closeWindow(void);
-        static void closeTrampoline(void* userdata);
     private:
         bool fileClick(bool* redrawNeeded, uint8_t* redraw_description);
     public:
         bool onKeyboard(char key, bool shift, bool meta, unsigned char scancode) override;
         bool onMouseEvent(int x, int y, int dx, int dy, unsigned char buttons, unsigned char pressedEdge) override;
         ~FileManager();
-        void *operator new(size_t size) { return malloc(size); }
-        void *operator new[](size_t size) { return malloc(size); }
-        void operator delete(void *p) { free(p); }
-        void operator delete[](void *p) { free(p); }
 };
 
 #endif
