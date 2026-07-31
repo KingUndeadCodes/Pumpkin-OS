@@ -1,7 +1,8 @@
 #include "gdt.h"
 #include <string.h>
 
-// See docs/DOCS.md ("mods/dev/gdt/gdt.cpp -- ring-transition GDT/TSS").
+// A second, C++-built GDT superseding the bootloader's -- the bootloader's can't host a
+// TSS descriptor, since a TSS needs &g_tss, a C++ address that doesn't exist at boot time.
 struct GDTEntry {
     uint16_t limit_low;
     uint16_t base_low;
@@ -71,7 +72,7 @@ void TSSInstall(void) {
     asm volatile ("ltr %%ax" :: "a"((uint16_t)0x38));
 }
 
-// See docs/DOCS.md ("mods/dev/gdt/gdt.cpp -- ring-transition GDT/TSS").
+// Called every context switch so esp0 is valid before any interrupt can catch a ring>0 task running.
 void GDTSetKernelStack(uint32_t esp0) {
     g_tss.esp0 = esp0;
 }

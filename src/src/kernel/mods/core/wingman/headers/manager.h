@@ -33,7 +33,7 @@ class WindowManager {
         Window** windows;
         uint32_t maxWindowCount;
         uint32_t windowCount;
-        // See docs/DOCS.md ("mods/core/wingman/headers/manager.h / manager.cpp" section).
+        // Back-to-front paint/hit-test order -- last entry is topmost, separate from window slot indices.
         window_ref_t* zOrder;
         uint32_t zOrderCount;
     public:
@@ -45,7 +45,7 @@ class WindowManager {
         ~WindowManager();
         window_ref_t add(Window* window);
         int remove(window_ref_t ref);
-        // See docs/DOCS.md ("mods/core/wingman/headers/manager.h / manager.cpp" section).
+        // Raises a window to the top of zOrder and makes it the keyboard focus.
         void focus(window_ref_t ref);
         window_ref_t windowAt(int x, int y);
         Window* get(window_ref_t ref);

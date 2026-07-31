@@ -123,7 +123,7 @@ private:
     int currentTextForegroundColor;
     int currentTextBackgroundColor;
 
-    // See docs/DOCS.md ("mods/dev/vbe/vbe.cpp -- bulk framebuffer operations").
+    // Delegates to vbe.cpp's memmove()-based scroll instead of walking pixels itself.
     void scroll() {
         int lineHeight = charHeight + lineSpacing;
         scroll_framebuffer_up((unsigned)lineHeight, (unsigned)currentTextBackgroundColor);

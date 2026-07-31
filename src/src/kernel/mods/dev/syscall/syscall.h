@@ -19,7 +19,8 @@ uint32_t sys_close(uint32_t fd, uint32_t, uint32_t, uint32_t, uint32_t);
 
 extern "C" uint32_t syscall_dispatch(uint32_t syscall_number, uint32_t arg1, uint32_t arg2, uint32_t arg3, uint32_t arg4, uint32_t arg5);
 
-// See docs/DOCS.md ("mods/dev/syscall/syscall.cpp — stdin_is_reading()").
+// True for the duration of stdin_read_line()'s blocking wait, so other keyboard
+// consumers (e.g. Wingman) know not to also process the same keystrokes.
 bool stdin_is_reading(void);
 
 #endif

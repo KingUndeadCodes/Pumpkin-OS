@@ -6,15 +6,14 @@
 #include "./suite/explorer/explorer.h"
 #include "./suite/message/message.h"
 #include "./suite/widgetdemo/widgetdemo.h"
-#include "./suite/calculator/calculator.h"
 #include "./headers/wingman.h"
 
 static FileManager* fileManager = nullptr;
 static WindowManager* wm = nullptr;
 static size_t bufferSize = 0;
-// See docs/DOCS.md ("mods/core/wingman/wingman.cpp" section) for lastButtons.
+// Previous packet's button state, so a press-edge (0->1) can be computed once globally instead of every delegate re-firing on each held-down packet.
 static unsigned char lastButtons = 0;
-// See docs/DOCS.md ("mods/core/wingman/wingman.cpp — window dragging") section.
+// Height of the draggable band across a window's top edge. See docs/DOCS.md ("window dragging").
 #define WINGMAN_DRAG_HANDLE_HEIGHT 30
 #define WINGMAN_DRAG_REDRAW_INTERVAL_MS 33
 static window_ref_t draggingWindow = WINGMAN_INVALID_WINDOW;
@@ -24,7 +23,7 @@ static uint64_t lastDragRedrawMs = 0;
 // See docs/DOCS.md ("mods/core/wingman/headers/types.h -- Rect / dirty-rect compositing") for why this exists.
 static Rect dragLastRect = { 0, 0, 0, 0 };
 
-// See docs/DOCS.md ("mods/core/wingman/wingman.cpp -- input queue / worker task").
+// Ring-buffer capacity for events queued to the input worker task. See docs/DOCS.md ("input queue / worker task").
 #define WINGMAN_INPUT_QUEUE_SIZE 32
 
 enum WingmanInputEventType { WINGMAN_EVENT_MOUSE, WINGMAN_EVENT_KEY };
@@ -67,11 +66,11 @@ inline void redraw_screen_rect(Rect rect) {
 };
 
 void keyboardFunctionWindowManager(char key, bool shift, bool meta, unsigned char scancode) {
-    // See docs/DOCS.md ("mods/dev/syscall/syscall.cpp -- stdin_is_reading() / stdin exclusivity").
+    // Don't also deliver keystrokes to Wingman while a task owns stdin -- see docs/DOCS.md ("stdin_is_reading() / stdin exclusivity").
     if (stdin_is_reading()) return;
     if (wm != nullptr) {
         if (wm->keyboard_handler(key, shift, meta, scancode)) {
-            // See docs/DOCS.md ("mods/core/wingman/headers/types.h -- Rect / dirty-rect compositing").
+            // Only the focused window's rect needs recompositing for a keyboard-driven change.
             Window* focused = wm->focusedWindow;
             Rect dirty = { focused->offsetX, focused->offsetY, focused->width, focused->height };
             wm->composite(dirty);
@@ -86,7 +85,7 @@ void mouseFunctionWindowManager(int x, int y, int dx, int dy, unsigned char butt
     const int mouse_x = mouse_get_x();
     const int mouse_y = mouse_get_y();
     bool needsRedraw = false;
-    // See docs/DOCS.md ("mods/core/wingman/headers/types.h -- Rect / dirty-rect compositing").
+    // Accumulates the minimal region that actually changed this event, unioned in as work is found below.
     Rect dirtyRect = { 0, 0, 0, 0 };
     bool hasDirty = false;
     auto markDirty = [&](Rect r) {
@@ -94,7 +93,7 @@ void mouseFunctionWindowManager(int x, int y, int dx, int dy, unsigned char butt
         hasDirty = true;
         needsRedraw = true;
     };
-    // See docs/DOCS.md ("mods/core/wingman/wingman.cpp" section) for refocus-on-click.
+    // Clicking a background window raises it to focus.
     if (pressedEdge & 1) {
         window_ref_t hitRef = wm->windowAt(mouse_x, mouse_y);
         Window* hitWindow = wm->get(hitRef);
@@ -102,8 +101,9 @@ void mouseFunctionWindowManager(int x, int y, int dx, int dy, unsigned char butt
             wm->focus(hitRef);
             markDirty({ hitWindow->offsetX, hitWindow->offsetY, hitWindow->width, hitWindow->height });
         }
-        // See docs/DOCS.md ("mods/core/wingman/wingman.cpp — window dragging") section.
-        if (hitWindow != nullptr && mouse_y - hitWindow->offsetY < WINGMAN_DRAG_HANDLE_HEIGHT) {
+        // The close/minimize/maximize trio must not also start a window drag.
+        bool inCloseButtonZone = hitWindow != nullptr && (mouse_x - hitWindow->offsetX) < hitWindow->titleBar.closeButtonZoneWidth();
+        if (hitWindow != nullptr && !inCloseButtonZone && mouse_y - hitWindow->offsetY < WINGMAN_DRAG_HANDLE_HEIGHT) {
             draggingWindow = hitRef;
             dragOffsetX = mouse_x - hitWindow->offsetX;
             dragOffsetY = mouse_y - hitWindow->offsetY;
@@ -123,7 +123,7 @@ void mouseFunctionWindowManager(int x, int y, int dx, int dy, unsigned char butt
         markDirty(rect_union(dragLastRect, currentRect));
     }
 
-    // See docs/DOCS.md ("mods/core/wingman/wingman.cpp" section) for the cursor-id reset.
+    // Reset each event; a delegate sets it back if still hovering something clickable.
     set_cursor_id(0);
     if (draggingWindow != WINGMAN_INVALID_WINDOW) {
         Window* dragged = wm->get(draggingWindow);
@@ -156,7 +156,8 @@ void mouseFunctionWindowManager(int x, int y, int dx, int dy, unsigned char butt
             }
         }
     } else {
-        const Window* foucsedWindow = wm->focusedWindow;
+        // handleMouse() itself intercepts clicks on the title bar's close button before this reaches the delegate.
+        Window* foucsedWindow = wm->focusedWindow;
         if (foucsedWindow != nullptr) {
             const int rectX = foucsedWindow->offsetX;
             const int rectY = foucsedWindow->offsetY;
@@ -174,7 +175,7 @@ void mouseFunctionWindowManager(int x, int y, int dx, int dy, unsigned char butt
             }
         }
     }
-    // See docs/DOCS.md ("mods/core/wingman/wingman.cpp" section) for this split.
+    // Only recomposite when something actually changed; otherwise just keep the cursor in sync.
     if (needsRedraw) {
         wm->composite(dirtyRect);
         // handleMouse() may have just blocked for a while (e.g. the MP3
@@ -193,7 +194,7 @@ void mouseFunctionWindowManager(int x, int y, int dx, int dy, unsigned char butt
     return;
 }
 
-// See docs/DOCS.md ("mods/core/wingman/wingman.cpp -- input queue / worker task").
+// Producer side of the queue drained by the input worker task.
 void queueMouseEventForWingman(int x, int y, int dx, int dy, unsigned char buttons) {
     unsigned long flags = enter_critical();
     int next = (g_inputQueueHead + 1) % WINGMAN_INPUT_QUEUE_SIZE;
@@ -222,19 +223,13 @@ void queueKeyEventForWingman(char key, bool shift, bool meta, unsigned char scan
 
 static void wingman_input_worker_fn(void* arg) {
     while (true) {
-        while (g_inputQueueTail == g_inputQueueHead) {
-            task_block();
-        }
+        while (g_inputQueueTail == g_inputQueueHead) task_block();
         unsigned long flags = enter_critical();
         WingmanInputEvent e = g_inputQueue[g_inputQueueTail];
         g_inputQueueTail = (g_inputQueueTail + 1) % WINGMAN_INPUT_QUEUE_SIZE;
         exit_critical(flags);
-
-        if (e.type == WINGMAN_EVENT_MOUSE) {
-            mouseFunctionWindowManager(e.x, e.y, e.dx, e.dy, e.buttons);
-        } else {
-            keyboardFunctionWindowManager(e.key, e.shift, e.meta, e.scancode);
-        }
+        if (e.type == WINGMAN_EVENT_MOUSE) mouseFunctionWindowManager(e.x, e.y, e.dx, e.dy, e.buttons);
+        else keyboardFunctionWindowManager(e.key, e.shift, e.meta, e.scancode);
     }
 }
 
@@ -246,9 +241,8 @@ void wingman_spawn_input_worker(void* stack_mem) {
 
 void initalizeWindowSystem(void) {
     wm = new WindowManager();
-    fileManager = new FileManager();
-    wm->add(fileManager->window);
-    // See docs/DOCS.md ("mods/core/wingman/wingman.cpp" section) for MessageBox wiring here.
+    fileManager = new FileManager(wm);
+    // chorus_initalize() sets up the AC97 DMA ring and isn't called automatically at boot -- shown so the user can trigger it manually.
     MessageBox* messageBox = new MessageBox(wm, DialogBoxInformational, "chorus: not initialized; call initalize() first.", 5);
     messageBox->addButton("Initialize", 0xFF605a59, [](void) {
         serial_write_string("Initializing AC97 Audio Codec...\n");
@@ -256,7 +250,6 @@ void initalizeWindowSystem(void) {
     });
     messageBox->addButton("Ignore", rgb(255, 0, 0));
     new WidgetDemo(wm);
-    new Calculator(wm);
     kb_add_event(queueKeyEventForWingman);
     mouse_add_event(queueMouseEventForWingman);
     set_cursor_id(0);

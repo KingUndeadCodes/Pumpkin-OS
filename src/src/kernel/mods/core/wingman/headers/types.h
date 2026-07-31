@@ -33,12 +33,14 @@ struct Environment {
     color_t backgroundColor;
 };
 
-// See docs/DOCS.md ("mods/core/wingman/headers/types.h -- Rect / dirty-rect compositing").
+// The single bounding rect threaded through compositing to avoid a full-screen
+// redraw on every interaction. See docs/DOCS.md ("Rect / dirty-rect compositing").
 struct Rect {
     int x, y, w, h;
 };
 
-// See docs/DOCS.md ("mods/core/wingman/headers/types.h -- Rect / dirty-rect compositing").
+// Required after any rect_intersect() before touching the result -- two
+// non-overlapping rects intersect to a negative/zero size, not a crash or a sentinel.
 static inline bool rect_empty(Rect r) {
     return r.w <= 0 || r.h <= 0;
 }
@@ -52,7 +54,7 @@ static inline Rect rect_intersect(Rect a, Rect b) {
     return r;
 }
 
-// See docs/DOCS.md ("mods/core/wingman/headers/types.h -- Rect / dirty-rect compositing").
+// Combines a moved window's before/after position into one dirty rect covering both.
 static inline Rect rect_union(Rect a, Rect b) {
     int x0 = a.x < b.x ? a.x : b.x;
     int y0 = a.y < b.y ? a.y : b.y;

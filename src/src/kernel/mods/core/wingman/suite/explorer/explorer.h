@@ -8,16 +8,15 @@
 #include <stdbool.h>
 #include "../../headers/window.h"
 #include "../../headers/surface.h"
+#include "../../headers/manager.h"
 #include "../../headers/cursor.h"
 #include "../../../../dev/elf/elf.h"
 #include "../../../../dev/chorus/wav.h"
 #include "../../../../dev/chorus/mp3.h"
 #include "../../../../dev/ramfs/ramfs.h"
-#include "../../../../dev/vbe/vga_table.h"
 #include "../../../../dev/pci/drivers/ac97.h"
-#include "../../../../dev/vbe/font.h"
 #include "../../../fontman/fontman.h"
-#include "../../headers/icons.h"
+#include "../../headers/draw.h"
 
 struct FileEntity {
     // struct FileEntity* children;
@@ -26,7 +25,8 @@ struct FileEntity {
     int type;
 };
 
-// See docs/DOCS.md ("mods/core/wingman/suite/explorer/explorer.cpp -- multi-column layout").
+// Column-major grid, paginated -- replaced an unbounded single-column list that
+// could write past the window's pixel buffer for a large enough directory.
 struct FileGridLayout {
     int listStartX;
     int listStartY;
@@ -42,10 +42,6 @@ struct FileGridLayout {
 
 class FileManager : public KeyboardDelegate, MouseDelegate {
     private:
-        void utility_draw_pixel(unsigned x, unsigned y, unsigned color);
-        void utility_draw_char(unsigned x, unsigned y, char c, unsigned color, unsigned scale = 4);
-        void utility_draw_icon(unsigned x, unsigned y, unsigned icon, unsigned scale = 2);
-    private:
         int EndsWith(const char *str, const char *suffix);
         FileEntity* readDirectory(const char* _path = "/");
         char* parent_path(const char *path);
@@ -54,6 +50,9 @@ class FileManager : public KeyboardDelegate, MouseDelegate {
         // Returns the file index at (x, y), or -1 if none -- shared by
         // onMouseEvent()'s click handling and its hover-cursor check.
         int fileIndexAt(int x, int y);
+    private:
+        WindowManager* wm;
+        window_ref_t ref;
     public:
         int width;
         int height;
@@ -67,13 +66,16 @@ class FileManager : public KeyboardDelegate, MouseDelegate {
         Window* window;
         FileEntity* files;
         char* path;
-        FileManager(void);
+        FileManager(WindowManager* wm);
         void redraw(uint8_t description = 0b00111000);
     private: // Make this protected.
         void draw_border(void);
         void draw_background(void);
-        void draw_title(void);
         void draw_options(void);
+        // Mirrors this->path (or "/" at root) into the window's title bar.
+        void updateTitle(void);
+        void closeWindow(void);
+        static void closeTrampoline(void* userdata);
     private:
         bool fileClick(bool* redrawNeeded, uint8_t* redraw_description);
     public:

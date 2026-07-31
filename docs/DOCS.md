@@ -59,6 +59,111 @@ don't overhang past the new curve.
 
 ---
 
+## `mods/core/wingman/draw.cpp` / `headers/draw.h` — shared drawing helpers
+
+Wingman had **13 separate definitions** of four drawing helpers across six
+files: `utility_draw_char`/`drawChar` ×6, `utility_draw_pixel` ×4,
+`utility_draw_icon` ×2, `utility_draw_string` ×1. Most were byte-identical
+copy-paste — `button.cpp`'s and `textinput.cpp`'s `drawChar` were literally
+identical, and `explorer.cpp`'s and `message.cpp`'s `utility_draw_char`
+differed only in the class name.
+
+The cost was not stylistic. The `color == 0x10` transparency branch in
+`utility_draw_icon` is missing a `continue`/`else` — the black write is
+immediately overwritten, so the transparent marker never works — and that
+bug was present in *every* copy, having been propagated by the copy-paste
+itself. It survived a third copy being deleted (`MessageBox`'s) purely by
+accident. More importantly, the duplication blocked the real fix for
+`putPixelUnsafe`: adding bounds-checking/clipping meant touching 13 sites,
+which is why the same out-of-bounds class of bug has produced three
+separate incidents (Explorer's multi-column heap corruption, `titlebar.cpp`'s
+negative-`availableWidth` wrap, `draw_circle_fill`'s unclipped rows).
+
+Consolidated into free functions taking `Surface*` as the first parameter —
+the shape `titlebar.cpp`, `button.cpp`, and `textinput.cpp` had already
+independently converged on. The three suite-app class-method versions were
+the outliers; they only ever reached `this->window->surface`, so `this`
+bought them nothing but an implicit parameter.
+
+**Not a virtual base class**, despite "shared drawing interface" suggesting
+one. `Widget::draw()` receives a `Surface*` rather than owning one, so
+widgets could never fit a hierarchy keyed on "the surface I own" — a base
+class would have consolidated only the three suite copies and left the six
+widget/titlebar ones. And virtual dispatch in a per-pixel loop (~786k calls
+for a full-screen fill) would contradict the existing decision to keep
+`ttf_blit_glyph()` template-based specifically to avoid it, documented in
+the `shapes.h` section above.
+
+Naming and signature notes:
+- **`surface_`-prefixed deliberately.** `mods/dev/vbe/vbe.h` declares global
+  `draw_pixel`/`draw_char`/`draw_icon` writing the raw linear framebuffer,
+  transitively visible in the suite files via `headers/cursor.h`. Unprefixed
+  names would have silently overloaded them.
+- **`int` coordinates**, matching `Surface::putPixelUnsafe(int, int, color_t)`.
+  Behaviour-neutral while no bounds check exists (`int` and `unsigned` index
+  out of bounds identically), and a prerequisite for adding one.
+- **No default arguments.** All 33 external call sites already passed `scale`
+  explicitly, so the previously-declared defaults were dead — and had already
+  drifted (`explorer.h` said `scale = 4`, `widgetdemo.h` said `scale = 2`).
+  `explorer.cpp`/`message.cpp` also illegally repeated defaults on the
+  out-of-class definition, compiling only because of `-fpermissive`.
+
+Deliberately a real `.cpp` rather than `shapes.h`'s header-only `static
+inline` pattern: these helpers depend on the large `static const` tables
+(`Icons[12][32][32]`, `Font[128][8]`, `vgaPaletteConvertorRGB32[]`), which a
+header-only version would re-instantiate in every including TU. `draw.cpp`
+is now the only wingman TU pulling them, and `explorer.h`/`titlebar.cpp`/
+`message.h`/`widgetdemo.h` dropped those includes entirely. Measured:
+`kernel.bin` went from 648,580 to 621,540 bytes, **27,040 bytes saved**.
+
+The `0x10` bug and the bounds-checking work were deliberately left out of
+this change so it stayed a reviewable pure move — both are now single-site
+fixes rather than 13-site ones.
+
+---
+
+## `mods/core/wingman/headers/widgets/*.h` — positioned constructor overloads
+
+Every widget used to be constructed, then have `->x`/`->y` set on two
+follow-up lines. Each widget (`Button`, `TextInput`, `Checkbox`, `Slider`)
+gained a second constructor overload with `int x, int y` appended, so
+`new TextInput(64, "Type here...", 170, 105)` works alongside the original
+position-less form. A genuine second overload, not default arguments on the
+one constructor — the positioned overload delegates to the original via a
+C++11 delegating constructor (`: Button(message, color, onClick, userdata) {
+this->x = x; this->y = y; }`) so there's exactly one real implementation per
+class; the second "overload" is a one-line pass-through.
+
+Where the original constructor has trailing defaults (`TextInput`'s
+`placeholder`, `Checkbox`'s `initialChecked`/`onChange`/`userdata`,
+`Slider`'s `onChange`/`userdata`), the positioned overload requires them
+explicitly -- C++ doesn't allow a default parameter before a mandatory one,
+and `x`/`y` have no sensible default of their own (that's what the original
+constructor is for). Costs nothing at the five real call sites in
+`widgetdemo.cpp`, which already passed every parameter explicitly.
+
+**`MessageBox::addButton()`'s `Button` deliberately was not migrated.** Its
+`x`/`y`/`width`/`height` are computed later by `layoutButtons()` (evenly
+splitting the button row across however many buttons exist at the time),
+not known at construction — passing `0, 0` there would misrepresent that
+position as meaningful.
+
+**`TextInput` alone also gained a third overload** appending `int width,
+int height` (`: TextInput(maxLength, placeholder, x, y) { this->width =
+width; this->height = height; }`, chaining onto the positioned overload
+above it, which chains onto the base one -- each level adds exactly what it
+introduces). Deliberately not added to `Button`/`Checkbox`/`Slider`: those
+three already compute their own width/height internally (message length,
+toggle-vs-box style, a fixed track size) and no call site anywhere
+overrides it -- `Slider::onMouse()`'s thumb-centering math and `Checkbox`'s
+toggle-track geometry both assume the derived value. `TextInput` is the
+only widget with no self-computed size (defaults to `0,0` from `Widget`'s
+base constructor); every real call site already set `->width`/`->height`
+manually, so this directly replaces existing lines rather than adding an
+override capability nothing exercises.
+
+---
+
 ## `mods/core/wingman/headers/widgets/widget.h` — common `Widget` base class
 
 Extracted once there were three real widgets (`Button`, `TextInput`,
@@ -356,89 +461,6 @@ moving the cursor across the widget *without* the button held leaves the
 value untouched, and a fresh click elsewhere on the track jumps straight
 to that position -- clamped correctly at both ends (`0`/`100` observed
 directly in the serial log).
-
----
-
-## `mods/core/wingman/suite/calculator/calculator.cpp` — `Calculator` app
-
-First real (non-demo) consumer of the `Widget` set -- built to the same
-suite-app shape as `MessageBox`/`WidgetDemo` (owns its own `Window`,
-implements a delegate interface, has its own `draw_border()`/
-`draw_background()`/`draw_title()` plus a per-class `utility_draw_*`
-helper trio, matching the established per-file duplication convention
-rather than sharing one across suite apps). Only `MouseDelegate` is
-implemented, not `KeyboardDelegate` -- `Window::handleKeyboard()` already
-null-checks an unset delegate, so a mouse-only app needs no keyboard stub
-at all, and a basic click-only calculator has no use for one yet.
-
-A 4x5 grid of 17 `Button` widgets (`CALC_KEYS[]`, a `{label, row, col}`
-table) rather than 17 individually named fields -- the grid is
-homogeneous (same size, same draw/hit-test logic, just a different label
-and position each), so one array plus one small table is the natural fit
-rather than repeating the same construction/placement code 17 times.
-`CALC_BUTTON_SIZE`/`CALC_GRID_GAP`/`CALC_GRID_COLS`/`CALC_GRID_ROWS`
-derive both the window's own `width`/`height` and every button's `x`/`y`
-from the same constants, so the window can never drift out of sync with
-its own grid the way `KERNEL_LOCATION` drifted across three independent
-copies (`docs/TODO.md`, Miscellaneous) -- one source of truth for the
-layout math instead of hand-placing each button and the window size
-separately.
-
-Dispatch is hit-testing in `onMouseEvent()` against `keys[]` directly
-(`CALC_KEYS[i].label[0]` identifies which key was hit), not `Button`'s
-own `onClick` callback -- unlike `WidgetDemo`, where each widget's
-callback is meaningfully different code, every calculator key needs the
-same handling (`handleKey(char)`) with only the label differing, so
-routing through 17 separate callback closures (each needing its own
-userdata to carry which key it was) would be pure indirection with
-nothing gained over a direct lookup the caller already has the table for.
-
-### Arithmetic state machine
-
-`display` (a fixed `char[24]` buffer) holds whatever's currently being
-typed or the last result; `storedValue`/`pendingOp`/`waitingForOperand`
-track a single in-flight operation, left-to-right, no operator
-precedence and no repeated-`=` chaining -- deliberately the same scope as
-a basic pocket calculator, not a real expression evaluator. Digit entry
-replaces a lone leading `"0"` instead of appending to it (`"0"` + `7` ->
-`"7"`, not `"07"`); `waitingForOperand` (set the instant an operator or
-`=` is pressed) makes the *next* digit start a fresh buffer instead of
-continuing the previous operand. `errorState` (set only by a `/` with a
-zero operand) locks out every key except `C` -- verified via QEMU mouse
-injection that `1 / 0 =` shows `Error` with no crash and that `C`
-recovers cleanly back to `"0"`, ready for a new calculation.
-
-### No `atof()`/`sprintf("%f")` — written locally instead
-
-Neither exists anywhere in this codebase: `mods/std/include/string.h`'s
-`sprintf()` only handles `%c`/`%s`/`%d`/`%i`/`%u`/`%o`/`%x`/`%X`, and
-there's no float-parsing counterpart to `atoi()` either. Adding either as
-a new shared `mods/std` capability for this one call site would be
-exactly the kind of speculative shared-interface growth this project
-avoids elsewhere (see the ring-architecture work's own preference for
-building only what current call sites exercise) -- so `calc_parse_double()`
-and `calc_format_number()` are file-local `static` helpers in
-`calculator.cpp` instead. `calc_format_number()` trims trailing
-fractional zeros (`"30.000000"` -> `"30"`) so a clean integer result
-displays as one, matching what every real calculator does.
-
-One real portability wrinkle found building this: `calc_format_number()`
-originally used `long long` for the integer part, which compiled but
-failed to *link* -- `undefined reference to __moddi3` / `__divdi3`. This
-kernel's `-m32` build has no libgcc linked in (`--oformat binary`, no
-runtime support library), so 64-bit division/modulo -- which x86-32 has
-no single instruction for, and which GCC normally lowers to a
-compiler-rt/libgcc call -- has nothing to resolve to at link time. Fixed
-by using `long` (32-bit, a native `idiv`) instead; a calculator display
-was never going to need more than 32-bit integer range anyway.
-
-Wired into `mods/core/wingman/wingman.cpp`'s `initalizeWindowSystem()`
-alongside `FileManager`/the demo `MessageBox`/`WidgetDemo`, positioned at
-`(680, 340)` so its default window doesn't fully cover any of the others.
-Boot-tested via QEMU monitor mouse injection: multi-digit entry, an
-operator switch, and `=` all verified correct (`23 + 7` -> `30`,
-confirmed visually), plus the divide-by-zero error path and its recovery
-above.
 
 ---
 
@@ -1001,6 +1023,302 @@ turning the send path into a filesystem-I/O spin loop.
 
 ---
 
+## `mods/dev/pci/drivers/rtl8139.cpp` — receive ring size/allocation mismatch
+
+`RTL8139_HANDLER()` called `RTL8139_RECEIVE_PACKET()` once per interrupt,
+no drain loop. A burst of packets arriving close together gets coalesced
+by the hardware into a single ROK interrupt, so anything past the first
+packet sat undrained in the ring indefinitely (measured: 30 packets sent
+back-to-back over the QEMU UDP tunnel netdev, 1 received).
+
+An earlier attempt just wrapped the call in `while ((inb(CMD) & CMD_BUFE)
+== 0) { ... }` with no other changes. That made things dramatically
+worse: raw packet drainage went up (1864 vs. 1 "Received IPv4 packet"
+log lines), but so did `ethernet_handle_packet()`'s "Unknown packet type
+detected" fallback -- about 399,000 times. That's not "a few more real
+packets got through"; it's the loop reading garbage header bytes and
+mis-parsing them as more (bogus) packets. That attempt was reverted
+rather than shipped.
+
+The actual bug was a receive-ring configuration mismatch that predates
+the drain-loop attempt entirely: `RX_BUFFER_SIZE` was `16 * 1024`, but
+`RCR_DEFAULT` (`0xF | (1 << 7)`) never sets the RBLEN ring-size bits
+(bits 11:12 of the RCR), which default to `00` -- the smallest ring
+option, 8K+16, per the datasheet. So the driver was tracking
+`current_packet_ptr` wraparound against a 16KB boundary that the NIC
+itself was never using; the actual hardware DMA pointer wraps at 8K+16
+regardless of what the software believes the ring size is. Compounding
+this, `RCR_WRAP` is set, which permits the NIC to DMA a packet's tail
+past the ring's *nominal* end instead of splitting it across the
+wraparound boundary -- but the DMA allocation in `RTL8139_INIT()` was
+exactly `16 * 1024` bytes with zero slack for that overflow, so such a
+write would corrupt whatever memory happened to follow the buffer.
+
+Both bugs were latent under light, single-packet traffic (the wraparound
+boundary is rarely reached), which is exactly why the earlier drain-loop
+attempt made things so much worse: draining more per interrupt pushes
+`current_packet_ptr` through the wraparound boundary far more often,
+landing squarely on the pre-existing corruption bug.
+
+Fixed by:
+- Changing `RX_BUFFER_SIZE` to `8192`, matching the ring size the
+  hardware is actually configured for (`RCR_DEFAULT`'s RBLEN bits).
+- Allocating `RX_BUFFER_SIZE + 1500 + 16` bytes of real DMA memory in
+  `RTL8139_INIT()` (was exactly `RX_BUFFER_SIZE`), giving the NIC real,
+  valid memory for the `RCR_WRAP` overflow case instead of running past
+  the allocation.
+- Reintroducing the drain loop in `RTL8139_HANDLER()` (Command register
+  `CMD_BUFE` bit, offset `0x37`), now bounded to 64 iterations per
+  interrupt as defense in depth rather than trusting the flag
+  unconditionally.
+
+Boot-tested via the same QEMU UDP tunnel netdev used for the earlier
+diagnosis, on an isolated instance (separate tunnel ports) so as not to
+disturb an already-running QEMU session. A 30-packet zero-delay burst
+now delivers 30/30 with zero "Unknown packet type detected" lines,
+repeated across several runs. A heavier 300-packet zero-delay burst
+still loses some packets, but the QEMU network-filter pcap dump
+(`-object filter-dump`) shows only ~114 of the 330 total frames sent
+across both tests ever reached the emulated NIC's wire in the first
+place -- confirming the remaining loss is QEMU's `-netdev socket`
+backend itself (plain, unreliable UDP over loopback, no guaranteed
+delivery), not the guest driver. Every frame that did reach the NIC was
+parsed correctly (zero garbage-read lines across all tests). This
+matches why the real streaming use case paces sends to the real
+playback rate rather than bursting.
+
+---
+
+## `mods/core/wingman/wingman.cpp` — closing windows
+
+`MessageBox` already had a working self-dismiss path (`dismiss()`,
+called from any button click or Enter), but the persistent suite apps --
+WidgetDemo and Explorer (`FileManager`) -- had no way to close at all;
+they're spawned once at boot and lived forever. Added a close control to
+each, following the same pattern `MessageBox::dismiss()` already
+established: `wm->remove(ref)` to pull the `Window` out of the
+`WindowManager`, then `this->window = NULL; delete this;` to free the
+app object itself. Explorer needed a small structural change first --
+unlike WidgetDemo, `FileManager` didn't store a `WindowManager*`/
+`window_ref_t ref` pair or take `wm` in its constructor, so that was
+added to match.
+
+The close control's hit-test needed to cooperate with the existing
+window-dragging feature (see the section below): a mousedown inside the
+drag-handle band (the top `WINGMAN_DRAG_HANDLE_HEIGHT` pixels of any
+window) is treated as "start dragging" *before* the click ever reaches
+the window's own `onMouseEvent` -- so a close button living in that same
+band needs an explicit carve-out in `wingman.cpp`'s drag logic, or it's
+visible and hoverable but physically unclickable. This exact failure
+mode was hit twice while building this feature: once from an
+off-by-`thickness` gap between the per-app hitbox math and the
+carve-out's width (a few pixels at the button's near edge fell through
+to the drag handler instead), and once from the carve-out being written
+for the button's original top-right position while a later revision
+moved the button to top-left. Both were only caught by boot-testing with
+temporary `serial_write_string`-logged ground-truth coordinates at each
+click -- visual screenshot inspection alone couldn't distinguish "hovering
+the button, click didn't register" from "not actually hovering the
+button" (QEMU's monitor `mouse_move` deltas aren't reliably 1:1 across
+boots, so the cursor's apparent position doesn't always match its real
+logical one).
+
+This duplication (the same geometry and hit-test math independently
+written in wingman.cpp plus each app) is what motivated later folding
+it all into a single `TitleBar` class -- see the section below.
+
+---
+
+## `mods/core/wingman/headers/titlebar.h` / `mods/core/wingman/window.h` — `TitleBar` owned by `Window`
+
+Once WidgetDemo/Explorer each had their own close button, the
+title-band drawing (background fill, divider line, the button itself)
+and its hit-test were byte-for-byte identical across both files,
+differing only by macro name prefix. That duplication is what caused
+both bugs described in the section above -- the fix in one file's
+constants didn't automatically propagate to the other, or to
+`wingman.cpp`'s independent copy of the same geometry.
+
+Fixed by extracting a `TitleBar` class (`headers/titlebar.h` /
+`titlebar.cpp`) that `Window` now owns as a plain value member
+(`window->titleBar`), configured once via `titleBar.configure(height,
+thickness, hasCloseButton, contentY, ...)` right after `new Window(...)`
+in each app's constructor -- the same post-construction wiring style
+already used for `setMouseDelegate()`/`setKeyboardDelegate()`. `contentY`
+(the single Y pixel used for both the optional icon and the title text)
+is a plain parameter rather than something derived from `height`,
+since the two existing bands (40px tall with content at y=12, and 64px
+tall with content at y=18) were tuned by hand, not by a formula. A
+default-constructed `TitleBar` is inert (`height() == 0`, no close
+button), so `MessageBox`'s `Window` needs no changes at all; it simply
+never calls `configure()`.
+
+`closeButtonContains(x, y)` takes window-local coordinates (the same
+space `Window::handleMouse` receives) and is always top-left (macOS
+style); it returns `false` unconditionally when no close button is
+configured.
+
+`TitleBar` itself holds no drawing code -- it is pure config/geometry.
+Rendering (background fill, divider row, close/minimize/maximize
+buttons, icon, then title text, in that fixed order) lives in a free
+function, `draw_title_bar(Surface*, windowWidth, const TitleBar&, const
+char* title)` in `titlebar.cpp`, declared a `friend` of `TitleBar` so it
+can read the private fields `configure()` set. `WindowManager::composite()`
+calls it for every window on every composite pass, passing
+`window->title` -- *not* from each app's own `redraw()`. This means the
+title band is always correct regardless of whether any given app
+remembers to redraw it, and an app with dynamic title text (a file
+path, say) only needs to call the new `Window::setTitle(const char*)`
+(frees the old title, copies the new one, same allocation pattern as the
+constructor) when that text changes; the next composite pass picks it up
+automatically. It also means a title band is redrawn in full on *every*
+composite pass touching that window -- e.g. a focus change or a drag,
+not just when the app itself decides to redraw -- which is why no app
+should try to hand-draw anything inside the title band itself anymore
+(see the `MessageBox` section below, which used to do exactly that and
+had to be migrated off it for this reason). `draw_title_bar()` is a
+no-op when `height() == 0`, matching the old `draw()`'s behavior.
+
+The title-text width clamp (`availableWidth = (windowWidth - t) -
+contentX`, then `maxChars = availableWidth / charAdvance`) clamps
+`availableWidth` to `0` before that division. A window narrow enough
+(or a close-button/icon zone wide enough) that `contentX` exceeds
+`windowWidth - t` makes `availableWidth` negative; casting a negative
+`int` straight to `size_t` for the division wraps it to a huge unsigned
+value, so `len > maxChars` would never trim the title and
+`utility_draw_char()` would draw off the right edge of the window's
+surface via `Surface::putPixelUnsafe` (no bounds checking, by design,
+elsewhere in this codebase). No shipped window configuration currently
+triggers this, but nothing prevented a future one from doing so.
+
+It actually renders a full macOS-style traffic-light trio when
+`hasCloseButton` is true, not just the close (red) button -- yellow
+"minimize" and green "maximize" dots are drawn immediately to its right,
+each in their own `CLOSE_BUTTON_SIZE`-wide slot with no gap between
+slots (matching macOS's tight traffic-light spacing), *not yet wired to
+anything*: `closeButtonContains()` still only tests the first (red)
+slot, so clicking the yellow/green dots is inert -- they fall through
+`Window::handleMouse` to the delegate, hit no widget, and do nothing.
+`closeButtonZoneWidth()` (the drag-handle carve-out `wingman.cpp` uses)
+covers all three slots (`thickness + margin + 3 * CLOSE_BUTTON_SIZE`),
+so a mousedown anywhere across the whole trio -- not just the close
+button -- correctly doesn't start a drag, matching real window-manager
+behavior even though only the first dot does anything yet. Content
+(icon/text) start position shifts out past all three slots accordingly.
+`MessageBox`'s own hand-drawn icon position (see the section below)
+derives its offset from `closeButtonZoneWidth()` rather than a
+hardcoded number specifically so it can't drift out of sync with this
+again.
+
+The bigger change is where the close button's *click handling* now
+lives: `Window::handleMouse()` itself intercepts any event inside
+`titleBar.closeButtonContains(x, y)` -- hover sets the pointer cursor and
+returns without forwarding to the app's delegate at all; a click fires a
+registered `onCloseRequested(void* userdata)` callback (same shape as
+the existing `Button::onClick`/`ButtonCallback` pattern) before
+forwarding is even considered. Each app registers this once via
+`window->setOnCloseRequested(&AppType::closeTrampoline, this)`, where
+`closeTrampoline` is a small private `static` method that casts
+`userdata` back and calls the app's own (unchanged) `closeWindow()`.
+WidgetDemo/Explorer no longer contain *any* close-button
+code themselves -- no `closeButtonContains()`, no `draw_close_button()`,
+no hit-test branch in `onMouseEvent()`.
+
+Since a click on the close button can lead to `wm->remove(ref)` deleting
+the very `Window` whose `handleMouse()` is still executing (a few call
+frames down, through the callback), `Window::handleMouse()` returns
+immediately after invoking the callback without touching `this` again --
+the same "delete this; return;" idiom `MessageBox::dismiss()` already
+relied on, just one frame deeper. `wingman.cpp`'s drag-handle carve-out
+now queries `hitWindow->titleBar.closeButtonZoneWidth()` directly instead
+of a hand-copied constant -- it returns `0` for a titlebar with no close
+button (e.g. `MessageBox`'s, which never calls `configure()`), so the
+carve-out is a natural no-op there without any extra check. This also
+fixes a latent, unrelated const-correctness gap: `wm->focusedWindow` was
+being read into a `const Window*` and then used to call the
+(non-`const`) `handleMouse()` -- legal only because the Makefile's
+`-fpermissive -w` silently downgraded it. Changed to a plain `Window*`
+since it's no longer accurate to call
+this pointer's target immutable.
+
+One side effect worth noting: the drag carve-out used to apply uniformly
+to every window regardless of whether it drew a close button there, so a
+corner of `MessageBox`'s title band was previously non-draggable for no
+real reason (`MessageBox` was left out of this refactor initially -- see
+below). With the carve-out now driven by each window's actual `TitleBar`
+state, that corner became draggable like the rest of its title strip
+until `MessageBox` later adopted a real close button of its own, which
+made that corner non-draggable again -- this time correctly, since it
+now has a real button living there.
+
+---
+
+## `mods/core/wingman/suite/message/message.h` / `mods/core/wingman/suite/message/message.cpp` — `MessageBox` close button and title
+
+`MessageBox` was deliberately left out of the `TitleBar` migration above
+at first -- it already had a working self-dismiss path (`dismiss()`,
+fired from any button click or Enter), and giving it a close-X was a
+separate, later decision. Registration mirrors WidgetDemo/Explorer: a
+private `static closeTrampoline(void* userdata)` casts back and calls
+the existing `dismiss()` unchanged. `onKeyboard()`/`onMouseEvent()`
+needed no changes at all -- `Window::handleMouse()` already intercepts
+close-button clicks before they'd ever reach `MessageBox`'s own button
+hit-testing.
+
+Its icon+title text did, initially, stay hand-drawn: the dialog icon
+was drawn at a different Y than the title text (`y=18` vs `y=24`),
+which didn't fit `TitleBar`'s single-`contentY` model built for
+Explorer's small leading folder icon, so `MessageBox::draw_title()` drew
+its own icon and text on top of what `titleBar.draw()` contributed
+(band, divider, close button). That stopped being viable once
+title-band drawing moved to the free `draw_title_bar()` function called
+from `WindowManager::composite()` on every pass (see the section above)
+-- `MessageBox`'s hand-drawn overlay only ran when `MessageBox` itself
+called `redraw()`, so any composite pass triggered by something else
+(a focus change, a drag) would repaint the band underneath it and erase
+the icon+text until `MessageBox` happened to redraw again. Rather than
+keep a second, less-reliable drawing path alive, `MessageBox` was
+migrated onto the same mechanism Explorer already used: `titleBar.configure()`
+is called with `hasIcon=true`, `iconId` set from `dialogBoxType`/the
+optional `icon` override, and `contentY=18` (reusing Explorer's value,
+since both are 64px-tall bands with a 32x32-at-1x icon), and the title
+string ("Information"/"Error"/"Warning") is passed via
+`window->setTitle(...)` instead of being drawn directly. `draw_title_bar()`
+now renders the icon and text itself, in step with the band, on every
+composite pass -- `MessageBox` no longer owns any title-band drawing at
+all, and `draw_title()` / its private `utility_draw_icon()` helper were
+deleted along with the `redraw()` bit that used to call them.
+
+---
+
+## `mods/core/wingman/suite/explorer/explorer.cpp` — title bar shows the current path
+
+`FileManager` used to have its own `draw_title()` that drew `this->path`
+(or `"/"` at the root, since `this->path` is `nullptr` there) directly as
+the title text. That method -- and the current-path-in-title behavior
+with it -- was lost when title-band drawing moved to the free
+`draw_title_bar()` function called from `WindowManager::composite()`
+(see "mods/core/wingman/headers/titlebar.h / mods/core/wingman/window.h
+-- TitleBar owned by Window"): nothing was left calling `draw_title()`,
+and nothing replaced it with the new `Window::setTitle()` mechanism, so
+the title bar was stuck on the static string passed to `new Window(...)`
+at construction ("File Manager") regardless of which directory was
+actually open.
+
+Fixed with a small private `updateTitle()` that calls
+`window->setTitle(this->path != nullptr ? this->path : "/")`, called
+once in the constructor (right after `this->path` is initialized to
+`nullptr`, so the title starts as `"/"` rather than the placeholder
+passed to `Window`'s constructor) and once more wherever `fileClick()`
+finishes updating `this->path` after a directory change (covers both
+navigating into a subdirectory and navigating up via `".."`). No other
+`this->path` call site needed touching -- these are the only two places
+that ever change it. Boot-tested: title reads `/` at the root, updates
+to `/hello` on entering that directory, and back to `/` on navigating up
+via `".."`, with no stale text left over from the previous directory.
+
+---
+
 ## `mods/dev/memory/memory.cpp` — `queryMemoryMap()` collects every usable region
 
 The old code called `init_phys_allocator()` from inside the SMAP-entry
@@ -1325,6 +1643,23 @@ have been overwritten by the content underneath it). If not, the
 framebuffer's cursor is already correct -- `redraw_cursor()` (unchanged)
 keeps it in sync incrementally on pure mouse-move events that don't touch
 window content at all.
+
+**`draw_title_bar()` must be called after the per-window dirty-rect
+check, not before it.** When title-band drawing moved into
+`WindowManager::composite()` (see "mods/core/wingman/headers/titlebar.h
+/ mods/core/wingman/window.h -- TitleBar owned by Window"), the call was
+initially placed before `rect_intersect(windowRect, dirty)` /
+`rect_empty(region)`, so every composite pass -- even one triggered by a
+single unrelated window's own redraw -- re-rendered every other window's
+full title band (background fill, up to three anti-aliased circles, and
+title text) regardless of whether that window's rect intersected the
+dirty region at all. That defeats the whole point of the dirty-rect
+plumbing above: cost scaled with total window count on every redraw
+instead of just the window(s) actually touched. Moved to after the
+`rect_empty(region)` check/`continue`, so a window's title band is only
+redrawn on a composite pass that already includes it -- which is always
+true on the pass where that window's own content or title actually
+changed, since the app requesting that redraw marks its own rect dirty.
 
 ---
 

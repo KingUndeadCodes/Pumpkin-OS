@@ -5,7 +5,7 @@
 #include "../../fontman/fontman.h"
 #include "../../../std/include/math.h"
 
-// See docs/DOCS.md ("mods/core/wingman/headers/shapes.h").
+// Shared rounded-corner helper -- avoids duplicating this AA math in every widget's own border loop.
 
 static inline uint8_t rounded_corner_coverage(double dx, double dy, int radius) {
     double distance = sqrt(dx * dx + dy * dy);
@@ -45,7 +45,22 @@ static inline void draw_rounded_rect_fill_corners(Surface* surface, int x, int y
     }
 }
 
-// See docs/DOCS.md ("mods/core/wingman/headers/shapes.h").
+// All four corners rounded -- the common case; draw_rounded_rect_fill_corners() is for the rest.
 static inline void draw_rounded_rect_fill(Surface* surface, int x, int y, int w, int h, int radius, color_t color) {
     draw_rounded_rect_fill_corners(surface, x, y, w, h, radius, color, true, true, true, true);
+}
+
+// See docs/DOCS.md ("mods/core/wingman/headers/shapes.h -- draw_circle_fill()"),
+// used for the macOS-style traffic-light close button.
+static inline void draw_circle_fill(Surface* surface, int cx, int cy, int radius, color_t color) {
+    for (int row = -radius; row <= radius; row++) {
+        for (int col = -radius; col <= radius; col++) {
+            uint8_t coverage = rounded_corner_coverage((double)col + 0.5, (double)row + 0.5, radius);
+            if (coverage == 0) continue;
+            int px = cx + col, py = cy + row;
+            if (coverage == 255) { surface->putPixelUnsafe(px, py, color); continue; }
+            color_t under = surface->getPixel(px, py);
+            surface->putPixelUnsafe(px, py, ttf_blend_over(under, color, coverage));
+        }
+    }
 }

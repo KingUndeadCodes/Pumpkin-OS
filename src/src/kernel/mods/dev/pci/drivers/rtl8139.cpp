@@ -108,7 +108,7 @@ void RTL8139_RECEIVE_PACKET() {
     memcpy(packet, t, packet_length);
     ethernet_handle_packet(packet, packet_length);
     NICDevice.current_packet_ptr = (NICDevice.current_packet_ptr + packet_length + 4 + 3) & RX_READ_POINTER_MASK;
-    if(NICDevice.current_packet_ptr > RX_BUFFER_SIZE) NICDevice.current_packet_ptr -= RX_BUFFER_SIZE; // RX_BUFFER_SIZE was 8192 before.
+    if(NICDevice.current_packet_ptr > RX_BUFFER_SIZE) NICDevice.current_packet_ptr -= RX_BUFFER_SIZE;
     outw(NICDevice.ioaddr + 0x38, NICDevice.current_packet_ptr - 0x10);
     free(packet);
     return;
@@ -143,7 +143,16 @@ void RTL8139_HANDLER(struct regs* r) {
     }
 
     if (status & (1 << 0)) {
-        RTL8139_RECEIVE_PACKET();
+        // A burst of packets can arrive between interrupts and get
+        // coalesced into a single ROK signal, so drain everything the
+        // ring actually holds here rather than just one packet -- see
+        // docs/DOCS.md ("mods/dev/pci/drivers/rtl8139.cpp" section).
+        // Bounded defensively in case CMD_BUFE ever lags DMA state.
+        int drained = 0;
+        while ((inb(NICDevice.ioaddr + CMD) & CMD_BUFE) == 0 && drained < 64) {
+            RTL8139_RECEIVE_PACKET();
+            drained++;
+        }
     }
 
     if (status & (1 << 2)) {
@@ -178,7 +187,7 @@ void RTL8139_INIT(uint8_t bus, uint8_t device, uint8_t function) {
     NIC.tx_current = 0;
     NIC.current_packet_ptr = 0;
     // IO
-    dma_buffer_t allocation = dma_alloc(16 * 1024, 4096);
+    dma_buffer_t allocation = dma_alloc(RX_BUFFER_SIZE + 1500 + 16, 4096);
     NIC.rx_buffer = (uint8_t*)allocation.virt;   // Set the rx_buffer to       
     // END IO
     NIC.ioaddr = pciConfigReadWord(bus, device, function, 0x10) & ~3;

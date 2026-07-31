@@ -58,9 +58,10 @@ void PagingInstall(void); // This is for the setup
 #define PAGE_USER 0x4
 
 void map_physical_memory(uintptr_t phys_addr, uintptr_t virt_addr, size_t size, uint32_t flags);
-// See docs/DOCS.md ("mods/dev/paging/paging.cpp -- mark_region_user()").
+// Marks an already-mapped region PAGE_USER at both PDE and PTE, needed for real ring-3 access.
 void mark_region_user(uintptr_t addr, size_t size, bool writable);
-// See docs/DOCS.md ("mods/dev/syscall/syscall.cpp -- ring-3 syscall gate (Phase 1)").
+// CPL0 code is exempt from the hardware U/S check, so a syscall validating a ring-3
+// pointer has to replicate that check itself before trusting it.
 bool is_user_accessible(uintptr_t addr, size_t size);
 
 #endif

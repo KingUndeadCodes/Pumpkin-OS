@@ -2,62 +2,17 @@
 
 #define COLOR_R 0xFFFF0000
 #define COLOR_G 0xFF00FF00
-// See docs/DOCS.md ("mods/core/wingman/suite/explorer/explorer.cpp -- selection color").
+// Pumpkin-orange, not pure blue (too low perceived luminance here) or red (already means error).
 #define COLOR_B 0xFFFF5C04
 #define COLOR_W 0xFFFFFFFF
-// See docs/DOCS.md ("mods/core/wingman/suite/explorer/explorer.cpp -- window chrome")
-// -- matches MessageBox/WidgetDemo's own COLOR_TITLEBAR/COLOR_DIVIDER exactly.
-#define COLOR_TITLEBAR 0xFF2d2928
-#define COLOR_DIVIDER 0xFF55504f
+
+#define EXPLORER_TITLEBAR_HEIGHT 64
 
 /*
 inline color_t rgb24_to_argb32(uint32_t color24) {
     return 0xFF000000 | (color24 & 0x00FFFFFF);
 }
 */
-
-void FileManager::utility_draw_pixel(unsigned x, unsigned y, unsigned color) {
-    this->window->surface->putPixelUnsafe(x, y, color);
-};
-
-void FileManager::utility_draw_char(unsigned int x, unsigned int y, char c, unsigned int color, unsigned int scale = 4U) {
-    const FontAtlas* atlas = ttf_font_get_atlas(scale);
-    if (atlas == nullptr) {
-        for (unsigned i = 0; i < 8; i++) {
-            for (unsigned j = 0; j < 8; j++) {
-                if (Font[(int)c][i] & (1 << j)) {
-                    for (unsigned k = 0; k < scale; k++) {
-                        for (unsigned l = 0; l < scale; l++) {
-                            utility_draw_pixel(x + j * scale + l, y + i * scale + k, color);
-                        }
-                    }
-                }
-            }
-        }
-        return;
-    }
-    ttf_blit_glyph(atlas, c, (int)x, (int)y, color,
-        [&](int px, int py, uint8_t alpha, uint32_t fg) {
-            color_t under = this->window->surface->getPixel(px, py);
-            utility_draw_pixel((unsigned)px, (unsigned)py, ttf_blend_over(under, fg, alpha));
-        });
-};
-
-void FileManager::utility_draw_icon(unsigned x, unsigned y, unsigned icon, unsigned scale = 2) {
-    for (int i = 0; i < 32; i++) {
-        for (int j = 0; j < 32; j++) {
-            // const int scale = 2;
-            for (unsigned k = 0; k < scale; k++) {
-                for (unsigned l = 0; l < scale; l++) {
-                    uint8_t color = Icons[icon][i][j];
-                    if (color == 0x00) continue;
-                    if (color == 0x10) utility_draw_pixel(x + j * scale + l, y + i * scale + k, 0x0); 
-                    utility_draw_pixel(x + j * scale + l, y + i * scale + k, vgaPaletteConvertorRGB32[color]);
-                }
-            }
-        }
-    }
-};
 
 int FileManager::EndsWith(const char *str, const char *suffix) {
     if (!str || !suffix) return 0;
@@ -149,32 +104,48 @@ void FileManager::freeFileList(FileEntity* list) {
     return;
 }
 
-FileManager::FileManager(void) {
+FileManager::FileManager(WindowManager* wm) {
+    this->wm = wm;
     this->width = 864 / 1.25;
     this->height= 576 / 1.25;
     this->offsetX = 512 - (this->width / 2);
     this->offsetY = 384 - (this->height / 2);
-    this->padding = 10; 
+    this->padding = 10;
     this->frames = 1;
     this->thickness = 3;
     this->currentSelection = 0;
     this->window = new Window(width, height, offsetX, offsetY, "File Manager");
+    this->window->titleBar.configure(
+        EXPLORER_TITLEBAR_HEIGHT, 
+        this->thickness, 
+        /* hasCloseButton = */ true,
+        /* contentY = */ 18, 
+        /* hasIcon = */ true,
+        /* iconId= */ 8,
+        /* iconScale = */ 1,
+        /* textScale = */ 4
+    );
+    this->window->setOnCloseRequested(&FileManager::closeTrampoline, this);
     this->files = readDirectory();
     this->path = nullptr;
+    this->updateTitle();
     this->redraw(0b11111000);
     this->window->setKeyboardDelegate(this);
     this->window->setMouseDelegate(this);
+    this->ref = WINGMAN_INVALID_WINDOW;
+    if (this->wm != NULL) {
+        this->ref = this->wm->add(this->window);
+        if (this->ref != WINGMAN_INVALID_WINDOW) this->wm->focus(this->ref);
+    }
 };
 
 void FileManager::redraw(uint8_t description = 0b00111000) {
     // Bit 8 is the (unused)
-    // Bit 7 is the border 
+    // Bit 7 is the border
     // Bit 6 is the background
-    // Bit 5 is the title
     // Bit 4 is the options
     if ((description >> 6) & 1) this->draw_border();
     if ((description >> 5) & 1) this->draw_background();
-    if ((description >> 4) & 1) this->draw_title();
     if ((description >> 3) & 1) this->draw_options();
 };
 
@@ -186,10 +157,10 @@ void FileManager::draw_border(void) {
         int h = height - 2 * k * padding;
         constexpr auto borderColor = 0xFFFFFFFF;
         for (int t = 0; t < thickness; t++) {
-            for (int x = 0; x < w; x++) utility_draw_pixel(x0 + x, y0 + t, borderColor);
-            for (int x = 0; x < w; x++) utility_draw_pixel(x0 + x, y0 + h - 1 - t, borderColor);
-            for (int y = 0; y < h; y++) utility_draw_pixel(x0 + t, y0 + y, borderColor);
-            for (int y = 0; y < h; y++) utility_draw_pixel(x0 + w - 1 - t, y0 + y, borderColor);
+            for (int x = 0; x < w; x++) surface_draw_pixel(this->window->surface, x0 + x, y0 + t, borderColor);
+            for (int x = 0; x < w; x++) surface_draw_pixel(this->window->surface, x0 + x, y0 + h - 1 - t, borderColor);
+            for (int y = 0; y < h; y++) surface_draw_pixel(this->window->surface, x0 + t, y0 + y, borderColor);
+            for (int y = 0; y < h; y++) surface_draw_pixel(this->window->surface, x0 + w - 1 - t, y0 + y, borderColor);
         }
     }
 };
@@ -200,40 +171,24 @@ void FileManager::draw_background(void) {
     int innerW = width - 2 * ((frames - 1) * padding) - 2 * thickness;
     int innerH = height - 2 * ((frames - 1) * padding) - 2 * thickness;
     for (int y = 0; y < innerH; y++) {
-        for (int x = 0; x < innerW; x++) utility_draw_pixel(innerX + x, innerY + y, 0xFF403a39);
+        for (int x = 0; x < innerW; x++) surface_draw_pixel(this->window->surface, innerX + x, innerY + y, 0xFF403a39);
     }
-    // See docs/DOCS.md ("mods/core/wingman/suite/explorer/explorer.cpp -- window chrome").
-    int titleBarHeight = 64;
-    for (int y = innerY; y < titleBarHeight; y++) {
-        for (int x = 0; x < innerW; x++) utility_draw_pixel(innerX + x, y, COLOR_TITLEBAR);
-    }
-    for (int x = 0; x < innerW; x++) utility_draw_pixel(innerX + x, titleBarHeight, COLOR_DIVIDER);
 };
 
-void FileManager::draw_title(void) {
-    // Icon at scale 1 (32x32) so it comfortably fits inside the 64px title
-    // band with room either side -- the previous default scale (2, 64x64)
-    // overflowed past the divider into the body.
-    int iconX = padding * frames + 4;
-    int iconY = 18;
-    utility_draw_icon(iconX, iconY, 8, 1); // 8 = Open Folder (icons.h)
-    // See docs/DOCS.md ("mods/core/wingman/suite/explorer/explorer.cpp -- current
-    // path display"). this->path is nullptr at root.
-    const char* titleString = (this->path != nullptr) ? this->path : "/";
-    int charAdvance = ttf_font_char_advance(4);
-    int textStartX = iconX + 48; // icon width (32) + gutter
-    int innerX = (frames - 1) * padding + thickness;
-    int innerW = width - 2 * ((frames - 1) * padding) - 2 * thickness;
-    int availableWidth = (innerX + innerW) - textStartX;
-    size_t maxChars = (charAdvance > 0) ? (size_t)(availableWidth / charAdvance) : 0;
-    size_t len = strlen(titleString);
-    if (len > maxChars) len = maxChars; // defensive clamp -- don't draw past the window edge
-    for (size_t i = 0; i < len; i++) utility_draw_char(
-        textStartX + (charAdvance * i),
-        iconY,
-        titleString[i],
-        COLOR_W
-    );
+void FileManager::updateTitle(void) {
+    this->window->setTitle(this->path != nullptr ? this->path : "/");
+};
+
+// See docs/DOCS.md ("mods/core/wingman/wingman.cpp -- closing windows" section).
+void FileManager::closeWindow(void) {
+    if (this->wm != NULL && this->ref != WINGMAN_INVALID_WINDOW) this->wm->remove(this->ref);
+    this->window = NULL;
+    delete this;
+};
+
+// See docs/DOCS.md ("mods/core/wingman/headers/titlebar.h / mods/core/wingman/window.h -- TitleBar owned by Window" section).
+void FileManager::closeTrampoline(void* userdata) {
+    ((FileManager*)userdata)->closeWindow();
 };
 
 // See docs/DOCS.md ("mods/core/wingman/suite/explorer/explorer.cpp -- multi-column
@@ -295,9 +250,9 @@ void FileManager::draw_options(void) {
             } else {
                 iconSelection = 6;
             }
-            utility_draw_icon(x, y, iconSelection, 1);
+            surface_draw_icon(this->window->surface, x, y, iconSelection, 1);
         } else {
-            utility_draw_icon(x, y, 7, 1);
+            surface_draw_icon(this->window->surface, x, y, 7, 1);
         }
         // Defensive clamp -- keep the filename inside this column's own
         // footprint so it can't bleed into the next column or the gutter.
@@ -305,7 +260,7 @@ void FileManager::draw_options(void) {
         size_t maxChars = (charAdvance > 0) ? (size_t)((g.columnWidth - textOffset) / charAdvance) : 0;
         size_t drawLen = len < maxChars ? len : maxChars;
         for (size_t j = 0; j < drawLen; j++) {
-            utility_draw_char(x + textOffset + (charAdvance * j), y + 8, optionString[j], (i == currentSelection ? COLOR_B : COLOR_W), 2);
+            surface_draw_char(this->window->surface, x + textOffset + (charAdvance * j), y + 8, optionString[j], (i == currentSelection ? COLOR_B : COLOR_W), 2);
         }
     }
     // Page indicator, bottom-right of the content area.
@@ -320,7 +275,7 @@ void FileManager::draw_options(void) {
     int innerH = height - 2 * ((frames - 1) * padding) - 2 * thickness;
     int pbX = innerX + innerW - (charAdvance * pbLen) - padding;
     int pbY = innerY + innerH - 20;
-    for (int k = 0; k < pbLen; k++) utility_draw_char(pbX + (charAdvance * k), pbY, pageBuf[k], COLOR_W, 2);
+    for (int k = 0; k < pbLen; k++) surface_draw_char(this->window->surface, pbX + (charAdvance * k), pbY, pageBuf[k], COLOR_W, 2);
 };
 
 int FileManager::fileIndexAt(int x, int y) {
@@ -349,11 +304,12 @@ bool FileManager::onMouseEvent(int x, int y, int dx, int dy, unsigned char butto
     (void)dx;
     (void)dy;
     (void)buttons;
-    // See docs/DOCS.md ("mods/core/wingman/suite/explorer/explorer.cpp -- hover cursor").
+    // Runs on every move, not just clicks, so plain hovering (not just clicking) updates the cursor.
     set_cursor_id(fileIndexAt(x, y) != -1 ? 2 : 0);
 
     if (pressedEdge & 1) {
-        // See docs/DOCS.md ("mods/core/wingman/suite/explorer/explorer.cpp -- selection-highlight redraw").
+        // Must include the background bit: TTF glyphs are alpha-blended now, so redrawing
+        // just the text over the old glyph without clearing first leaves ghosted edges.
         uint8_t redraw_description = 0b00111000;
         int clicked = fileIndexAt(x, y);
         if (clicked == -1) return false;
@@ -459,7 +415,8 @@ bool FileManager::fileClick(bool* redrawNeeded, uint8_t* redraw_description) {
                 this->path = newPath;
             }
         }
-        this->currentSelection = 0; // Default selection to the first option, always. 
+        this->updateTitle(); // Keep the title bar in sync with the just-changed path.
+        this->currentSelection = 0; // Default selection to the first option, always.
         FileEntity* newFiles = readDirectory(this->path != nullptr ? this->path : "/");
         if (newFiles) {
             freeFileList(this->files);
@@ -521,7 +478,8 @@ bool FileManager::fileClick(bool* redrawNeeded, uint8_t* redraw_description) {
             struct mp3_info_t* mp3_info = read_mp3_info((uint8_t*)buffer, buffer_len);
             if (mp3_info) {
                 play_mp3(mp3_info, 0);
-                // See docs/DOCS.md ("mods/core/wingman/suite/explorer/explorer.cpp -- MP3 playback buffer lifetime").
+                // The AC97 IRQ refill callback reads straight from `buffer` for the whole
+                // playback duration, so it can't be freed until playback finishes.
                 while (AC97IsPlaying()) {
                     asm volatile("hlt");
                 }
@@ -578,7 +536,7 @@ bool FileManager::onKeyboard(char key, bool shift, bool meta, unsigned char scan
     if (key == 's') {
         if (this->currentSelection + 1 < this->fileCount) {
             this->currentSelection++;
-            // See docs/DOCS.md ("mods/core/wingman/suite/explorer/explorer.cpp -- selection-highlight redraw").
+            // Same bits as the click handler above -- background must be cleared before the new glyph.
             redraw_description |= 0b00111000;
             redrawNeeded = true;
         }

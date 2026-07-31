@@ -60,13 +60,14 @@ build:
 	$(CC) $(CFLAGS) mods/core/wingman/suite/explorer/explorer.cpp -o explorerWingman.o
 	$(CC) $(CFLAGS) mods/core/wingman/suite/message/message.cpp -o messageWingman.o
 	$(CC) $(CFLAGS) mods/core/wingman/suite/widgetdemo/widgetdemo.cpp -o widgetdemoWingman.o
-	$(CC) $(CFLAGS) mods/core/wingman/suite/calculator/calculator.cpp -o calculatorWingman.o
 	$(CC) $(CFLAGS) mods/core/wingman/window.cpp -o window.o
+	$(CC) $(CFLAGS) mods/core/wingman/titlebar.cpp -o titlebar.o
+	$(CC) $(CFLAGS) mods/core/wingman/draw.cpp -o draw.o
 	$(CC) $(CFLAGS) mods/core/wingman/surface.cpp -o surface.o
 	$(CC) $(CFLAGS) mods/core/wingman/manager.cpp -o manager.o
 	$(CC) $(CFLAGS) mods/core/wingman/wingman.cpp -o wingman.o
 	$(CC) $(CFLAGS) mods/core/wingman/cursor.cpp -o cursor.o
-	$(LD) $(LDFLAGS) Kernel-Entry.o gdt.o gdt_asm.o kernel.o console.o idt.o isr.o irq.o kb.o mouse.o ctype.o string.o math.o memory.o allocator.o vfs.o paging.o pat.o stdlib.o timer.o cmos.o pci.o rtl8139.o ac97.o time.o serial.o logging.o tasking.o vbe.o stdio.o syscall.o arp.o ip.o udp.o wav.o chorus.o minimp3.o button.o textinput.o checkbox.o slider.o mp3.o elf.o ramfs.o window.o surface.o manager.o wingman.o cursor.o explorerWingman.o messageWingman.o widgetdemoWingman.o calculatorWingman.o font_data.o fontman.o truetype_impl.o $(LDFLAGS_TAIL)
+	$(LD) $(LDFLAGS) Kernel-Entry.o gdt.o gdt_asm.o kernel.o console.o idt.o isr.o irq.o kb.o mouse.o ctype.o string.o math.o memory.o allocator.o vfs.o paging.o pat.o stdlib.o timer.o cmos.o pci.o rtl8139.o ac97.o time.o serial.o logging.o tasking.o vbe.o stdio.o syscall.o arp.o ip.o udp.o wav.o chorus.o minimp3.o button.o textinput.o checkbox.o slider.o mp3.o elf.o ramfs.o window.o titlebar.o draw.o surface.o manager.o wingman.o cursor.o explorerWingman.o messageWingman.o widgetdemoWingman.o font_data.o fontman.o truetype_impl.o $(LDFLAGS_TAIL)
 # truncate -s 131072 kernel.bin
 # cat kernel.bin empty_end.bin > kernel2.bin
 # mv kernel2.bin kernel.bin
@@ -76,5 +77,5 @@ build:
 # https://forum.osdev.org/viewtopic.php?t=25157
 
 clean:
-	rm chorus.o wav.o minimp3.o button.o textinput.o checkbox.o slider.o mp3.o ip.o arp.o udp.o allocator.o pat.o isr.o kb.o mouse.o vfs.o memory.o logging.o Kernel-Entry.o kernel.o idt.o irq.o ctype.o string.o paging.o serial.o stdlib.o timer.o pci.o rtl8139.o ac97.o cmos.o time.o tasking.o math.o console.o vbe.o ramfs.o stdio.o elf.o syscall.o window.o surface.o manager.o cursor.o explorerWingman.o messageWingman.o widgetdemoWingman.o calculatorWingman.o wingman.o font_data.o fontman.o truetype_impl.o gdt.o gdt_asm.o # image.bin
+	rm chorus.o wav.o minimp3.o button.o textinput.o checkbox.o slider.o mp3.o ip.o arp.o udp.o allocator.o pat.o isr.o kb.o mouse.o vfs.o memory.o logging.o Kernel-Entry.o kernel.o idt.o irq.o ctype.o string.o paging.o serial.o stdlib.o timer.o pci.o rtl8139.o ac97.o cmos.o time.o tasking.o math.o console.o vbe.o ramfs.o stdio.o elf.o syscall.o window.o titlebar.o draw.o surface.o manager.o cursor.o explorerWingman.o messageWingman.o widgetdemoWingman.o wingman.o font_data.o fontman.o truetype_impl.o gdt.o gdt_asm.o # image.bin
 #  kernel.bin short.bin 

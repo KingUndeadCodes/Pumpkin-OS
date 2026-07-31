@@ -22,6 +22,12 @@ Slider::Slider(float min, float max, float initialValue, SliderCallback onChange
     this->height = 24;
 };
 
+Slider::Slider(float min, float max, float initialValue, SliderCallback onChange, void* userdata, int x, int y)
+    : Slider(min, max, initialValue, onChange, userdata) {
+    this->x = x;
+    this->y = y;
+}
+
 // See docs/DOCS.md ("mods/core/wingman/widgets/slider.cpp" section) for the thumb-sizing/positioning rationale.
 static inline int slider_thumb_x(const Slider* s) {
     int thumbSize = s->height;
@@ -36,7 +42,7 @@ void Slider::draw(Surface* surface, int thickness) const {
     int thumbSize = bh;
     int trackHeight = bh / 3;
     int trackY = by + (bh - trackHeight) / 2;
-    // See docs/DOCS.md ("mods/core/wingman/headers/shapes.h").
+    // radius = trackHeight/2 gives the track fully-rounded (pill-shaped) ends.
     draw_rounded_rect_fill(surface, bx, trackY, bw, trackHeight, trackHeight / 2, SLIDER_COLOR_TRACK);
     int thumbX = slider_thumb_x(this);
     int fillWidth = (thumbX + thumbSize / 2) - bx;

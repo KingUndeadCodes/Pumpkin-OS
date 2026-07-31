@@ -73,7 +73,7 @@ void serial_write_string(const char* string, bool time_show = true, enum Types T
     __serial_write_string(string);
 }
 
-// See docs/DOCS.md ("mods/dev/serial/serial.cpp -- serial_log_adapter()").
+// Adapts serial_write_string()'s signature to the LogDevice::log callback shape.
 void serial_log_adapter(const char* message) {
     serial_write_string(message);
 }

@@ -27,7 +27,7 @@ bool WindowManager::keyboard_handler(char key, bool shift, bool meta, unsigned c
     return false;
 };
 
-// See docs/DOCS.md ("mods/core/wingman/headers/manager.h / manager.cpp" section).
+// Shifts everything after ref down by one, shared by remove() and focus() so z-order stays a dense array.
 static void zOrderRemove(window_ref_t* zOrder, uint32_t* zOrderCount, window_ref_t ref) {
     for (uint32_t i = 0; i < *zOrderCount; i++) {
         if (zOrder[i] == ref) {
@@ -157,7 +157,7 @@ void WindowManager::clearScreen(Rect dirty) {
     this->screen->clear(dirty.x, dirty.y, dirty.w, dirty.h, this->environment.backgroundColor);
 }
 
-// See docs/DOCS.md ("mods/core/wingman/headers/types.h -- Rect / dirty-rect compositing").
+// Only clears and re-blends the given rect, not the whole screen -- see docs/DOCS.md ("Rect / dirty-rect compositing").
 void WindowManager::composite(Rect dirty) {
     if (this->screen == NULL) return;
     Rect screenRect = { 0, 0, (int)this->constraints.screenXSizePx, (int)this->constraints.screenYSizePx };
@@ -176,6 +176,8 @@ void WindowManager::composite(Rect dirty) {
         Rect windowRect = { window->offsetX, window->offsetY, surface->getWidth(), surface->getHeight() };
         Rect region = rect_intersect(windowRect, dirty);
         if (rect_empty(region)) continue;
+        // Must run after the dirty-rect check above, or every pass redraws every window's title band.
+        draw_title_bar(surface, window->width, window->titleBar, window->title);
         for (int screenY = region.y; screenY < region.y + region.h; screenY++) {
             int localY = screenY - window->offsetY;
             int rowBase = screenY * screenWidth;

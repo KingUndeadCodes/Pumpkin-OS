@@ -1,6 +1,6 @@
 #include "../headers/widgets/textinput.h"
 #include "../headers/shapes.h"
-#include "../../../dev/vbe/font.h"
+#include "../headers/draw.h"
 #include "../../fontman/fontman.h"
 #include <string.h>
 
@@ -26,40 +26,29 @@ TextInput::TextInput(int maxLength, const char* placeholder) : Widget(WidgetType
     }
 };
 
+TextInput::TextInput(int maxLength, const char* placeholder, int x, int y)
+    : TextInput(maxLength, placeholder) {
+    this->x = x;
+    this->y = y;
+}
+
+TextInput::TextInput(int maxLength, const char* placeholder, int x, int y, int width, int height)
+    : TextInput(maxLength, placeholder, x, y) {
+    this->width = width;
+    this->height = height;
+}
+
 TextInput::~TextInput() {
     free(this->buffer);
     free(this->placeholder);
 };
-
-static void drawChar(Surface* surface, unsigned x, unsigned y, char c, unsigned color, unsigned scale) {
-    const FontAtlas* atlas = ttf_font_get_atlas(scale);
-    if (atlas == nullptr) {
-        for (unsigned i = 0; i < 8; i++) {
-            for (unsigned j = 0; j < 8; j++) {
-                if (Font[(int)c][i] & (1 << j)) {
-                    for (unsigned k = 0; k < scale; k++) {
-                        for (unsigned l = 0; l < scale; l++) {
-                            surface->putPixelUnsafe(x + j * scale + l, y + i * scale + k, color);
-                        }
-                    }
-                }
-            }
-        }
-        return;
-    }
-    ttf_blit_glyph(atlas, c, (int)x, (int)y, color,
-        [&](int px, int py, uint8_t alpha, uint32_t fg) {
-            color_t under = surface->getPixel(px, py);
-            surface->putPixelUnsafe(px, py, ttf_blend_over(under, fg, alpha));
-        });
-}
 
 void TextInput::draw(Surface* surface, int thickness) const {
     constexpr uint32_t scale = 2;
     int bx = this->x, by = this->y, bw = this->width, bh = this->height;
     int radius = bh / 5;
     uint32_t bg = this->focused ? TEXTINPUT_COLOR_BG_FOCUSED : TEXTINPUT_COLOR_BG;
-    // See docs/DOCS.md ("mods/core/wingman/headers/shapes.h").
+    // Border + inset fill, both rounded the same amount minus the border thickness.
     draw_rounded_rect_fill(surface, bx, by, bw, bh, radius, TEXTINPUT_COLOR_BORDER);
     draw_rounded_rect_fill(surface, bx + thickness, by + thickness, bw - thickness * 2, bh - thickness * 2, radius - thickness, bg);
     // Text, or placeholder when empty and unfocused, left-aligned and vertically centered.
@@ -90,7 +79,7 @@ void TextInput::draw(Surface* surface, int thickness) const {
         visibleLen = shownLen - startIndex;
     }
     for (int i = 0; i < visibleLen; i++) {
-        drawChar(surface, bx + thickness * 2 + i * charWidth, textY, shown[startIndex + i], textColor, scale);
+        surface_draw_char(surface, bx + thickness * 2 + i * charWidth, textY, shown[startIndex + i], textColor, scale);
     }
     // Caret: a thin bar right after the last visible character, only while focused.
     if (this->focused) {

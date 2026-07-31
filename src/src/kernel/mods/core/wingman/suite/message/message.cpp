@@ -2,51 +2,7 @@
 
 #define COLOR_W 0xFFFFFFFF
 #define COLOR_BG 0xFF403a39
-#define COLOR_TITLEBAR 0xFF2d2928
 #define COLOR_DIVIDER 0xFF55504f
-
-void MessageBox::utility_draw_pixel(unsigned x, unsigned y, unsigned color) {
-    this->window->surface->putPixelUnsafe(x, y, color);
-};
-
-void MessageBox::utility_draw_char(unsigned int x, unsigned int y, char c, unsigned int color, unsigned int scale = 4U) {
-    const FontAtlas* atlas = ttf_font_get_atlas(scale);
-    if (atlas == nullptr) {
-        for (unsigned i = 0; i < 8; i++) {
-            for (unsigned j = 0; j < 8; j++) {
-                if (Font[(int)c][i] & (1 << j)) {
-                    for (unsigned k = 0; k < scale; k++) {
-                        for (unsigned l = 0; l < scale; l++) {
-                            utility_draw_pixel(x + j * scale + l, y + i * scale + k, color);
-                        }
-                    }
-                }
-            }
-        }
-        return;
-    }
-    ttf_blit_glyph(atlas, c, (int)x, (int)y, color,
-        [&](int px, int py, uint8_t alpha, uint32_t fg) {
-            color_t under = this->window->surface->getPixel(px, py);
-            utility_draw_pixel((unsigned)px, (unsigned)py, ttf_blend_over(under, fg, alpha));
-        });
-};
-
-void MessageBox::utility_draw_icon(unsigned x, unsigned y, unsigned icon, float scale = 2.0f) {
-    int size = (int)(32.0f * scale);
-    for (int py = 0; py < size; py++) {
-        int srcY = (int)(py / scale);
-        if (srcY > 31) srcY = 31;
-        for (int px = 0; px < size; px++) {
-            int srcX = (int)(px / scale);
-            if (srcX > 31) srcX = 31;
-            uint8_t color = Icons[icon][srcY][srcX];
-            if (color == 0x00) continue;
-            if (color == 0x10) utility_draw_pixel(x + px, y + py, 0x0);
-            utility_draw_pixel(x + px, y + py, vgaPaletteConvertorRGB32[color]);
-        }
-    }
-};
 
 MessageBox::MessageBox(WindowManager* wm, enum MessageBoxType dialogBoxType, const char* message, int icon = -1) {
     this->wm = wm;
@@ -64,7 +20,7 @@ MessageBox::MessageBox(WindowManager* wm, enum MessageBoxType dialogBoxType, con
     this->buttonRowHeight = 40;
     this->buttonRowX = 2 * this->padding;
     this->buttonRowWidth = this->width - 2 * this->buttonRowX;
-    // See docs/DOCS.md ("mods/core/wingman/suite/message/message.h / message.cpp" section).
+    // Y of the divider line above the button row -- buttons are then centered in the space below it.
     this->buttonSectionDividerY = this->height - this->thickness - this->padding - this->buttonRowHeight - (this->padding / 2);
     int sectionTop = this->buttonSectionDividerY + 1;
     int sectionBottom = this->height - this->thickness;
@@ -77,9 +33,26 @@ MessageBox::MessageBox(WindowManager* wm, enum MessageBoxType dialogBoxType, con
         this->message = NULL;
     }
     this->window = new Window(width, height, offsetX, offsetY, "Message");
+    int iconType = 0;
+    const char* titleText = "Information";
+    switch (this->dialogBoxType) {
+        case DialogBoxInformational: { iconType = 0; titleText = "Information"; break; }
+        case DialogBoxError: { iconType = 1; titleText = "Error"; break; }
+        case DialogBoxWarning: { iconType = 2; titleText = "Warning"; break; }
+    };
+    if (this->icon >= 0 && this->icon < 12) iconType = this->icon;
+    // contentY=18 matches Explorer's icon+text layout for the same 64px band.
+    this->window->titleBar.configure(
+        64,
+        this->thickness,
+        true, /*hasCloseButton */ 
+        18, /*contentY */
+        /*hasIcon=*/true, /*iconId=*/iconType, /*iconScale=*/1, /*textScale=*/3);
+    this->window->setTitle(titleText);
+    this->window->setOnCloseRequested(&MessageBox::closeTrampoline, this);
     this->window->setKeyboardDelegate(this);
     this->window->setMouseDelegate(this);
-    this->redraw(0b11111100);
+    this->redraw(0b11101100);
     this->ref = WINGMAN_INVALID_WINDOW;
     if (this->wm != NULL) {
         this->ref = this->wm->add(this->window);
@@ -87,7 +60,7 @@ MessageBox::MessageBox(WindowManager* wm, enum MessageBoxType dialogBoxType, con
     }
 };
 
-// See docs/DOCS.md ("mods/core/wingman/suite/message/message.h / message.cpp" section).
+// Splits buttonRowWidth evenly across however many buttons exist, re-run whenever the count changes.
 void MessageBox::layoutButtons(void) {
     if (this->buttonCount <= 0) return;
     int gap = this->padding;
@@ -125,12 +98,11 @@ void MessageBox::redraw(uint8_t description = 0b00111000) {
     // Bit 8 is the (unused)
     // Bit 7 is the border
     // Bit 6 is the background
-    // Bit 5 is the title
     // Bit 4 is the body
     // Bit 3 is the options
+    // No title bit -- WindowManager::composite() draws the band/icon/title every pass now.
     if ((description >> 6) & 1) this->draw_border();
     if ((description >> 5) & 1) this->draw_background();
-    if ((description >> 4) & 1) this->draw_title();
     if ((description >> 3) & 1) this->draw_body();
     if ((description >> 2) & 1) this->draw_buttons();
 };
@@ -142,10 +114,10 @@ void MessageBox::draw_border(void) {
     int w = width - 2 * k * padding;
     int h = height - 2 * k * padding;
     for (int t = 0; t < thickness; t++) {
-        for (int x = 0; x < w; x++) utility_draw_pixel(x0 + x, y0 + t, COLOR_W);
-        for (int x = 0; x < w; x++) utility_draw_pixel(x0 + x, y0 + h - 1 - t, COLOR_W);
-        for (int y = 0; y < h; y++) utility_draw_pixel(x0 + t, y0 + y, COLOR_W);
-        for (int y = 0; y < h; y++) utility_draw_pixel(x0 + w - 1 - t, y0 + y, COLOR_W);
+        for (int x = 0; x < w; x++) surface_draw_pixel(this->window->surface, x0 + x, y0 + t, COLOR_W);
+        for (int x = 0; x < w; x++) surface_draw_pixel(this->window->surface, x0 + x, y0 + h - 1 - t, COLOR_W);
+        for (int y = 0; y < h; y++) surface_draw_pixel(this->window->surface, x0 + t, y0 + y, COLOR_W);
+        for (int y = 0; y < h; y++) surface_draw_pixel(this->window->surface, x0 + w - 1 - t, y0 + y, COLOR_W);
     }
 };
 
@@ -156,38 +128,12 @@ void MessageBox::draw_background(void) {
     int innerW = width - 2 * ((frames - 1) * padding) - 2 * thickness;
     int innerH = height - 2 * ((frames - 1) * padding) - 2 * thickness;
     for (int y = 0; y < innerH; y++) {
-        for (int x = 0; x < innerW; x++) utility_draw_pixel(innerX + x, innerY + y, COLOR_BG);
+        for (int x = 0; x < innerW; x++) surface_draw_pixel(this->window->surface, innerX + x, innerY + y, COLOR_BG);
     }
-    // See docs/DOCS.md ("mods/core/wingman/suite/message/message.h / message.cpp" section).
-    int titleBarHeight = 64;
-    for (int y = 0; y < titleBarHeight; y++) {
-        for (int x = 0; x < innerW; x++) utility_draw_pixel(innerX + x, innerY + y, COLOR_TITLEBAR);
-    }
-    for (int x = 0; x < innerW; x++) utility_draw_pixel(innerX + x, innerY + titleBarHeight, COLOR_DIVIDER);
 };
 
-void MessageBox::draw_title(void) {
-    int iconType = 0;
-    char* title = (char*)malloc(13);
-    switch (this->dialogBoxType) {
-        case DialogBoxInformational: { iconType = 0; strcpy(title, "Information"); break; }
-        case DialogBoxError: { iconType = 1; strcpy(title, "Error"); break; }
-        case DialogBoxWarning: { iconType = 2; strcpy(title, "Warning"); break; }
-    };
-    // See docs/DOCS.md ("mods/core/wingman/suite/message/message.h / message.cpp" section).
-    if (this->icon >= 0 && this->icon < 12) iconType = this->icon;
-    utility_draw_icon(8, 12, iconType, 1.5f);
-    const char* titleString = (const char*)title;
-    int charAdvance = ttf_font_char_advance(3);
-    for (int i = 0; i < strlen(titleString); i++) {
-        unsigned int xPos = 4 + 62 + (charAdvance * i);
-        char character = titleString[i];
-        utility_draw_char(xPos, 24, character, COLOR_W, 3);
-    }
-    free(title);
-};
-
-// See docs/DOCS.md ("mods/core/wingman/suite/message/message.cpp -- draw_body() word wrap").
+// charsPerLine is derived from the box's real text-area width and the font's real advance,
+// not a hardcoded count -- a fixed guess drifts out of sync whenever either one changes.
 void MessageBox::draw_body(void) {
     int charAdvance = ttf_font_char_advance(2);
     int margin = 2 * this->padding;
@@ -215,7 +161,7 @@ void MessageBox::draw_body(void) {
             }
         }
         for (int col = 0; col < lineLen; col++) {
-            utility_draw_char(margin + charAdvance * col, 80 + 16 * row, this->message[lineStart + col], COLOR_W, 2);
+            surface_draw_char(this->window->surface, margin + charAdvance * col, 80 + 16 * row, this->message[lineStart + col], COLOR_W, 2);
         }
         lineStart += lineLen;
         if (skipBreakChar && lineStart < len) lineStart++; // skip the space/newline we broke on
@@ -224,29 +170,34 @@ void MessageBox::draw_body(void) {
 };
 
 void MessageBox::draw_buttons(void) {
-    // See docs/DOCS.md ("mods/core/wingman/suite/message/message.h / message.cpp" section).
+    // Clear the row first -- addButton() can call this again after the layout shifted.
     for (int y = 0; y < this->buttonRowHeight; y++) {
         for (int x = 0; x < this->buttonRowWidth; x++) {
-            utility_draw_pixel(this->buttonRowX + x, this->buttonRowY + y, COLOR_BG);
+            surface_draw_pixel(this->window->surface, this->buttonRowX + x, this->buttonRowY + y, COLOR_BG);
         }
     }
     // Divider above the row, mirroring the one under the title bar.
     int dividerY = this->buttonSectionDividerY;
     for (int x = thickness; x < width - thickness; x++) {
-        utility_draw_pixel(x, dividerY, COLOR_DIVIDER);
+        surface_draw_pixel(this->window->surface, x, dividerY, COLOR_DIVIDER);
     }
     for (int b = 0; b < this->buttonCount; b++) {
         this->buttons[b]->draw(this->window->surface, this->thickness);
     }
 };
 
-// See docs/DOCS.md ("mods/core/wingman/suite/message/message.h / message.cpp" section).
+// Removes the window from the WindowManager, then frees this instance -- callers must not touch `this` after.
 void MessageBox::dismiss(void) {
     if (this->wm != NULL && this->ref != WINGMAN_INVALID_WINDOW) {
         this->wm->remove(this->ref);
     }
     this->window = NULL;
     delete this;
+};
+
+// Registered with Window::setOnCloseRequested() so the title bar's close button reaches dismiss().
+void MessageBox::closeTrampoline(void* userdata) {
+    ((MessageBox*)userdata)->dismiss();
 };
 
 bool MessageBox::onKeyboard(char key, bool shift, bool meta, unsigned char scancode) {
@@ -274,7 +225,7 @@ bool MessageBox::onMouseEvent(int x, int y, int dx, int dy, unsigned char button
             break;
         }
     }
-    // See docs/DOCS.md ("mods/core/wingman/suite/message/message.h / message.cpp" section).
+    // Runs every move, not just clicks, so plain hovering (not just clicking) updates the cursor.
     set_cursor_id(hovered != NULL ? 2 : 0);
     if (!(pressedEdge & 1) || hovered == NULL) return false;
     if (hovered->onClick != NULL) hovered->onClick(hovered->userdata);

@@ -15,14 +15,15 @@ static uint32_t* linearFramebuffer = (uint32_t*)VBE_DISPI_LFB_PHYSICAL_ADDRESS;
 
 #define rgb(r, g, b) (((r) << 16) | ((g) << 8) | (b))
 
-// See docs/DOCS.md ("mods/dev/vbe/vbe.cpp -- bulk framebuffer operations").
+// Writes straight through a plain uint32_t*, not draw_pixel()'s volatile per-pixel path --
+// this is 786,432 stores for a full clear, and the framebuffer is plain mapped memory, not MMIO.
 void fill(unsigned color) {
     uint32_t* fb = linearFramebuffer;
     uint32_t count = (uint32_t)SCREEN_X * (uint32_t)SCREEN_Y;
     for (uint32_t i = 0; i < count; i++) fb[i] = color;
 }
 
-// See docs/DOCS.md ("mods/dev/vbe/vbe.cpp -- bulk framebuffer operations").
+// One memmove() for the shifted rows instead of a row-by-row get_pixel()/draw_pixel() loop.
 void scroll_framebuffer_up(unsigned lines, unsigned bg) {
     if (lines == 0) return;
     uint32_t* fb = linearFramebuffer;
@@ -45,8 +46,7 @@ void pci_vbe_init(uint8_t bus, uint8_t device, uint8_t function) {
 }
 
 
-// See docs/DOCS.md ("mods/dev/vbe/vbe.cpp -- bulk framebuffer operations").
-// 8x8 pixel font, scaled by `scale`.
+// 8x8 pixel font, scaled by `scale`. Same plain-pointer write path as fill() above.
 void draw_char(unsigned x, unsigned y, char c, unsigned color, unsigned scale = 4) {
     uint32_t* fb = linearFramebuffer;
     for (unsigned i = 0; i < 8; i++) {
@@ -158,7 +158,7 @@ void BgaSetBank(unsigned short BankNumber) {
     BgaWriteRegister(VBE_DISPI_INDEX_BANK, BankNumber);
 }
 
-// See docs/DOCS.md ("mods/dev/vbe/vbe.cpp -- hardware double buffering").
+// currentBackRegion is the half NOT currently scanned out -- safe to write into.
 uint32_t* vbe_get_back_buffer(void) {
     uint32_t frameWords = (uint32_t)SCREEN_X * (uint32_t)SCREEN_Y;
     return linearFramebuffer + (size_t)currentBackRegion * frameWords;

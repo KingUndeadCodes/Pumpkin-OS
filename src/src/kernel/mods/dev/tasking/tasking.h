@@ -18,7 +18,6 @@ typedef struct task {
     task_state_t state;
     uint32_t pid;
     void* stack_base;         // malloc'd stack to free on reap; NULL for statically-allocated stacks (never freed)
-    // See docs/DOCS.md ("mods/dev/tasking/tasking.cpp -- ring-transition GDT/TSS").
     uint8_t  ring;             // target CPL: 0 for every existing task, 3 for a ring-3 task
     uint32_t kernel_stack_top; // written into TSS.ESP0 whenever this task is current
 } task_t;

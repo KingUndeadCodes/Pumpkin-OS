@@ -44,7 +44,7 @@
 #define SCREEN_Y VBE_DISPI_MAX_YRES
 #define SCREEN_BPP VBE_DISPI_BPP_32
 #define SCREEN_PITCH (SCREEN_X * (SCREEN_BPP / 8))
-// See docs/DOCS.md ("mods/dev/vbe/vbe.cpp -- hardware double buffering").
+// Two frames' worth of VRAM mapped -- one displayed, one written to, swapped via vbe_flip().
 #define VBE_FRAMEBUFFER_COUNT 2
 
 #define COLOR_W 0x00FFFFFF
@@ -68,7 +68,8 @@ void BgaSetVideoMode(unsigned int Width, unsigned int Height, unsigned int BitDe
 void BgaSetBank(unsigned short BankNumber);
 unsigned short BgaReadRegister(unsigned short IndexValue);
 
-// See docs/DOCS.md ("mods/dev/vbe/vbe.cpp -- hardware double buffering").
+// vbe_get_back_buffer() points at the currently-hidden half of VRAM; vbe_flip() writes
+// Y_OFFSET to swap which half the display hardware scans out.
 uint32_t* vbe_get_back_buffer(void);
 void vbe_flip(void);
 

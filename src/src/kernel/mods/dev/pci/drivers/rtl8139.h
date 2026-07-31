@@ -9,13 +9,22 @@
 #include "../../port.cpp"
 
 #define CAPR 0x38
+#define CMD  0x37
+#define CMD_BUFE                (1<<0)
 #define RX_READ_POINTER_MASK    (~3)
 #define ROK                     (1<<0)
 #define RER                     (1<<1)
 #define TOK                     (1<<2)
 #define TER                     (1<<3)
 #define TX_TOK                  (1<<15)
-#define RX_BUFFER_SIZE          (16 * 1024) // (8192 + 1500 + 16)
+// RCR_DEFAULT leaves the RBLEN ring-size bits at 00, i.e. an 8K+16 ring
+// (see RTL8139 datasheet 3.3.7) -- RX_BUFFER_SIZE must match that, since
+// it drives the CAPR/current_packet_ptr wraparound math below. The actual
+// DMA allocation in RTL8139_INIT is RX_BUFFER_SIZE + 1500 + 16: with the
+// WRAP bit set in RCR_DEFAULT, the NIC is allowed to DMA a packet's tail
+// past the nominal ring end rather than splitting it, so the buffer needs
+// that much real slack space or those writes corrupt adjacent memory.
+#define RX_BUFFER_SIZE          8192
 
 #define RCR_APM   (1 << 1)
 #define RCR_AM    (1 << 2)

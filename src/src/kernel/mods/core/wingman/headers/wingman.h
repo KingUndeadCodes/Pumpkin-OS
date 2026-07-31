@@ -14,7 +14,7 @@
 #include <time.h>
 
 void initalizeWindowSystem(void);
-// See docs/DOCS.md ("mods/dev/vbe/vbe.cpp -- hardware double buffering").
+// Always a full-frame present -- real page-flipping means a partial patch would leave the rest wrong.
 void redraw_screen(void);
-// See docs/DOCS.md ("mods/core/wingman/wingman.cpp -- input queue / worker task").
+// Starts the task that drains queueMouseEventForWingman()/queueKeyEventForWingman()'s ring buffer.
 void wingman_spawn_input_worker(void* stack_mem);

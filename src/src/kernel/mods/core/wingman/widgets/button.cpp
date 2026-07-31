@@ -1,6 +1,6 @@
 #include "../headers/widgets/button.h"
 #include "../headers/shapes.h"
-#include "../../../dev/vbe/font.h"
+#include "../headers/draw.h"
 #include "../../fontman/fontman.h"
 #include <string.h>
 
@@ -25,6 +25,12 @@ Button::Button(const char* message, uint32_t color, ButtonCallback onClick, void
     this->height = (8 * scale) + 24;
 };
 
+Button::Button(const char* message, uint32_t color, ButtonCallback onClick, void* userdata, int x, int y)
+    : Button(message, color, onClick, userdata) {
+    this->x = x;
+    this->y = y;
+}
+
 Button::~Button() {
     free(this->message);
 };
@@ -38,29 +44,6 @@ static inline uint32_t shade(uint32_t color, int delta) {
     if (g < 0) g = 0; if (g > 255) g = 255;
     if (b < 0) b = 0; if (b > 255) b = 255;
     return rgb((uint8_t)r, (uint8_t)g, (uint8_t)b);
-}
-
-static void drawChar(Surface* surface, unsigned x, unsigned y, char c, unsigned color, unsigned scale) {
-    const FontAtlas* atlas = ttf_font_get_atlas(scale);
-    if (atlas == nullptr) {
-        for (unsigned i = 0; i < 8; i++) {
-            for (unsigned j = 0; j < 8; j++) {
-                if (Font[(int)c][i] & (1 << j)) {
-                    for (unsigned k = 0; k < scale; k++) {
-                        for (unsigned l = 0; l < scale; l++) {
-                            surface->putPixelUnsafe(x + j * scale + l, y + i * scale + k, color);
-                        }
-                    }
-                }
-            }
-        }
-        return;
-    }
-    ttf_blit_glyph(atlas, c, (int)x, (int)y, color,
-        [&](int px, int py, uint8_t alpha, uint32_t fg) {
-            color_t under = surface->getPixel(px, py);
-            surface->putPixelUnsafe(px, py, ttf_blend_over(under, fg, alpha));
-        });
 }
 
 void Button::draw(Surface* surface, int thickness) const {
@@ -87,6 +70,6 @@ void Button::draw(Surface* surface, int thickness) const {
     int textX = bx + (bw - textWidth) / 2;
     int textY = by + (bh - charHeight) / 2;
     for (int i = 0; i < labelLen; i++) {
-        drawChar(surface, textX + i * charWidth, textY, this->message[i], BUTTON_COLOR_W, scale);
+        surface_draw_char(surface, textX + i * charWidth, textY, this->message[i], BUTTON_COLOR_W, scale);
     }
 }

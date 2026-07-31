@@ -21,7 +21,7 @@ void update_mouse_position(int x, int y) {
     mouse_y = y;
 };
 
-// See docs/DOCS.md ("mods/core/wingman/cursor.cpp / headers/cursor.h" section).
+// Blits the sprite straight into the presented frame buffer -- called once per present, not per move.
 void draw_cursor_into_buffer(color_t* buffer, int bufferWidth, int bufferHeight) {
     if (buffer == NULL) return;
     constexpr int CURSOR_W = 17;

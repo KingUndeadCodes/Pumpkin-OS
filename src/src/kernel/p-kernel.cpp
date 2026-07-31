@@ -235,7 +235,7 @@ void task2(void *arg) {
 }
 
 extern "C" void kernel_main(read_file load_floppy) {
-    // See docs/DOCS.md ("mods/dev/gdt/gdt.cpp -- ring-transition GDT/TSS").
+    // Installs the ring-0/ring-3 GDT entries and the TSS ring-3->0 stack-switch is built on.
     GDTInstall();
     TSSInstall();
     queryMemoryMap();
@@ -303,10 +303,10 @@ extern "C" void kernel_main(read_file load_floppy) {
     // it exists before anything else that might call task_block().
     static uint8_t idleStack[KSTACK_SIZE] __attribute__((aligned(16)));
     tasking_spawn_idle(idleStack);
-    // See docs/DOCS.md ("mods/dev/tasking/tasking.cpp — task/stack reaper").
+    // Reclaims stacks/slots of tasks that have exited -- nothing frees a task's own stack while it's still running on it.
     static uint8_t reaperStack[KSTACK_SIZE] __attribute__((aligned(16)));
     tasking_spawn_reaper(reaperStack);
-    // See docs/DOCS.md ("mods/core/wingman/wingman.cpp -- input queue / worker task").
+    // Drains the mouse/keyboard event queue so IRQ handlers never block on Wingman's own processing time.
     static uint8_t inputWorkerStack[KSTACK_SIZE] __attribute__((aligned(16)));
     wingman_spawn_input_worker(inputWorkerStack);
     // Temporarily disabled while debugging the ELF-stdin character-doubling

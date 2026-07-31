@@ -20,6 +20,7 @@ class Checkbox : public Widget {
         CheckboxCallback onChange;
         void* userdata;
         Checkbox(CheckboxStyle style, bool initialChecked = false, CheckboxCallback onChange = NULL, void* userdata = NULL);
+        Checkbox(CheckboxStyle style, bool initialChecked, CheckboxCallback onChange, void* userdata, int x, int y);
         void draw(Surface* surface, int thickness) const override;
         // Hit-tests, then toggles `checked` and fires `onChange` if hit.
         // Returns whether it was actually toggled.

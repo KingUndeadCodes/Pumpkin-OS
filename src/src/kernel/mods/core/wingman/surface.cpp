@@ -23,7 +23,7 @@ void Surface::clear(color_t color) {
     this->clear(0, 0, this->width, this->height, color);
 };
 
-// See docs/DOCS.md ("mods/core/wingman/headers/types.h -- Rect / dirty-rect compositing").
+// Rect overload lets composite() clear just the dirty region instead of the whole surface.
 void Surface::clear(int x, int y, int w, int h, color_t color) {
     if (this->pixels == NULL) return;
     int x0 = x < 0 ? 0 : x;

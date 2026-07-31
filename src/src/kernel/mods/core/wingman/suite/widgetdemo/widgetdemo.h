@@ -12,23 +12,20 @@
 #include "../../headers/widgets/checkbox.h"
 #include "../../headers/widgets/slider.h"
 #include "../../headers/cursor.h"
+#include "../../headers/draw.h"
 #include "../../../../dev/serial/serial.h"
-#include "../../../../dev/vbe/font.h"
 #include "../../../fontman/fontman.h"
 
-// See docs/DOCS.md ("mods/core/wingman/suite/widgetdemo/widgetdemo.cpp" section).
+// A standalone showcase window for every Wingman widget (button, text input, checkbox, toggle, slider).
 class WidgetDemo : public KeyboardDelegate, public MouseDelegate {
-    private:
-        void utility_draw_pixel(unsigned x, unsigned y, unsigned color);
-        void utility_draw_char(unsigned x, unsigned y, char c, unsigned color, unsigned scale = 2);
-        void utility_draw_string(unsigned x, unsigned y, const char* str, unsigned color, unsigned scale = 2);
     private:
         WindowManager* wm;
         window_ref_t ref;
         void draw_border(void);
         void draw_background(void);
-        void draw_title(void);
         void draw_widgets(void);
+        void closeWindow(void);
+        static void closeTrampoline(void* userdata);
     public:
         int width;
         int height;

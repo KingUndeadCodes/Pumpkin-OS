@@ -126,7 +126,8 @@ void map_physical_memory(uintptr_t phys_addr, uintptr_t virt_addr, size_t size, 
     );
 }
 
-// See docs/DOCS.md ("mods/dev/paging/paging.cpp -- mark_region_user()").
+// map_physical_memory() alone isn't enough for ring-3 access: x86 requires PAGE_USER set at
+// both the PDE and PTE, but existing PDEs from boot never have it. This ORs it into the PDE too.
 void mark_region_user(uintptr_t addr, size_t size, bool writable) {
     uint32_t flags = PAGE_PRESENT | PAGE_USER | (writable ? PAGE_WRITABLE : 0);
     map_physical_memory(addr, addr, size, flags);

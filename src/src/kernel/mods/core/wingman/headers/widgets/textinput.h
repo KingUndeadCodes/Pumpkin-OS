@@ -14,6 +14,8 @@ class TextInput : public Widget {
         char* placeholder;
         bool focused;
         TextInput(int maxLength, const char* placeholder = NULL);
+        TextInput(int maxLength, const char* placeholder, int x, int y);
+        TextInput(int maxLength, const char* placeholder, int x, int y, int width, int height);
         ~TextInput();
         void draw(Surface* surface, int thickness) const override;
         // Returns true if this consumed the key. Only meaningful while

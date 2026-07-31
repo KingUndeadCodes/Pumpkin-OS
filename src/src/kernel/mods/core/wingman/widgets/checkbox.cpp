@@ -21,6 +21,12 @@ Checkbox::Checkbox(CheckboxStyle style, bool initialChecked, CheckboxCallback on
     }
 };
 
+Checkbox::Checkbox(CheckboxStyle style, bool initialChecked, CheckboxCallback onChange, void* userdata, int x, int y)
+    : Checkbox(style, initialChecked, onChange, userdata) {
+    this->x = x;
+    this->y = y;
+}
+
 bool Checkbox::click(int px, int py) {
     if (!this->contains(px, py)) return false;
     this->checked = !this->checked;
@@ -40,7 +46,7 @@ void Checkbox::draw(Surface* surface, int thickness) const {
         int thumbX = this->checked ? (bx + bw - thickness - thumbSize) : (bx + thickness);
         draw_rounded_rect_fill(surface, thumbX, thumbY, thumbSize, thumbSize, thumbSize / 2, CHECKBOX_COLOR_THUMB);
     } else {
-        // See docs/DOCS.md ("mods/core/wingman/headers/shapes.h").
+        // Box style: border + inset fill, both rounded the same amount minus the border thickness.
         int radius = bh / 5;
         uint32_t fillColor = this->checked ? CHECKBOX_COLOR_ON : CHECKBOX_COLOR_BG;
         draw_rounded_rect_fill(surface, bx, by, bw, bh, radius, CHECKBOX_COLOR_BORDER);

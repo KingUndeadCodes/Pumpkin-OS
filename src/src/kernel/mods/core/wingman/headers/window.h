@@ -3,6 +3,7 @@
 #include "../../../dev/kb/kb.h"
 #include "./surface.h"
 #include "./types.h"
+#include "./titlebar.h"
 
 class KeyboardDelegate {
     public:
@@ -18,6 +19,9 @@ class MouseDelegate {
         // packets arrive while the button stays held.
         virtual bool onMouseEvent(int x, int y, int dx, int dy, unsigned char buttons, unsigned char pressedEdge) = 0;
 };
+
+// Fired by Window::handleMouse() on a close-button click, same shape as Button's own callback.
+typedef void (*WindowCloseCallback)(void* userdata);
 
 class Window {
     public:
@@ -35,6 +39,11 @@ class Window {
         int padding;
         char* title;
         Surface* surface;
+        TitleBar titleBar;
+        WindowCloseCallback onCloseRequested;
+        void* closeUserdata;
+        void setOnCloseRequested(WindowCloseCallback callback, void* userdata);
+        void setTitle(const char* title);
         Window(int width, int height, int offsetX, int offsetY, const char* title);
         ~Window();
         void* operator new(size_t size) { return malloc(size); }

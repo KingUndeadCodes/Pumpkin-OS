@@ -15,6 +15,7 @@ class Button : public Widget {
         ButtonCallback onClick;
         void* userdata;
         Button(const char* message, uint32_t color, ButtonCallback onClick, void* userdata);
+        Button(const char* message, uint32_t color, ButtonCallback onClick, void* userdata, int x, int y);
         ~Button();
         void draw(Surface* surface, int thickness) const override;
 };
